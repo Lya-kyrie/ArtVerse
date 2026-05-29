@@ -42,6 +42,11 @@ public class Story {
     @OrderBy("chapterNumber ASC")
     private List<Chapter> chapters = new ArrayList<>();
 
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "user_id")
+    @com.fasterxml.jackson.annotation.JsonIgnore
+    private User user;
+
     @OneToMany(mappedBy = "story", cascade = CascadeType.ALL, orphanRemoval = true)
     private Set<StoryAssetGroup> assetGroups = new LinkedHashSet<>();
 

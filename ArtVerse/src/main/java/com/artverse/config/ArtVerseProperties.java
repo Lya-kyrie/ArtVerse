@@ -12,7 +12,6 @@ import java.util.List;
 public class ArtVerseProperties {
 
     private List<String> corsOrigins = List.of("http://localhost:5173", "http://127.0.0.1:5173");
-    private String apiToken = "";
     private Storage storage = new Storage();
     private Upload upload = new Upload();
     private ImportConfig importConfig = new ImportConfig();

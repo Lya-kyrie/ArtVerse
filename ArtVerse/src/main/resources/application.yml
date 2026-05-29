@@ -15,12 +15,19 @@ spring:
     locations: classpath:db/migration
   jackson:
     property-naming-strategy: SNAKE_CASE
+  data:
+    redis:
+      host: localhost
+      port: 6379
 
 artverse:
   cors-origins:
     - http://localhost:5173
     - http://127.0.0.1:5173
-  api-token: ""
+  jwt:
+    secret: "artverse-jwt-secret-key-must-be-at-least-256-bits-long!!"
+    access-ttl: 30m
+    refresh-ttl: 1d
   storage:
     root: ./manga_outputs
   upload:

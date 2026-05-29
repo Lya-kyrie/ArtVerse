@@ -68,9 +68,14 @@ Frontend runs on `http://localhost:5173`
 
 ## Auth
 
-- Spring Security with JWT (stateless). BCrypt for passwords. `AuthController` handles register/login.
-- `user_api_keys` table stores encrypted per-user API keys per provider (deepseek/image2). Keys returned masked to frontend.
-- `stories.user_id` links stories to owning user. Controllers filter by authenticated user.
+- **Spring Security + JWT (stateless)**: `SecurityConfig` disables CSRF, sets stateless sessions. Public: `/api/auth/**`, `/static/**`, `/actuator/health`. Everything else requires auth.
+- **Dual JWT**: accessJWT (30min, `artverse.jwt.access-ttl`) + refreshJWT (1d, `artverse.jwt.refresh-ttl`). `TokenService.generateTokens()` creates both with unique `jti`. Access token carries `type=access` claim, refresh token carries `type=refresh`.
+- **Redis blacklist**: On logout, accessJWT `jti` added to Redis key `jwt:blacklist:{jti}` with TTL = remaining JWT lifetime. `verifyAccessToken()` checks blacklist before accepting.
+- **JwtAuthFilter**: Extracts `Bearer` token, verifies via `TokenService`, sets `SecurityContextHolder` with `userId` as principal and `username` in details. Skips `/api/auth/**`.
+- **Password hashing**: BCrypt via `PasswordEncoder` bean in `SecurityConfig`. `AuthService.register()` encodes before save.
+- **API key storage**: Per-user, per-provider keys in `user_api_keys` table (provider CHECK: `deepseek`, `image2`). AES-256 encrypted at rest via `ApiKeyService`. Keys returned masked (`sk-abc****1234`) to frontend. `getDecryptedKey()` for AI service calls.
+- **User context in controllers**: Get current user via `(Long) SecurityContextHolder.getContext().getAuthentication().getPrincipal()` → `userRepository.findById(userId)`.
+- **Stories linked to users**: `Story.user_id` FK → `users(id)`. When creating stories, set the authenticated user. When listing, filter by user.
 
 ## Key Configuration
 
@@ -80,7 +85,16 @@ Frontend runs on `http://localhost:5173`
 
 ## API Endpoints
 
-- `GET/POST /api/stories` - List/create stories
+### Auth
+- `POST /api/auth/register` - Register new user
+- `POST /api/auth/login` - Login, returns access + refresh JWT
+- `POST /api/auth/refresh` - Exchange refresh token for new access token
+- `POST /api/auth/logout` - Blacklist access token
+- `GET /api/user/me` - Get current user info
+- `GET /api/user/api-keys` - List saved API keys (masked)
+- `PUT /api/user/api-keys` - Save/update API key for a provider
+
+### Content
 - `GET/POST /api/stories/{id}/chapters` - List/create chapters
 - `GET/PUT/DELETE /api/chapters/{id}` - Chapter CRUD
 - `GET/PUT /api/chapters/{id}/color-mode` - Chapter color mode (bw/color)
@@ -138,6 +152,9 @@ Use Playwright CLI skill for browser automation testing.
 - **Remove dead parameters from entire call chain**: When refactoring removes the need for a parameter, remove it from controller → service → gateway. Dead parameters mislead future maintainers into thinking the feature still works.
 - **Don't attach API keys to every request header**: `apiHeaders()` should not include auth headers that apply to a subset of endpoints. Attach per-endpoint headers locally to minimize key exposure in logs/proxies/devtools.
 - **Wrap reactive `.block()` calls**: When calling `.block()` on `Mono`/`Flux` from non-reactive services, wrap with try-catch and convert library-level exceptions to `BusinessException` with clear user-facing messages (e.g. "AI 服务不可用").
+- **Get authenticated user**: Always use `(Long) SecurityContextHolder.getContext().getAuthentication().getPrincipal()` to get current userId in controllers. Don't pass user IDs as request parameters — derive from the JWT.
+- **API key resolution for AI calls**: Call `apiKeyService.getDecryptedKey(user, provider)` to get the decrypted per-user API key. Fall back to `ArtVerseProperties` global key if user hasn't set a personal key. Never log decrypted API keys.
+- **Redis must be running**: `TokenService` blacklist operations silently fail if Redis is unreachable. Ensure Redis container is up (`docker-compose up -d redis`). JWT verification still works without Redis — only blacklist check is affected.
 
 ## Recent Fixes Summary (2026-05-29)
 
