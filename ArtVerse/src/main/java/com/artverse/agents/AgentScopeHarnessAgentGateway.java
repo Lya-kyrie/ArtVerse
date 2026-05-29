@@ -1,6 +1,6 @@
 package com.artverse.agents;
 
-import io.agentscope.core.agent.Event;
+import io.agentscope.core.agent.EventType;
 import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
@@ -45,7 +45,9 @@ public class AgentScopeHarnessAgentGateway implements HarnessAgentGateway {
         List<Msg> messages = convertMessages(request);
 
         return agent.stream(messages, ctx)
-                .filter(e -> e.getMessage() != null && e.getMessage().getTextContent() != null)
+                .filter(e -> e.getType() != EventType.AGENT_RESULT
+                        && e.getMessage() != null
+                        && e.getMessage().getTextContent() != null)
                 .map(e -> e.getMessage().getTextContent());
     }
 
