@@ -233,9 +233,9 @@ export async function listStories(): Promise<Story[]> {
 }
 
 export async function updateStory(storyId: number, data: { title?: string; description?: string }): Promise<Story> {
-  const res = await fetch(`${BASE}/api/stories/${storyId}`, {
+  const res = await authFetch(`${BASE}/api/stories/${storyId}`, {
     method: 'PUT',
-    headers: apiHeaders(true),
+    headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(data),
   });
   if (!res.ok) throw new Error(await res.text());
@@ -243,7 +243,7 @@ export async function updateStory(storyId: number, data: { title?: string; descr
 }
 
 export async function deleteStory(storyId: number): Promise<void> {
-  const res = await fetch(`${BASE}/api/stories/${storyId}`, { method: 'DELETE', headers: apiHeaders() });
+  const res = await authFetch(`${BASE}/api/stories/${storyId}`, { method: 'DELETE' });
   if (!res.ok) throw new Error(await res.text());
 }
 
@@ -285,55 +285,69 @@ export function importStoryPackage(
   onProgress?: (progress: ImportStoryProgress) => void,
 ): Promise<Story> {
   return new Promise((resolve, reject) => {
-    const xhr = new XMLHttpRequest();
-    xhr.open('POST', `${BASE}/api/stories/import`);
-    const headers = apiHeaders();
-    Object.entries(headers).forEach(([key, value]) => {
-      if (typeof value === 'string') xhr.setRequestHeader(key, value);
-    });
-    xhr.responseType = 'text';
+    const doSend = () => {
+      const xhr = new XMLHttpRequest();
+      xhr.open('POST', `${BASE}/api/stories/import`);
+      const headers = apiHeaders();
+      Object.entries(headers).forEach(([key, value]) => {
+        if (typeof value === 'string') xhr.setRequestHeader(key, value);
+      });
+      xhr.responseType = 'text';
 
-    const formData = new FormData();
-    formData.append('file', file);
+      const formData = new FormData();
+      formData.append('file', file);
 
-    xhr.upload.onprogress = (event) => {
-      if (!event.lengthComputable) {
-        onProgress?.({ phase: 'uploading', message: '正在上传作品包...' });
-        return;
-      }
-      const percent = Math.max(1, Math.min(99, Math.round((event.loaded / event.total) * 100)));
-      onProgress?.({ phase: 'uploading', percent, message: `正在上传作品包 ${percent}%` });
-    };
-
-    xhr.onload = () => {
-      if (xhr.status >= 200 && xhr.status < 300) {
-        onProgress?.({ phase: 'processing', percent: 100, message: '导入完成，正在刷新作品列表...' });
-        try {
-          resolve(JSON.parse(xhr.responseText));
-        } catch {
-          reject(new Error('导入完成但响应格式无效'));
+      xhr.upload.onprogress = (event) => {
+        if (!event.lengthComputable) {
+          onProgress?.({ phase: 'uploading', message: '正在上传作品包...' });
+          return;
         }
-        return;
-      }
-      reject(new Error(parseApiError(xhr.responseText)));
-    };
+        const percent = Math.max(1, Math.min(99, Math.round((event.loaded / event.total) * 100)));
+        onProgress?.({ phase: 'uploading', percent, message: `正在上传作品包 ${percent}%` });
+      };
 
-    xhr.onerror = () => reject(new Error('网络连接中断。请检查服务器端口、防火墙或上传包大小限制。'));
-    xhr.onabort = () => reject(new Error('导入已取消'));
-    xhr.ontimeout = () => reject(new Error('导入超时。作品包较大时请稍后重试。'));
+      xhr.onload = async () => {
+        if (xhr.status >= 200 && xhr.status < 300) {
+          onProgress?.({ phase: 'processing', percent: 100, message: '导入完成，正在刷新作品列表...' });
+          try {
+            resolve(JSON.parse(xhr.responseText));
+          } catch {
+            reject(new Error('导入完成但响应格式无效'));
+          }
+          return;
+        }
+        if (xhr.status === 401) {
+          const refreshed = await tryRefreshToken();
+          if (refreshed) {
+            doSend();
+            return;
+          }
+          clearAuth();
+          window.dispatchEvent(new CustomEvent('artverse:auth-expired'));
+          reject(new Error('登录已过期，请重新登录'));
+          return;
+        }
+        reject(new Error(parseApiError(xhr.responseText)));
+      };
 
-    onProgress?.({ phase: 'uploading', percent: 0, message: '准备上传作品包...' });
-    xhr.send(formData);
-    xhr.upload.onload = () => {
-      onProgress?.({ phase: 'processing', percent: 100, message: '上传完成，服务器正在解压并写入作品...' });
+      xhr.onerror = () => reject(new Error('网络连接中断。请检查服务器端口、防火墙或上传包大小限制。'));
+      xhr.onabort = () => reject(new Error('导入已取消'));
+      xhr.ontimeout = () => reject(new Error('导入超时。作品包较大时请稍后重试。'));
+
+      onProgress?.({ phase: 'uploading', percent: 0, message: '准备上传作品包...' });
+      xhr.send(formData);
+      xhr.upload.onload = () => {
+        onProgress?.({ phase: 'processing', percent: 100, message: '上传完成，服务器正在解压并写入作品...' });
+      };
     };
+    doSend();
   });
 }
 
 export async function uploadStoryCover(storyId: number, base64: string): Promise<string> {
-  const res = await fetch(`${BASE}/api/stories/${storyId}/upload-cover`, {
+  const res = await authFetch(`${BASE}/api/stories/${storyId}/upload-cover`, {
     method: 'POST',
-    headers: apiHeaders(true),
+    headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ cover_image: base64 }),
   });
   if (!res.ok) throw new Error(await res.text());
@@ -363,25 +377,25 @@ export function coverImageUrl(coverPath: string | null | undefined): string | nu
 // ─── Chapter ────────────────────────────────────────────────
 
 export async function getChapter(chapterId: number): Promise<Chapter> {
-  const res = await fetch(`${BASE}/api/chapters/${chapterId}`, { headers: apiHeaders() });
+  const res = await authFetch(`${BASE}/api/chapters/${chapterId}`);
   if (!res.ok) throw new Error(await res.text());
   return res.json();
 }
 
 export async function listChapters(storyId: number): Promise<Chapter[]> {
-  const res = await fetch(`${BASE}/api/stories/${storyId}/chapters`, { headers: apiHeaders() });
+  const res = await authFetch(`${BASE}/api/stories/${storyId}/chapters`);
   if (!res.ok) throw new Error(await res.text());
   return res.json();
 }
 
 export async function createNextChapter(storyId: number): Promise<Chapter> {
-  const res = await fetch(`${BASE}/api/stories/${storyId}/chapters`, { method: 'POST', headers: apiHeaders() });
+  const res = await authFetch(`${BASE}/api/stories/${storyId}/chapters`, { method: 'POST' });
   if (!res.ok) throw new Error(await res.text());
   return res.json();
 }
 
 export async function deleteChapter(chapterId: number): Promise<void> {
-  const res = await fetch(`${BASE}/api/chapters/${chapterId}`, { method: 'DELETE', headers: apiHeaders() });
+  const res = await authFetch(`${BASE}/api/chapters/${chapterId}`, { method: 'DELETE' });
   if (!res.ok) throw new Error(await res.text());
 }
 
@@ -396,9 +410,9 @@ export function chatStream(
 ): AbortController {
   const controller = new AbortController();
 
-  fetch(`${BASE}/api/chapters/${chapterId}/chat`, {
+  authFetch(`${BASE}/api/chapters/${chapterId}/chat`, {
     method: 'POST',
-    headers: apiHeaders(true),
+    headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ message: content }),
     signal: controller.signal,
   })
@@ -463,18 +477,15 @@ export function chatStream(
 // ─── Generate Novel ─────────────────────────────────────────
 
 export async function generateNovel(chapterId: number): Promise<Chapter> {
-  const res = await fetch(`${BASE}/api/chapters/${chapterId}/generate-novel`, {
-    method: 'POST',
-    headers: apiHeaders(),
-  });
+  const res = await authFetch(`${BASE}/api/chapters/${chapterId}/generate-novel`, { method: 'POST' });
   if (!res.ok) throw new Error(await res.text());
   return res.json();
 }
 
 export async function importNovel(chapterId: number, content: string): Promise<Chapter> {
-  const res = await fetch(`${BASE}/api/chapters/${chapterId}/import-novel`, {
+  const res = await authFetch(`${BASE}/api/chapters/${chapterId}/import-novel`, {
     method: 'POST',
-    headers: { ...apiHeaders(), 'Content-Type': 'application/json' },
+    headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ content }),
   });
   if (!res.ok) throw new Error(await res.text());
@@ -484,23 +495,23 @@ export async function importNovel(chapterId: number, content: string): Promise<C
 // ─── Scenes ─────────────────────────────────────────────────
 
 export async function generateScenes(chapterId: number, signal?: AbortSignal): Promise<string[]> {
-  const res = await fetch(`${BASE}/api/chapters/${chapterId}/generate-scenes`, { method: 'POST', headers: apiHeaders(), signal });
+  const res = await authFetch(`${BASE}/api/chapters/${chapterId}/generate-scenes`, { method: 'POST', signal });
   if (!res.ok) throw new Error(await res.text());
   const data = await res.json();
   return data.scenes;
 }
 
 export async function getScenes(chapterId: number): Promise<string[]> {
-  const res = await fetch(`${BASE}/api/chapters/${chapterId}/scenes`, { headers: apiHeaders() });
+  const res = await authFetch(`${BASE}/api/chapters/${chapterId}/scenes`);
   if (!res.ok) throw new Error(await res.text());
   const data = await res.json();
   return data.scenes;
 }
 
 export async function updateScenes(chapterId: number, scenes: string[]): Promise<void> {
-  const res = await fetch(`${BASE}/api/chapters/${chapterId}/scenes`, {
+  const res = await authFetch(`${BASE}/api/chapters/${chapterId}/scenes`, {
     method: 'PUT',
-    headers: apiHeaders(true),
+    headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(scenes),
   });
   if (!res.ok) throw new Error(await res.text());
@@ -510,16 +521,16 @@ export async function updateScenes(chapterId: number, scenes: string[]): Promise
 
 // Story-level (global)
 export async function getStoryCharacters(storyId: number): Promise<string> {
-  const res = await fetch(`${BASE}/api/stories/${storyId}/characters`, { headers: apiHeaders() });
+  const res = await authFetch(`${BASE}/api/stories/${storyId}/characters`);
   if (!res.ok) throw new Error(await res.text());
   const data = await res.json();
   return data.characters;
 }
 
 export async function saveStoryCharacters(storyId: number, characters: string): Promise<void> {
-  const res = await fetch(`${BASE}/api/stories/${storyId}/characters`, {
+  const res = await authFetch(`${BASE}/api/stories/${storyId}/characters`, {
     method: 'PUT',
-    headers: apiHeaders(true),
+    headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ characters }),
   });
   if (!res.ok) throw new Error(await res.text());
@@ -529,25 +540,22 @@ export async function saveStoryCharacters(storyId: number, characters: string): 
 export type CharacterSource = 'chapter' | 'asset_group' | 'story' | 'none';
 
 export async function getCharacters(chapterId: number): Promise<{ characters: string; source: CharacterSource; group_id?: number; group_name?: string }> {
-  const res = await fetch(`${BASE}/api/chapters/${chapterId}/characters`, { headers: apiHeaders() });
+  const res = await authFetch(`${BASE}/api/chapters/${chapterId}/characters`);
   if (!res.ok) throw new Error(await res.text());
   return await res.json();
 }
 
 export async function saveCharacters(chapterId: number, characters: string): Promise<void> {
-  const res = await fetch(`${BASE}/api/chapters/${chapterId}/characters`, {
+  const res = await authFetch(`${BASE}/api/chapters/${chapterId}/characters`, {
     method: 'PUT',
-    headers: apiHeaders(true),
+    headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ characters }),
   });
   if (!res.ok) throw new Error(await res.text());
 }
 
 export async function resetChapterCharacters(chapterId: number): Promise<void> {
-  const res = await fetch(`${BASE}/api/chapters/${chapterId}/characters`, {
-    method: 'DELETE',
-    headers: apiHeaders(),
-  });
+  const res = await authFetch(`${BASE}/api/chapters/${chapterId}/characters`, { method: 'DELETE' });
   if (!res.ok) throw new Error(await res.text());
 }
 
@@ -590,15 +598,15 @@ export interface AssetGroupsPayload {
 }
 
 export async function getStoryAssetGroups(storyId: number): Promise<AssetGroupsPayload> {
-  const res = await fetch(`${BASE}/api/stories/${storyId}/asset-groups`, { headers: apiHeaders() });
+  const res = await authFetch(`${BASE}/api/stories/${storyId}/asset-groups`);
   if (!res.ok) throw new Error(await res.text());
   return res.json();
 }
 
 export async function createStoryAssetGroup(storyId: number, name: string): Promise<{ group: AssetGroup; groups: AssetGroup[] }> {
-  const res = await fetch(`${BASE}/api/stories/${storyId}/asset-groups`, {
+  const res = await authFetch(`${BASE}/api/stories/${storyId}/asset-groups`, {
     method: 'POST',
-    headers: apiHeaders(true),
+    headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ name }),
   });
   if (!res.ok) throw new Error(await res.text());
@@ -608,9 +616,9 @@ export async function createStoryAssetGroup(storyId: number, name: string): Prom
 }
 
 export async function updateStoryAssetGroup(storyId: number, groupId: number, data: { name?: string; characters?: string }): Promise<{ group: AssetGroup; groups: AssetGroup[] }> {
-  const res = await fetch(`${BASE}/api/asset-groups/${groupId}`, {
+  const res = await authFetch(`${BASE}/api/asset-groups/${groupId}`, {
     method: 'PUT',
-    headers: apiHeaders(true),
+    headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(data),
   });
   if (!res.ok) throw new Error(await res.text());
@@ -620,19 +628,16 @@ export async function updateStoryAssetGroup(storyId: number, groupId: number, da
 }
 
 export async function deleteStoryAssetGroup(storyId: number, groupId: number): Promise<{ groups: AssetGroup[] }> {
-  const res = await fetch(`${BASE}/api/asset-groups/${groupId}`, {
-    method: 'DELETE',
-    headers: apiHeaders(),
-  });
+  const res = await authFetch(`${BASE}/api/asset-groups/${groupId}`, { method: 'DELETE' });
   if (!res.ok) throw new Error(await res.text());
   const groups = (await getStoryAssetGroups(storyId)).groups;
   return { groups };
 }
 
 export async function addStoryAssetGroupRefImage(storyId: number, groupId: number, base64: string): Promise<RefImagesPayload> {
-  const res = await fetch(`${BASE}/api/stories/${storyId}/asset-groups/${groupId}/ref-images`, {
+  const res = await authFetch(`${BASE}/api/stories/${storyId}/asset-groups/${groupId}/ref-images`, {
     method: 'POST',
-    headers: apiHeaders(true),
+    headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ image: base64 }),
   });
   if (!res.ok) throw new Error(await res.text());
@@ -640,24 +645,24 @@ export async function addStoryAssetGroupRefImage(storyId: number, groupId: numbe
 }
 
 export async function deleteStoryAssetGroupRefImage(storyId: number, groupId: number, filename: string): Promise<RefImagesPayload> {
-  const res = await fetch(
+  const res = await authFetch(
     `${BASE}/api/stories/${storyId}/asset-groups/${groupId}/ref-images/${encodeURIComponent(filename)}`,
-    { method: 'DELETE', headers: apiHeaders() },
+    { method: 'DELETE' },
   );
   if (!res.ok) throw new Error(await res.text());
   return res.json();
 }
 
 export async function getChapterAssetGroup(chapterId: number): Promise<AssetGroupsPayload> {
-  const res = await fetch(`${BASE}/api/chapters/${chapterId}/asset-group`, { headers: apiHeaders() });
+  const res = await authFetch(`${BASE}/api/chapters/${chapterId}/asset-group`);
   if (!res.ok) throw new Error(await res.text());
   return res.json();
 }
 
 export async function setChapterAssetGroup(chapterId: number, groupId: number | null): Promise<AssetGroupsPayload> {
-  const res = await fetch(`${BASE}/api/chapters/${chapterId}/asset-group`, {
+  const res = await authFetch(`${BASE}/api/chapters/${chapterId}/asset-group`, {
     method: 'PUT',
-    headers: apiHeaders(true),
+    headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ group_id: groupId }),
   });
   if (!res.ok) throw new Error(await res.text());
@@ -666,15 +671,15 @@ export async function setChapterAssetGroup(chapterId: number, groupId: number | 
 
 // Story-level
 export async function getStoryRefImages(storyId: number): Promise<RefImagesPayload> {
-  const res = await fetch(`${BASE}/api/stories/${storyId}/ref-images`, { headers: apiHeaders() });
+  const res = await authFetch(`${BASE}/api/stories/${storyId}/ref-images`);
   if (!res.ok) throw new Error(await res.text());
   return res.json();
 }
 
 export async function addStoryRefImage(storyId: number, base64: string): Promise<RefImagesPayload> {
-  const res = await fetch(`${BASE}/api/stories/${storyId}/ref-images`, {
+  const res = await authFetch(`${BASE}/api/stories/${storyId}/ref-images`, {
     method: 'POST',
-    headers: apiHeaders(true),
+    headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ image: base64 }),
   });
   if (!res.ok) throw new Error(await res.text());
@@ -682,9 +687,9 @@ export async function addStoryRefImage(storyId: number, base64: string): Promise
 }
 
 export async function deleteStoryRefImage(storyId: number, filename: string): Promise<RefImagesPayload> {
-  const res = await fetch(
+  const res = await authFetch(
     `${BASE}/api/stories/${storyId}/ref-images/${encodeURIComponent(filename)}`,
-    { method: 'DELETE', headers: apiHeaders() },
+    { method: 'DELETE' },
   );
   if (!res.ok) throw new Error(await res.text());
   return res.json();
@@ -692,15 +697,15 @@ export async function deleteStoryRefImage(storyId: number, filename: string): Pr
 
 // Chapter-level (with story fallback)
 export async function getChapterRefImages(chapterId: number): Promise<RefImagesPayload> {
-  const res = await fetch(`${BASE}/api/chapters/${chapterId}/ref-images`, { headers: apiHeaders() });
+  const res = await authFetch(`${BASE}/api/chapters/${chapterId}/ref-images`);
   if (!res.ok) throw new Error(await res.text());
   return res.json();
 }
 
 export async function addChapterRefImage(chapterId: number, base64: string): Promise<RefImagesPayload> {
-  const res = await fetch(`${BASE}/api/chapters/${chapterId}/ref-images`, {
+  const res = await authFetch(`${BASE}/api/chapters/${chapterId}/ref-images`, {
     method: 'POST',
-    headers: apiHeaders(true),
+    headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ image: base64 }),
   });
   if (!res.ok) throw new Error(await res.text());
@@ -708,9 +713,9 @@ export async function addChapterRefImage(chapterId: number, base64: string): Pro
 }
 
 export async function deleteChapterRefImage(chapterId: number, filename: string): Promise<RefImagesPayload> {
-  const res = await fetch(
+  const res = await authFetch(
     `${BASE}/api/chapters/${chapterId}/ref-images/${encodeURIComponent(filename)}`,
-    { method: 'DELETE', headers: apiHeaders() },
+    { method: 'DELETE' },
   );
   if (!res.ok) throw new Error(await res.text());
   return res.json();
@@ -721,16 +726,16 @@ export async function deleteChapterRefImage(chapterId: number, filename: string)
 export type ColorMode = 'bw' | 'color';
 
 export async function getColorMode(chapterId: number): Promise<ColorMode> {
-  const res = await fetch(`${BASE}/api/chapters/${chapterId}/color-mode`, { headers: apiHeaders() });
+  const res = await authFetch(`${BASE}/api/chapters/${chapterId}/color-mode`);
   if (!res.ok) throw new Error(await res.text());
   const data = await res.json();
   return data.color_mode || 'bw';
 }
 
 export async function setColorMode(chapterId: number, mode: ColorMode): Promise<void> {
-  const res = await fetch(`${BASE}/api/chapters/${chapterId}/color-mode`, {
+  const res = await authFetch(`${BASE}/api/chapters/${chapterId}/color-mode`, {
     method: 'PUT',
-    headers: apiHeaders(true),
+    headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ color_mode: mode }),
   });
   if (!res.ok) throw new Error(await res.text());
@@ -741,16 +746,16 @@ export async function setColorMode(chapterId: number, mode: ColorMode): Promise<
 export const ALLOWED_IMAGE_COUNTS = [4, 6, 8, 10, 12, 15, 20] as const;
 
 export async function getImageCount(chapterId: number): Promise<number> {
-  const res = await fetch(`${BASE}/api/chapters/${chapterId}/image-count`, { headers: apiHeaders() });
+  const res = await authFetch(`${BASE}/api/chapters/${chapterId}/image-count`);
   if (!res.ok) throw new Error(await res.text());
   const data = await res.json();
   return data.image_count ?? 10;
 }
 
 export async function setImageCount(chapterId: number, count: number): Promise<void> {
-  const res = await fetch(`${BASE}/api/chapters/${chapterId}/image-count`, {
+  const res = await authFetch(`${BASE}/api/chapters/${chapterId}/image-count`, {
     method: 'PUT',
-    headers: apiHeaders(true),
+    headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ image_count: count }),
   });
   if (!res.ok) throw new Error(await res.text());
@@ -761,9 +766,9 @@ export async function regenerateImage(
   imageNumber: number,
   prompt: string,
 ): Promise<{ id: number; image_number: number; image_path: string; prompt: string }> {
-  const res = await fetch(`${BASE}/api/chapters/${chapterId}/regenerate-image/${imageNumber}`, {
+  const res = await authFetch(`${BASE}/api/chapters/${chapterId}/regenerate-image/${imageNumber}`, {
     method: 'POST',
-    headers: apiHeaders(true),
+    headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ prompt }),
   });
   if (!res.ok) throw new Error(await res.text());
@@ -805,9 +810,8 @@ export function generateMangaStream(
   });
 
   const connect = () => {
-    fetch(`${BASE}/api/chapters/${chapterId}/generate-manga-stream`, {
+    authFetch(`${BASE}/api/chapters/${chapterId}/generate-manga-stream`, {
       method: 'POST',
-      headers: apiHeaders(),
       signal: controller.signal,
     })
       .then(async (res) => {

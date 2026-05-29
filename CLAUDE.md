@@ -135,6 +135,7 @@ Use Playwright CLI skill for browser automation testing.
 - **Derived state consistency**: When computing display values (like counters), always derive from the same source. Don't mix preference values with actual runtime values (e.g. `imageCount` vs `activeImageCount`).
 - **Null-safe operator**: Use `??` instead of `||` for values that could be empty strings. `||` treats `""` as falsy and falls through; `??` only treats `null`/`undefined` as nullish.
 - **SSE event deduplication**: When handling streaming events, use guard flags to prevent duplicate callback triggers (e.g. don't call `onChapterRefresh` from both the last `image` event and the `done` event).
+- **Always use `authFetch` for authenticated API calls**: Every API call that requires authentication MUST use `authFetch()`, never raw `fetch()` + `apiHeaders()`. `authFetch` handles 401 responses by automatically refreshing the access token and retrying. Raw `fetch` with `apiHeaders()` has no JWT refresh logic — when the 30-minute access token expires, the call fails with "JWT expired". Only `loginUser`, `registerUser`, and `tryRefreshToken` should use raw `fetch` (they don't need auth). `exportStory` (blob download) is the only exception for an authenticated endpoint. `importStoryPackage` (XHR) must handle 401 + token refresh in its `onload` callback.
 
 ### Java/Spring Boot
 - **Lazy proxy safety**: When accessing lazy-loaded JPA relationships in DTOs (`@ManyToOne(fetch = LAZY)`), always wrap in try-catch with a fallback, consistent with `safeMessages()`/`safeImages()` pattern in `ChapterDto.java`.
@@ -163,10 +164,11 @@ Use Playwright CLI skill for browser automation testing.
 
 ## Recent Fixes Summary (2026-05-29)
 
-Key patterns from 22 fixes:
+Key patterns from 23 fixes:
 - **API contract mismatches**: Verify frontend/backend field names, paths, Content-Type, SSE event fields match exactly. Always JSON-encode SSE token data as `{"content": token}`. Verify ALL HTTP methods the frontend calls are implemented on the backend (not just GET when frontend also POSTs).
 - **AgentScope Harness**: Replaced custom AI code. Use `OpenAIChatModel` (OpenAI-compatible) for DeepSeek. Filter `AGENT_RESULT` + use `AtomicBoolean` for `isLast()` events. Cancel `Flux.subscribe()` on SSE disconnect. Strip quotes from `.env` values. Wrap `.block()` in try-catch.
 - **JPA/Hibernate**: `open-in-view: false` means sessions close after `@Transactional`. Use `@JsonIgnore` on lazy fields, DTO safe-accessors, and `@Transactional` on methods with detached-entity callbacks. Jackson parses integers as `Long`.
 - **Validation**: Always validate DB CHECK constraints in service layer (400, not 500). Warn on missing API keys at startup.
 - **Cleanup**: Remove dead parameters from entire call chain (controller→service). Don't leak API keys on every request header. Use `??` not `||` for nullish values. Don't duplicate SSE event callbacks.
 - **Java immutability**: `Map.of()` / `List.of()` return immutable collections — never call `.put()` / `.add()`. Use `new HashMap<>()` for mutable maps.
+- **JWT auth in frontend**: All authenticated API calls must use `authFetch()` — raw `fetch` + `apiHeaders()` has no token refresh logic. After 30 min, the access token expires and every raw fetch fails. Only `loginUser`/`registerUser`/`tryRefreshToken` skip `authFetch`.
