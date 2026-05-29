@@ -46,6 +46,7 @@ public class AgentScopeHarnessAgentGateway implements HarnessAgentGateway {
 
         return agent.stream(messages, ctx)
                 .filter(e -> e.getType() != EventType.AGENT_RESULT
+                        && !e.isLast()
                         && e.getMessage() != null
                         && e.getMessage().getTextContent() != null)
                 .map(e -> e.getMessage().getTextContent());

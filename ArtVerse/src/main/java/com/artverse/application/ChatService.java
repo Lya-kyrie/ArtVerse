@@ -96,7 +96,7 @@ public class ChatService {
                                 accumulated.append(token);
                                 emitter.send(SseEmitter.event()
                                         .name("token")
-                                        .data(token));
+                                        .data(objectMapper.writeValueAsString(Map.of("content", token))));
                             } catch (IOException e) {
                                 log.warn("Failed to send token SSE: {}", e.getMessage());
                             }

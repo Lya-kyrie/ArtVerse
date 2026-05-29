@@ -1,0 +1,15 @@
+# Environment secrets
+.env
+
+# IDE
+.idea/
+*.iml
+
+# Build output
+target/
+dist/
+node_modules/
+
+# OS files
+.DS_Store
+Thumbs.db

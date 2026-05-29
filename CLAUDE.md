@@ -123,7 +123,9 @@ Use Playwright CLI skill for browser automation testing.
 - **AgentScope Harness usage**: All text/chat AI goes through `HarnessAgentGateway` interface. Use `HarnessAgent.builder()` with `.model(openAIChatModel)`, `.workspace(path)`, `.compaction(config)` to create agents. Build one agent per story (cache by story ID). Use `RuntimeContext.builder().sessionId().userId().build()` for per-call identity. Convert `AgentMessage` to `Msg.builder().role(MsgRole.USER/ASSISTANT/SYSTEM).textContent().build()`.
 - **AgentScope model configuration**: `OpenAIChatModel.builder().apiKey().modelName().baseUrl().stream(true).build()`. For DeepSeek, base URL is `https://api.deepseek.com`. API key read from `ArtVerseProperties.deepseek.apiKey` or `DEEPSEEK_API_KEY` env var via Dotenv.
 - **Don't create custom adapters**: `OpenAIChatModel` already supports any OpenAI-compatible API. No need to write custom `ChatModel` adapters like the old `DeepSeekModelAdapter`.
-- **Streaming event filtering**: When using `HarnessAgent.stream()`, filter out `EventType.AGENT_RESULT` events to avoid duplicating the final response text in token-accumulating consumers. Only forward incremental events (REASONING, etc.) that carry delta text.
+- **Streaming event filtering**: When using `HarnessAgent.stream()`, filter out `EventType.AGENT_RESULT` AND `Event.isLast()` events to avoid duplicating the full response text. AgentScope emits incremental REASONING deltas followed by a final full-text event with `isLast()=true` — only forward non-last REASONING events. The correct filter chain is: `.filter(e -> e.getType() != EventType.AGENT_RESULT && !e.isLast() && e.getMessage() != null && e.getMessage().getTextContent() != null)`.
+- **SSE token format**: Always wrap SSE token data in JSON: `.data(objectMapper.writeValueAsString(Map.of("content", token)))`. The frontend parses `data.content` from JSON — sending raw strings silently fails during `JSON.parse()` and tokens are dropped. Only `done`/`error` events with proper JSON work without this.
+- **Dotenv-java 3.x gotcha**: `Dotenv.get()` checks system environment variables FIRST, then `.env` file entries. If a system env var `DEEPSEEK_API_KEY` exists, it takes priority over `.env`. Workaround: read `.env` file directly via `Files.lines()` and only fall back to `dotenv.get()`.
 
 ## Recent Fixes (2026-05-29)
 
@@ -185,3 +187,23 @@ Use Playwright CLI skill for browser automation testing.
     - Image generation (`Image2Client`) kept separate — not replaced by AgentScope
     - Dependency: `io.agentscope:agentscope-harness:1.1.0-RC2` + `io.github.cdimascio:dotenv-java:3.2.0`
     - Removed: `io.agentscope:agentscope-spring-boot-starter`, `com.openai:openai-java`
+17. **AgentScope stream text duplication** (2026-05-29):
+    - `HarnessAgent.stream()` emits incremental REASONING deltas followed by a final full-text event with `isLast()=true`, plus an AGENT_RESULT event
+    - Filtering only `AGENT_RESULT` wasn't enough — the last REASONING event (`isLast()=true`) also contains the full response text
+    - Fix: Added `&& !e.isLast()` to the stream filter in `AgentScopeHarnessAgentGateway.streamChat()`
+    - Impact: Every chat response was duplicated (accumulated deltas + full text from last event)
+18. **Chat SSE token format — frontend drops streaming tokens** (2026-05-29):
+    - Backend sent raw strings as SSE `token` data, but frontend `ChatPanel` does `JSON.parse(dataStr)` and reads `data.content`
+    - `JSON.parse("嗨")` throws `SyntaxError`, silently caught by try-catch — all streaming tokens were dropped
+    - User only saw the final response from the `done` event (which uses proper JSON `{"content":"..."}`)
+    - Fix: Changed `ChatService` to send `{"content": token}` JSON in token events
+    - Impact: Real-time character-by-character streaming was completely broken; users only saw the full response at completion
+19. **dotenv-java 3.x system env var priority** (2026-05-29):
+    - `Dotenv.get("DEEPSEEK_API_KEY")` returns system environment variable value over `.env` file value in dotenv-java 3.x
+    - User had an old/invalid `DEEPSEEK_API_KEY` system env var ending in `5fbb`; `.env` file had the correct key ending in `8123`
+    - Backend was using the old system env var, causing DeepSeek 401 authentication errors
+    - Fix: Added `readFromEnvFile()` in `AgentScopeConfig` that reads `.env` directly via `Files.lines()`, bypassing dotenv-java's `get()`
+    - Added masked API key logging for debugging: `sk-fcd0****8123`
+20. **`.env` file and `.gitignore`** (2026-05-29):
+    - Created `ArtVerse/.env` template with `DEEPSEEK_API_KEY`, `IMAGE_API_KEY`, `MINIO_ACCESS_KEY`, `MINIO_SECRET_KEY`
+    - Created root `.gitignore` to prevent `.env` from being committed

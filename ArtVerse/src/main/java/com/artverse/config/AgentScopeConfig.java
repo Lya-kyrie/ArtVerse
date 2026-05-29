@@ -21,11 +21,38 @@ public class AgentScopeConfig {
 
     @Bean
     public Dotenv dotenv() {
-        Path envFile = Paths.get(".env");
+        Path envFile = Paths.get(".env").toAbsolutePath();
         if (Files.exists(envFile)) {
-            return Dotenv.configure().directory(".").load();
+            log.info("Loading .env from: {}", envFile);
+            return Dotenv.configure().directory(envFile.getParent().toString()).load();
         }
+        log.warn(".env file not found at: {}", envFile);
         return Dotenv.configure().ignoreIfMissing().load();
+    }
+
+    private static String readFromEnvFile(String key) {
+        Path envFile = Paths.get(".env").toAbsolutePath();
+        if (!Files.exists(envFile)) return null;
+        try {
+            return Files.lines(envFile)
+                    .map(String::trim)
+                    .filter(line -> !line.isEmpty() && !line.startsWith("#"))
+                    .filter(line -> line.startsWith(key + "=") || line.startsWith(key + " ="))
+                    .map(line -> {
+                        int eq = line.indexOf('=');
+                        return line.substring(eq + 1).trim();
+                    })
+                    .findFirst()
+                    .orElse(null);
+        } catch (IOException e) {
+            log.warn("Failed to read .env file: {}", e.getMessage());
+            return null;
+        }
+    }
+
+    private static String maskKey(String key) {
+        if (key == null || key.length() <= 8) return "(not set)";
+        return key.substring(0, 7) + "****" + key.substring(key.length() - 4);
     }
 
     @Bean
@@ -65,8 +92,13 @@ public class AgentScopeConfig {
     public Model deepSeekModel(ArtVerseProperties properties, Dotenv dotenv) {
         String apiKey = properties.getDeepseek().getApiKey();
         if (apiKey == null || apiKey.isBlank()) {
-            apiKey = dotenv.get("DEEPSEEK_API_KEY");
+            // Read from .env file first (dotenv-java 3.x get() prefers system env vars)
+            apiKey = readFromEnvFile("DEEPSEEK_API_KEY");
+            if (apiKey == null || apiKey.isBlank()) {
+                apiKey = dotenv.get("DEEPSEEK_API_KEY");
+            }
         }
+        log.info("DeepSeek model configured with key: {}", maskKey(apiKey));
         return OpenAIChatModel.builder()
                 .apiKey(apiKey)
                 .modelName(properties.getDeepseek().getModel())
