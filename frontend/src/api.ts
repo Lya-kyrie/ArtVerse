@@ -2,10 +2,14 @@ const BASE = '';
 export const DEEPSEEK_USAGE_URL = 'https://platform.deepseek.com/usage';
 export const IMAGE2_CONSOLE_URL = 'https://api.duojie.games/console/token';
 
-// ─── Auth (JWT) ──────────────────────────────────────────────
+// ─── Auth (Sa-Token) ────────────────────────────────────────
+// 后端约定（见 docs/knowledge/modules/auth/SKILL.md）：
+//   - 登录返回 SaTokenInfo，token 字段名为 tokenValue
+//   - 所有受保护接口 Header 必须为 `satoken: <token>`（无 Bearer 前缀）
+//   - 不使用 refresh token；`active-timeout=-1` 时 token 30 分钟固定有效，
+//     即将过期时由前端调 POST /api/auth/refresh 续期
 
-const LS_ACCESS_TOKEN = 'artverse.accessToken';
-const LS_REFRESH_TOKEN = 'artverse.refreshToken';
+const LS_SATOKEN = 'artverse.satoken';
 const LS_USER = 'artverse.user';
 
 export interface UserInfo {
@@ -14,12 +18,8 @@ export interface UserInfo {
   email: string;
 }
 
-function getAccessToken(): string | null {
-  return localStorage.getItem(LS_ACCESS_TOKEN);
-}
-
-function getRefreshToken(): string | null {
-  return localStorage.getItem(LS_REFRESH_TOKEN);
+function getSaToken(): string | null {
+  return localStorage.getItem(LS_SATOKEN);
 }
 
 export function getUser(): UserInfo | null {
@@ -29,38 +29,30 @@ export function getUser(): UserInfo | null {
 }
 
 export function isAuthenticated(): boolean {
-  return !!getAccessToken();
-}
-
-function saveAuth(data: { access_token: string; refresh_token: string; user: UserInfo }): void {
-  localStorage.setItem(LS_ACCESS_TOKEN, data.access_token);
-  localStorage.setItem(LS_REFRESH_TOKEN, data.refresh_token);
-  localStorage.setItem(LS_USER, JSON.stringify(data.user));
+  return !!getSaToken();
 }
 
 export function clearAuth(): void {
-  localStorage.removeItem(LS_ACCESS_TOKEN);
-  localStorage.removeItem(LS_REFRESH_TOKEN);
+  localStorage.removeItem(LS_SATOKEN);
   localStorage.removeItem(LS_USER);
 }
 
 let refreshPromise: Promise<boolean> | null = null;
 
 async function tryRefreshToken(): Promise<boolean> {
-  const rt = getRefreshToken();
-  if (!rt) return false;
-
+  // Sa-Token 刷新：仅需调 POST /api/auth/refresh（无 body），返回新的 SaTokenInfo
   if (!refreshPromise) {
     refreshPromise = (async () => {
       try {
         const res = await fetch(`${BASE}/api/auth/refresh`, {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ refresh_token: rt }),
+          headers: { 'satoken': getSaToken() || '' },
         });
         if (!res.ok) return false;
         const data = await res.json();
-        localStorage.setItem(LS_ACCESS_TOKEN, data.access_token);
+        const newToken = data.tokenValue ?? data.token_value;
+        if (!newToken) return false;
+        localStorage.setItem(LS_SATOKEN, newToken);
         return true;
       } catch {
         return false;
@@ -72,6 +64,15 @@ async function tryRefreshToken(): Promise<boolean> {
   return ok;
 }
 
+async function fetchAndSaveUser(tokenValue: string): Promise<void> {
+  const res = await fetch(`${BASE}/api/user/me`, {
+    headers: { 'satoken': tokenValue },
+  });
+  if (!res.ok) throw new Error('获取用户信息失败');
+  const user: UserInfo = await res.json();
+  localStorage.setItem(LS_USER, JSON.stringify(user));
+}
+
 export async function loginUser(username: string, password: string): Promise<void> {
   const res = await fetch(`${BASE}/api/auth/login`, {
     method: 'POST',
@@ -79,7 +80,11 @@ export async function loginUser(username: string, password: string): Promise<voi
     body: JSON.stringify({ username, password }),
   });
   if (!res.ok) throw new Error(parseApiError(await res.text()));
-  saveAuth(await res.json());
+  const data = await res.json();
+  const tokenValue: string = data.tokenValue ?? data.token_value;
+  if (!tokenValue) throw new Error('登录响应缺少 tokenValue');
+  localStorage.setItem(LS_SATOKEN, tokenValue);
+  await fetchAndSaveUser(tokenValue);
 }
 
 export async function registerUser(username: string, email: string, password: string): Promise<void> {
@@ -89,16 +94,20 @@ export async function registerUser(username: string, email: string, password: st
     body: JSON.stringify({ username, email, password }),
   });
   if (!res.ok) throw new Error(parseApiError(await res.text()));
-  saveAuth(await res.json());
+  const data = await res.json();
+  const tokenValue: string = data.tokenValue ?? data.token_value;
+  if (!tokenValue) throw new Error('注册响应缺少 tokenValue');
+  localStorage.setItem(LS_SATOKEN, tokenValue);
+  await fetchAndSaveUser(tokenValue);
 }
 
 export async function logoutUser(): Promise<void> {
-  const token = getAccessToken();
+  const token = getSaToken();
   if (token) {
     try {
       await fetch(`${BASE}/api/auth/logout`, {
         method: 'POST',
-        headers: { 'Authorization': `Bearer ${token}` },
+        headers: { 'satoken': token },
       });
     } catch { /* ignore */ }
   }
@@ -161,10 +170,10 @@ export async function saveUserApiKey(provider: string, apiKey: string): Promise<
 // ─── Auth-aware fetch ────────────────────────────────────────
 
 function apiHeaders(json = false): HeadersInit {
-  const token = getAccessToken();
+  const token = getSaToken();
   return {
     ...(json ? { 'Content-Type': 'application/json' } : {}),
-    ...(token ? { 'Authorization': `Bearer ${token}` } : {}),
+    ...(token ? { 'satoken': token } : {}),
   };
 }
 

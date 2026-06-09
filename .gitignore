@@ -16,5 +16,10 @@ target/
 dist/
 node_modules/
 
+ArtVerse/target/
+ArtVerse/.idea/
+ArtVerse/.agentscope/
+frontend/.playwright-cli/
+
 .DS_Store
 Thumbs.db

@@ -3,7 +3,13 @@ server:
 
 spring:
   datasource:
-    url: jdbc:postgresql://localhost:5432/manga_novel
+    # 三重保险：
+    #   1. options=-c client_encoding=UTF8 → 建链时直接发 SET 命令
+    #   2. charSet=UTF-8 → 通知驱动按 UTF-8 解读字节
+    #   3. JVM file.encoding=UTF-8（由启动脚本 start-backend.ps1 设置）
+    # 原因：PostgreSQL JDBC 42.7.x 在 Windows 上默认按 JVM 默认编码（GBK/CP1252）
+    #      解读字节，导致双重 UTF-8 编码的中文以 Latin-1 形式读出。
+    url: jdbc:postgresql://localhost:5432/manga_novel?ApplicationName=artverse&stringtype=unspecified&options=-c%20client_encoding%3DUTF8&charSet=UTF-8
     username: postgres
     password: postgres
   jpa:
@@ -15,12 +21,17 @@ spring:
     locations: classpath:db/migration
   jackson:
     property-naming-strategy: SNAKE_CASE
+  data:
+    redis:
+      host: localhost
+      port: 6379
+      database: 0
+      timeout: 5000
 
 artverse:
   cors-origins:
     - http://localhost:5173
     - http://127.0.0.1:5173
-  api-token: ""
   storage:
     root: ./manga_outputs
   upload:
@@ -51,6 +62,10 @@ artverse:
     model: gpt-image-2
     size: 1024x1536
     api-key: ""
+  coze:
+    base-url: https://api.coze.cn
+    api-key: ""
+    workflow-id: "7645642109203103763"
   minio:
     endpoint: http://localhost:9000
     bucket: artverse-manga
@@ -60,3 +75,42 @@ artverse:
     secure: false
     public-base-url: ""
     presigned-url-expire-seconds: 3600
+  rate-limit:
+    # 限流默认值（可被 @RateLimit 注解覆盖）
+    enabled: true
+    default-window-seconds: 60
+    default-max-requests: 30
+  single-flight:
+    # 幂等（单飞模式）默认值
+    enabled: true
+    default-ttl-seconds: 30
+
+# Sa-Token 配置（替代 Spring Security + JWT）
+sa-token:
+  # === Token 基础配置 ===
+  token-name: satoken
+  timeout: 1800            # Token 有效期（秒），30min
+  active-timeout: -1       # 关闭自动续期，依赖 /api/auth/refresh
+  is-concurrent: true      # 允许多端登录
+  is-share: false          # 多端不共享 token
+  token-style: uuid        # uuid / 32str / random
+  token-prefix: ""         # 不加 Bearer 前缀
+  is-read-cookie: false
+  is-read-header: true
+  is-write-cookie: false
+  is-write-header: true    # 登录后 token 写入响应 Header
+  is-log: true
+
+  # === 拦截器配置 ===
+  intercept-urls:
+    - /api/auth/login = no-auth
+    - /api/auth/register = no-auth
+    - /api/auth/refresh = no-auth
+    - /static/** = no-auth
+    - /actuator/health = no-auth
+    - /api/** = auth
+
+  # === Sa-Token Redis 集成 ===
+  redis:
+    is-read: true
+    is-write: true

@@ -1,1 +1,12 @@
+com\artverse\api\NovelControllerTest.class
+com\artverse\application\SceneServiceTest.class
+com\artverse\api\NovelControllerTest$1.class
+com\artverse\api\StaticMediaControllerTest.class
+com\artverse\application\MangaGenerationServiceTest$CapturingObjectStorage.class
+com\artverse\api\StaticMediaControllerTest$1.class
+com\artverse\application\MangaGenerationServiceTest.class
+com\artverse\agents\AgentScopeHarnessAgentGatewayTest.class
+com\artverse\api\ReferenceImageControllerTest.class
+com\artverse\application\MangaGenerationServiceTest$CapturingImage2Client.class
 com\artverse\ArtVerseApplicationTests.class
+com\artverse\api\ReferenceImageControllerTest$CapturingStorage.class

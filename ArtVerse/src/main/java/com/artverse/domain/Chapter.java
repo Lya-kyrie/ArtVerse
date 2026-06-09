@@ -58,6 +58,10 @@ public class Chapter {
     @Column(name = "image_count", nullable = false)
     private Integer imageCount = 10;
 
+    @Enumerated(EnumType.STRING)
+    @Column(name = "status", nullable = false, length = 32)
+    private ChapterStatus status = ChapterStatus.DRAFT;
+
     @Column(name = "created_at", nullable = false, updatable = false)
     private OffsetDateTime createdAt;
 

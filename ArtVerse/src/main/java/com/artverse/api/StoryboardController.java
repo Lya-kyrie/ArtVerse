@@ -1,11 +1,13 @@
 package com.artverse.api;
 
+import cn.dev33.satoken.stp.StpUtil;
 import com.artverse.application.ApiKeyService;
 import com.artverse.application.SceneService;
+import com.artverse.common.BusinessException;
+import com.artverse.common.aspect.RateLimit;
 import com.artverse.domain.User;
 import com.artverse.persistence.UserRepository;
 import lombok.RequiredArgsConstructor;
-import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
@@ -21,9 +23,9 @@ public class StoryboardController {
     private final ApiKeyService apiKeyService;
 
     @PostMapping("/generate-scenes")
+    @RateLimit(windowSeconds = 60, maxRequests = 5, key = "scenes")
     public Map<String, List<String>> generateScenes(@PathVariable Long chapterId) {
-        Long userId = (Long) SecurityContextHolder.getContext().getAuthentication().getPrincipal();
-        User user = userRepository.findById(userId).orElseThrow();
+        User user = currentUser();
         String cozeApiKey = apiKeyService.getDecryptedKey(user, "coze");
         List<String> scenes = sceneService.generateScenes(chapterId, cozeApiKey);
         return Map.of("scenes", scenes);
@@ -39,5 +41,11 @@ public class StoryboardController {
     public Map<String, List<String>> updateScenes(@PathVariable Long chapterId, @RequestBody List<String> scenes) {
         List<String> updated = sceneService.updateScenes(chapterId, scenes);
         return Map.of("scenes", updated);
+    }
+
+    private User currentUser() {
+        Long userId = StpUtil.getLoginIdAsLong();
+        return userRepository.findById(userId)
+                .orElseThrow(() -> new BusinessException(404, "用户不存在"));
     }
 }

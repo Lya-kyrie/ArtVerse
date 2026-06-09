@@ -22,6 +22,8 @@ public class ArtVerseProperties {
     private Image image = new Image();
     private Minio minio = new Minio();
     private Coze coze = new Coze();
+    private RateLimit rateLimit = new RateLimit();
+    private SingleFlight singleFlight = new SingleFlight();
 
     @Data
     public static class Storage {
@@ -87,5 +89,18 @@ public class ArtVerseProperties {
         private String baseUrl = "https://api.coze.cn";
         private String apiKey = "";
         private String workflowId = "7645642109203103763";
+    }
+
+    @Data
+    public static class RateLimit {
+        private boolean enabled = true;
+        private int defaultWindowSeconds = 60;
+        private int defaultMaxRequests = 30;
+    }
+
+    @Data
+    public static class SingleFlight {
+        private boolean enabled = true;
+        private int defaultTtlSeconds = 30;
     }
 }

@@ -57,6 +57,12 @@ public class ApiKeyService {
                 .orElse(null);
     }
 
+    @Transactional
+    public void deleteKey(User user, String provider) {
+        repository.findByUserIdAndProvider(user.getId(), provider)
+                .ifPresent(repository::delete);
+    }
+
     private String encrypt(String plainText) {
         try {
             SecretKeySpec keySpec = new SecretKeySpec(ENCRYPTION_KEY, ALGORITHM);
