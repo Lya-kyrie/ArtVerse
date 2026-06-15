@@ -7,7 +7,6 @@ import com.artverse.domain.ColorMode;
 import com.artverse.persistence.ChapterRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
-import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
@@ -65,34 +64,5 @@ public class ChapterController {
     public ChapterDto updateImageCount(@PathVariable Long chapterId, @RequestBody Map<String, Object> body) {
         Number val = (Number) body.get("image_count");
         return ChapterDto.from(chapterService.updateImageCount(chapterId, val.intValue()));
-    }
-
-    @Transactional(readOnly = true)
-    @GetMapping("/chapters/{chapterId}/asset-group")
-    public Map<String, Object> getAssetGroup(@PathVariable Long chapterId) {
-        Chapter chapter = chapterService.getRequired(chapterId);
-        List<Map<String, Object>> groups = chapter.getStory().getAssetGroups().stream()
-                .map(g -> {
-                    Map<String, Object> gm = new java.util.HashMap<>();
-                    gm.put("id", g.getId());
-                    gm.put("name", g.getName());
-                    gm.put("is_default", false);
-                    gm.put("has_character_profiles", g.getCharacterProfiles() != null && !g.getCharacterProfiles().isBlank());
-                    return gm;
-                }).toList();
-
-        Map<String, Object> result = new java.util.HashMap<>();
-        result.put("groups", groups);
-        result.put("max", 4);
-        result.put("selected_group_id", chapter.getAssetGroup() != null ? chapter.getAssetGroup().getId() : null);
-        return result;
-    }
-
-    @Transactional
-    @PutMapping("/chapters/{chapterId}/asset-group")
-    public Map<String, Object> setAssetGroup(@PathVariable Long chapterId, @RequestBody Map<String, Object> body) {
-        Long groupId = body.get("group_id") != null ? Long.valueOf(body.get("group_id").toString()) : null;
-        chapterService.setAssetGroup(chapterId, groupId);
-        return getAssetGroup(chapterId);
     }
 }

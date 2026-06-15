@@ -62,6 +62,15 @@ public class Chapter {
     @Column(name = "status", nullable = false, length = 32)
     private ChapterStatus status = ChapterStatus.DRAFT;
 
+    @Column(name = "is_published", nullable = false)
+    private Boolean isPublished = false;
+
+    @Column(name = "display_order")
+    private Integer displayOrder = 0;
+
+    @Column(name = "display_title", length = 255)
+    private String displayTitle;
+
     @Column(name = "created_at", nullable = false, updatable = false)
     private OffsetDateTime createdAt;
 
@@ -89,7 +98,7 @@ public class Chapter {
         }
         StringBuilder sb = new StringBuilder();
         for (ChatMessage m : messages) {
-            sb.append(m.getRole().name().toLowerCase()).append(": ").append(m.getContent()).append("\n");
+            sb.append(m.getRole().name().toLowerCase()).append(": ").append(m.getContent()).append(" ");
         }
         return sb.toString().trim();
     }

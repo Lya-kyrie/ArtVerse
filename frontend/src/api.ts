@@ -2,12 +2,6 @@ const BASE = '';
 export const DEEPSEEK_USAGE_URL = 'https://platform.deepseek.com/usage';
 export const IMAGE2_CONSOLE_URL = 'https://api.duojie.games/console/token';
 
-// ─── Auth (Sa-Token) ────────────────────────────────────────
-// 后端约定（见 docs/knowledge/modules/auth/SKILL.md）：
-//   - 登录返回 SaTokenInfo，token 字段名为 tokenValue
-//   - 所有受保护接口 Header 必须为 `satoken: <token>`（无 Bearer 前缀）
-//   - 不使用 refresh token；`active-timeout=-1` 时 token 30 分钟固定有效，
-//     即将过期时由前端调 POST /api/auth/refresh 续期
 
 const LS_SATOKEN = 'artverse.satoken';
 const LS_USER = 'artverse.user';
@@ -40,7 +34,6 @@ export function clearAuth(): void {
 let refreshPromise: Promise<boolean> | null = null;
 
 async function tryRefreshToken(): Promise<boolean> {
-  // Sa-Token 刷新：仅需调 POST /api/auth/refresh（无 body），返回新的 SaTokenInfo
   if (!refreshPromise) {
     refreshPromise = (async () => {
       try {
@@ -68,7 +61,7 @@ async function fetchAndSaveUser(tokenValue: string): Promise<void> {
   const res = await fetch(`${BASE}/api/user/me`, {
     headers: { 'satoken': tokenValue },
   });
-  if (!res.ok) throw new Error('获取用户信息失败');
+  if (!res.ok) throw new Error('Error');
   const user: UserInfo = await res.json();
   localStorage.setItem(LS_USER, JSON.stringify(user));
 }
@@ -82,7 +75,7 @@ export async function loginUser(username: string, password: string): Promise<voi
   if (!res.ok) throw new Error(parseApiError(await res.text()));
   const data = await res.json();
   const tokenValue: string = data.tokenValue ?? data.token_value;
-  if (!tokenValue) throw new Error('登录响应缺少 tokenValue');
+  if (!tokenValue) throw new Error('Error');
   localStorage.setItem(LS_SATOKEN, tokenValue);
   await fetchAndSaveUser(tokenValue);
 }
@@ -96,7 +89,7 @@ export async function registerUser(username: string, email: string, password: st
   if (!res.ok) throw new Error(parseApiError(await res.text()));
   const data = await res.json();
   const tokenValue: string = data.tokenValue ?? data.token_value;
-  if (!tokenValue) throw new Error('注册响应缺少 tokenValue');
+  if (!tokenValue) throw new Error('Error');
   localStorage.setItem(LS_SATOKEN, tokenValue);
   await fetchAndSaveUser(tokenValue);
 }
@@ -114,7 +107,6 @@ export async function logoutUser(): Promise<void> {
   clearAuth();
 }
 
-// ─── API key settings ────────────────────────────────────────
 
 const LS_DEEPSEEK_API_KEY = 'lorevista.deepseekApiKey';
 const LS_IMAGE_API_KEY = 'lorevista.imageApiKey';
@@ -167,7 +159,6 @@ export async function saveUserApiKey(provider: string, apiKey: string): Promise<
   if (!res.ok) throw new Error(parseApiError(await res.text()));
 }
 
-// ─── Auth-aware fetch ────────────────────────────────────────
 
 function apiHeaders(json = false): HeadersInit {
   const token = getSaToken();
@@ -229,9 +220,8 @@ export interface Chapter {
   images: MangaImage[];
 }
 
-// ─── Story ──────────────────────────────────────────────────
 
-export async function createStory(title: string = '未命名故事', description: string = ''): Promise<Story> {
+export async function createStory(title: string = 'Untitled Story', description: string = ''): Promise<Story> {
   const res = await authFetch(`${BASE}/api/stories`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -314,20 +304,20 @@ export function importStoryPackage(
 
       xhr.upload.onprogress = (event) => {
         if (!event.lengthComputable) {
-          onProgress?.({ phase: 'uploading', message: '正在上传作品包...' });
+          onProgress?.({ phase: 'uploading', message: '...' });
           return;
         }
         const percent = Math.max(1, Math.min(99, Math.round((event.loaded / event.total) * 100)));
-        onProgress?.({ phase: 'uploading', percent, message: `正在上传作品包 ${percent}%` });
+        onProgress?.({ phase: 'uploading', percent, message: `姝ｅ湪涓婁紶浣滃搧鍖?${percent}%` });
       };
 
       xhr.onload = async () => {
         if (xhr.status >= 200 && xhr.status < 300) {
-          onProgress?.({ phase: 'processing', percent: 100, message: '导入完成，正在刷新作品列表...' });
+          onProgress?.({ phase: 'processing', percent: 100, message: '...' });
           try {
             resolve(JSON.parse(xhr.responseText));
           } catch {
-            reject(new Error('导入完成但响应格式无效'));
+            reject(new Error('Import failed'));
           }
           return;
         }
@@ -339,20 +329,20 @@ export function importStoryPackage(
           }
           clearAuth();
           window.dispatchEvent(new CustomEvent('artverse:auth-expired'));
-          reject(new Error('登录已过期，请重新登录'));
+          reject(new Error('Login expired'));
           return;
         }
         reject(new Error(parseApiError(xhr.responseText)));
       };
 
-      xhr.onerror = () => reject(new Error('网络连接中断。请检查服务器端口、防火墙或上传包大小限制。'));
-      xhr.onabort = () => reject(new Error('导入已取消'));
-      xhr.ontimeout = () => reject(new Error('导入超时。作品包较大时请稍后重试。'));
+      xhr.onerror = () => reject(new Error('Network error'));
+      xhr.onabort = () => reject(new Error('Cancelled'));
+      xhr.ontimeout = () => reject(new Error('Timeout'));
 
-      onProgress?.({ phase: 'uploading', percent: 0, message: '准备上传作品包...' });
+      onProgress?.({ phase: 'uploading', percent: 0, message: '...' });
       xhr.send(formData);
       xhr.upload.onload = () => {
-        onProgress?.({ phase: 'processing', percent: 100, message: '上传完成，服务器正在解压并写入作品...' });
+        onProgress?.({ phase: 'processing', percent: 100, message: '...' });
       };
     };
     doSend();
@@ -389,7 +379,6 @@ export function coverImageUrl(coverPath: string | null | undefined): string | nu
   return `${BASE}/static/manga/${mangaStaticPath(coverPath)}`;
 }
 
-// ─── Chapter ────────────────────────────────────────────────
 
 export async function getChapter(chapterId: number): Promise<Chapter> {
   const res = await authFetch(`${BASE}/api/chapters/${chapterId}`);
@@ -414,7 +403,6 @@ export async function deleteChapter(chapterId: number): Promise<void> {
   if (!res.ok) throw new Error(await res.text());
 }
 
-// ─── Chat (SSE) ─────────────────────────────────────────────
 
 export function chatStream(
   chapterId: number,
@@ -489,7 +477,6 @@ export function chatStream(
   return controller;
 }
 
-// ─── Generate Novel ─────────────────────────────────────────
 
 export async function generateNovel(chapterId: number): Promise<Chapter> {
   const res = await authFetch(`${BASE}/api/chapters/${chapterId}/generate-novel`, { method: 'POST' });
@@ -507,7 +494,6 @@ export async function importNovel(chapterId: number, content: string): Promise<C
   return res.json();
 }
 
-// ─── Scenes ─────────────────────────────────────────────────
 
 export async function generateScenes(chapterId: number, signal?: AbortSignal): Promise<string[]> {
   const res = await authFetch(`${BASE}/api/chapters/${chapterId}/generate-scenes`, { method: 'POST', signal });
@@ -532,7 +518,6 @@ export async function updateScenes(chapterId: number, scenes: string[]): Promise
   if (!res.ok) throw new Error(await res.text());
 }
 
-// ─── Character Profiles ─────────────────────────────────────
 
 // Story-level (global)
 export async function getStoryCharacters(storyId: number): Promise<string> {
@@ -574,7 +559,73 @@ export async function resetChapterCharacters(chapterId: number): Promise<void> {
   if (!res.ok) throw new Error(await res.text());
 }
 
-// ─── Reference Images (垫图，支持多图) ────────────────────────
+
+// ===== Individual Character Profiles =====
+export interface CharacterProfile {
+  id: number;
+  name: string;
+  description: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export async function listCharacterProfiles(storyId: number): Promise<CharacterProfile[]> {
+  const res = await authFetch(`${BASE}/api/stories/${storyId}/characters`);
+  if (!res.ok) throw new Error(parseApiError(await res.text()));
+  return res.json();
+}
+
+export async function createCharacterProfile(storyId: number, name: string, description: string): Promise<CharacterProfile> {
+  const res = await authFetch(`${BASE}/api/stories/${storyId}/characters`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ name, description }),
+  });
+  if (!res.ok) throw new Error(parseApiError(await res.text()));
+  return res.json();
+}
+
+export async function updateCharacterProfile(storyId: number, characterId: number, name: string, description: string): Promise<CharacterProfile> {
+  const res = await authFetch(`${BASE}/api/stories/${storyId}/characters/${characterId}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ name, description }),
+  });
+  if (!res.ok) throw new Error(parseApiError(await res.text()));
+  return res.json();
+}
+
+export async function deleteCharacterProfile(storyId: number, characterId: number): Promise<void> {
+  const res = await authFetch(`${BASE}/api/stories/${storyId}/characters/${characterId}`, { method: 'DELETE' });
+  if (!res.ok) throw new Error(parseApiError(await res.text()));
+}
+
+export interface CharRefImage {
+  filename: string;
+  object_key: string;
+  size_kb: number;
+}
+
+export async function listCharRefImages(storyId: number, characterId: number): Promise<CharRefImage[]> {
+  const res = await authFetch(`${BASE}/api/stories/${storyId}/characters/${characterId}/ref-images`);
+  if (!res.ok) throw new Error(parseApiError(await res.text()));
+  return res.json();
+}
+
+export async function addCharRefImage(storyId: number, characterId: number, base64: string): Promise<CharRefImage> {
+  const res = await authFetch(`${BASE}/api/stories/${storyId}/characters/${characterId}/ref-images`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ image: base64 }),
+  });
+  if (!res.ok) throw new Error(parseApiError(await res.text()));
+  return res.json();
+}
+
+export async function deleteCharRefImage(storyId: number, characterId: number, filename: string): Promise<void> {
+  const res = await authFetch(`${BASE}/api/stories/${storyId}/characters/${characterId}/ref-images/${encodeURIComponent(filename)}`, { method: 'DELETE' });
+  if (!res.ok) throw new Error(parseApiError(await res.text()));
+}
 
 export type RefSource = 'chapter' | 'asset_group' | 'story' | 'none';
 
@@ -596,14 +647,17 @@ export function refImageUrl(imagePath: string): string {
   return `${BASE}/static/manga/${mangaStaticPath(imagePath)}`;
 }
 
+export interface AssetGroupCharacter {
+  id: number;
+  name: string;
+  description: string;
+}
+
 export interface AssetGroup {
   id: number | null;
   name: string;
-  is_default: boolean;
-  character_profiles: string;
-  has_character_profiles: boolean;
-  ref_images: RefImage[];
-  ref_count: number;
+  description: string;
+  characters: AssetGroupCharacter[];
 }
 
 export interface AssetGroupsPayload {
@@ -612,41 +666,41 @@ export interface AssetGroupsPayload {
   selected_group_id?: number | null;
 }
 
-export async function getStoryAssetGroups(storyId: number): Promise<AssetGroupsPayload> {
+export interface AssetGroupSinglePayload {
+  group: AssetGroup;
+  groups: AssetGroup[];
+}
+
+export async function getStoryAssetGroups(storyId: number): Promise<AssetGroup[]> {
   const res = await authFetch(`${BASE}/api/stories/${storyId}/asset-groups`);
   if (!res.ok) throw new Error(await res.text());
   return res.json();
 }
 
-export async function createStoryAssetGroup(storyId: number, name: string): Promise<{ group: AssetGroup; groups: AssetGroup[] }> {
+export async function createStoryAssetGroup(storyId: number, name: string, description?: string, characterIds?: number[]): Promise<AssetGroup> {
   const res = await authFetch(`${BASE}/api/stories/${storyId}/asset-groups`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ name }),
+    body: JSON.stringify({ name, description: description || '', characterIds: characterIds || [] }),
   });
   if (!res.ok) throw new Error(await res.text());
-  const group = await res.json();
-  const groups = (await getStoryAssetGroups(storyId)).groups;
-  return { group, groups };
+  return res.json();
 }
 
-export async function updateStoryAssetGroup(storyId: number, groupId: number, data: { name?: string; characters?: string }): Promise<{ group: AssetGroup; groups: AssetGroup[] }> {
+export async function updateStoryAssetGroup(groupId: number, data: { name?: string; description?: string; characterIds?: number[] }): Promise<AssetGroup> {
   const res = await authFetch(`${BASE}/api/asset-groups/${groupId}`, {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(data),
   });
   if (!res.ok) throw new Error(await res.text());
-  const group = await res.json();
-  const groups = (await getStoryAssetGroups(storyId)).groups;
-  return { group, groups };
+  return res.json();
 }
 
-export async function deleteStoryAssetGroup(storyId: number, groupId: number): Promise<{ groups: AssetGroup[] }> {
+export async function deleteStoryAssetGroup(storyId: number, groupId: number): Promise<AssetGroup[]> {
   const res = await authFetch(`${BASE}/api/asset-groups/${groupId}`, { method: 'DELETE' });
   if (!res.ok) throw new Error(await res.text());
-  const groups = (await getStoryAssetGroups(storyId)).groups;
-  return { groups };
+  return getStoryAssetGroups(storyId);
 }
 
 export async function addStoryAssetGroupRefImage(storyId: number, groupId: number, base64: string): Promise<RefImagesPayload> {
@@ -736,17 +790,16 @@ export async function deleteChapterRefImage(chapterId: number, filename: string)
   return res.json();
 }
 
-// ─── Manga Style (story-level) ───────────────────────────────
 
 export type MangaStyle = 'japanese' | 'korean' | 'american' | 'european' | 'chinese_ink' | 'semi_realistic';
 
 export const MANGA_STYLE_LABELS: Record<MangaStyle, string> = {
-  japanese: '日式漫画',
-  korean: '韩式条漫',
-  american: '美式漫画',
-  european: '欧式清线',
-  chinese_ink: '水墨国风',
-  semi_realistic: '半厚涂写实',
+  japanese: '鏃ュ紡婕敾',
+  korean: '闊╁紡鏉℃极',
+  american: '缇庡紡婕敾',
+  european: '娆у紡娓呯嚎',
+  chinese_ink: '姘村ⅷ鍥介',
+  semi_realistic: 'Semi-realistic',
 };
 
 export async function getMangaStyle(storyId: number): Promise<MangaStyle> {
@@ -765,18 +818,16 @@ export async function setMangaStyle(storyId: number, style: MangaStyle): Promise
   if (!res.ok) throw new Error(await res.text());
 }
 
-// ─── Color Mode (chapter-level) ────────────────────────────────
 
 export type ColorMode = 'bw' | 'grayscale' | 'color' | 'duotone';
 
 export const COLOR_MODE_LABELS: Record<ColorMode, string> = {
-  bw: '黑白',
-  grayscale: '灰度',
-  color: '彩色',
-  duotone: '双色调',
+  bw: '榛戠櫧',
+  grayscale: '鐏板害',
+  color: '褰╄壊',
+  duotone: 'Duotone',
 };
 
-// ─── Color Mode (chapter-level) ────────────────────────────────
 
 export async function getColorMode(chapterId: number): Promise<ColorMode> {
   const res = await authFetch(`${BASE}/api/chapters/${chapterId}/color-mode`);
@@ -794,7 +845,6 @@ export async function setColorMode(chapterId: number, mode: ColorMode): Promise<
   if (!res.ok) throw new Error(await res.text());
 }
 
-// ─── Image Count ─────────────────────────────────────────────
 
 export const ALLOWED_IMAGE_COUNTS = [4, 6, 8, 10, 12, 15, 20] as const;
 
@@ -828,7 +878,6 @@ export async function regenerateImage(
   return res.json();
 }
 
-// ─── Generate Manga (SSE with progress) ─────────────────────
 
 export interface MangaProgress {
   type: 'status' | 'scenes' | 'progress' | 'image' | 'image_error' | 'done' | 'error';
@@ -848,12 +897,12 @@ export function generateMangaStream(
     if (controller.signal.aborted) return;
     reconnectAttempts += 1;
     if (reconnectAttempts > maxReconnectAttempts) {
-      onEvent({ type: 'error', data: { error: reason || '生成连接已断开，请稍后重试' } });
+      onEvent({ type: 'error', data: { error: reason || '鐢熸垚杩炴帴宸叉柇寮€锛岃绋嶅悗閲嶈瘯' } });
       return;
     }
     onEvent({
       type: 'status',
-      data: { message: `连接中断，正在重连...（${reconnectAttempts}/${maxReconnectAttempts}）` },
+      data: { message: `Reconnecting... (${reconnectAttempts}/${maxReconnectAttempts})` },
     });
     reconnectTimer = window.setTimeout(connect, Math.min(5000, 1000 + reconnectAttempts * 500));
   };
@@ -910,12 +959,12 @@ export function generateMangaStream(
       }
       if (buffer.trim()) handleLine(buffer);
       if (!receivedTerminalEvent && !controller.signal.aborted) {
-        scheduleReconnect('生成连接已断开，请稍后重试');
+        scheduleReconnect('鐢熸垚杩炴帴宸叉柇寮€锛岃绋嶅悗閲嶈瘯');
       }
     })
     .catch((err) => {
       if (err.name !== 'AbortError') {
-        scheduleReconnect(err.message || '生成连接已断开，请稍后重试');
+        scheduleReconnect(err.message || '鐢熸垚杩炴帴宸叉柇寮€锛岃绋嶅悗閲嶈瘯');
       }
     });
   };
@@ -930,4 +979,77 @@ export function mangaImageUrl(imagePath: string, cacheBust?: number): string {
   // Served at /static/manga/chapter_1/panel_01_abc12345.png
   const url = `${BASE}/static/manga/${mangaStaticPath(imagePath)}`;
   return cacheBust ? `${url}?t=${cacheBust}` : url;
+}
+
+// ---- Publish ----
+export async function publishStory(storyId: number, isPublished: boolean, chapterIds?: number[]): Promise<Story> {
+  const res = await authFetch(BASE+'/api/stories/'+storyId+'/publish', {
+    method: 'PUT', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ is_published: isPublished, chapter_ids: chapterIds }),
+  });
+  if (!res.ok) throw new Error(parseApiError(await res.text()));
+  return res.json();
+}
+
+export async function updateChapterOrder(storyId: number, orders: { chapter_id: number; display_order: number; display_title?: string }[]): Promise<void> {
+  const res = await authFetch(BASE+'/api/stories/'+storyId+'/chapter-order', {
+    method: 'PUT', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ orders }),
+  });
+  if (!res.ok) throw new Error(parseApiError(await res.text()));
+}
+
+// ---- Square ----
+export interface SquareStory { id: number; title: string; description: string; cover_url: string; manga_style: string; published_at: string; }
+export interface SquareStoryDetail { id: number; title: string; description: string; cover_url: string; manga_style: string; published_at: string; chapters: { id: number; chapter_number: number; display_title: string; images: { id: number; image_number: number; image_url: string }[] }[]; }
+
+export async function listSquareStories(page = 0, size = 12, search?: string): Promise<{ content: SquareStory[]; total_pages: number; total_elements: number }> {
+  const params = new URLSearchParams({ page: String(page), size: String(size) });
+  if (search) params.set('search', search);
+  const res = await fetch(BASE+'/api/square/stories?'+params);
+  if (!res.ok) throw new Error(parseApiError(await res.text()));
+  return res.json();
+}
+
+export async function getSquareStoryDetail(id: number): Promise<SquareStoryDetail> {
+  const res = await fetch(BASE+'/api/square/stories/'+id);
+  if (!res.ok) throw new Error(parseApiError(await res.text()));
+  return res.json();
+}
+
+// ---- My Works ----
+export interface MyWorkChapter { id: number; chapter_number: number; is_published: boolean; display_order: number; display_title: string; status: string; }
+export interface MyWork { id: number; title: string; description: string; cover_image: string; is_published: boolean; published_at: string | null; created_at: string | null; chapters: MyWorkChapter[]; }
+
+export async function listMyWorks(): Promise<MyWork[]> {
+  const res = await authFetch(BASE+'/api/works');
+  if (!res.ok) throw new Error(parseApiError(await res.text()));
+  return res.json();
+}
+
+// ---- Image Gen ----
+export interface ImageGenRecord { id: number; prompt: string; image_url: string; model: string; size: string; created_at: string; }
+
+export async function generateImage(prompt: string, referenceImages?: string[]): Promise<ImageGenRecord> {
+  const res = await authFetch(BASE+'/api/image-gen/generate', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ prompt, reference_images: referenceImages || [] }),
+  });
+  if (!res.ok) throw new Error(parseApiError(await res.text()));
+  return res.json();
+}
+
+export async function listImageGenHistory(page = 0, size = 12): Promise<{ content: ImageGenRecord[]; total_pages: number; total_elements: number }> {
+  const res = await authFetch(BASE+'/api/image-gen/history?page='+page+'&size='+size);
+  if (!res.ok) throw new Error(parseApiError(await res.text()));
+  return res.json();
+}
+
+export async function deleteImageGenRecord(id: number): Promise<void> {
+  const res = await authFetch(BASE+'/api/image-gen/'+id, { method: 'DELETE' });
+  if (!res.ok) throw new Error(parseApiError(await res.text()));
+}
+
+export function imageGenUrl(objectKey: string): string {
+  return BASE+'/api/static-media/image-gen/'+encodeURIComponent(objectKey);
 }
