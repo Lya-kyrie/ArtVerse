@@ -1057,5 +1057,5 @@ export async function deleteImageGenRecord(id: number): Promise<void> {
 }
 
 export function imageGenUrl(objectKey: string): string {
-  return BASE+'/api/static-media/image-gen/'+encodeURIComponent(objectKey);
+  return `${BASE}/static/manga/${encodeStaticPath(objectKey)}`;
 }

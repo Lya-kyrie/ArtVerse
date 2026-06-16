@@ -17,9 +17,11 @@ D:\develop\Vibe Coding\ArtVerse\ArtVerse\src\main\java\com\artverse\api\ChatCont
 D:\develop\Vibe Coding\ArtVerse\ArtVerse\src\main\java\com\artverse\api\dto\AuthDtos.java
 D:\develop\Vibe Coding\ArtVerse\ArtVerse\src\main\java\com\artverse\api\dto\ChapterDto.java
 D:\develop\Vibe Coding\ArtVerse\ArtVerse\src\main\java\com\artverse\api\ExportImportController.java
+D:\develop\Vibe Coding\ArtVerse\ArtVerse\src\main\java\com\artverse\api\ImageGenController.java
 D:\develop\Vibe Coding\ArtVerse\ArtVerse\src\main\java\com\artverse\api\MangaGenerationController.java
 D:\develop\Vibe Coding\ArtVerse\ArtVerse\src\main\java\com\artverse\api\NovelController.java
 D:\develop\Vibe Coding\ArtVerse\ArtVerse\src\main\java\com\artverse\api\ReferenceImageController.java
+D:\develop\Vibe Coding\ArtVerse\ArtVerse\src\main\java\com\artverse\api\SquareController.java
 D:\develop\Vibe Coding\ArtVerse\ArtVerse\src\main\java\com\artverse\api\StaticMediaController.java
 D:\develop\Vibe Coding\ArtVerse\ArtVerse\src\main\java\com\artverse\api\StoryboardController.java
 D:\develop\Vibe Coding\ArtVerse\ArtVerse\src\main\java\com\artverse\api\StoryController.java
@@ -32,10 +34,12 @@ D:\develop\Vibe Coding\ArtVerse\ArtVerse\src\main\java\com\artverse\application\
 D:\develop\Vibe Coding\ArtVerse\ArtVerse\src\main\java\com\artverse\application\CharacterProfileService.java
 D:\develop\Vibe Coding\ArtVerse\ArtVerse\src\main\java\com\artverse\application\ChatService.java
 D:\develop\Vibe Coding\ArtVerse\ArtVerse\src\main\java\com\artverse\application\ExportImportService.java
+D:\develop\Vibe Coding\ArtVerse\ArtVerse\src\main\java\com\artverse\application\ImageGenService.java
 D:\develop\Vibe Coding\ArtVerse\ArtVerse\src\main\java\com\artverse\application\MangaGenerationJob.java
 D:\develop\Vibe Coding\ArtVerse\ArtVerse\src\main\java\com\artverse\application\MangaGenerationService.java
 D:\develop\Vibe Coding\ArtVerse\ArtVerse\src\main\java\com\artverse\application\NovelService.java
 D:\develop\Vibe Coding\ArtVerse\ArtVerse\src\main\java\com\artverse\application\SceneService.java
+D:\develop\Vibe Coding\ArtVerse\ArtVerse\src\main\java\com\artverse\application\SquareService.java
 D:\develop\Vibe Coding\ArtVerse\ArtVerse\src\main\java\com\artverse\application\StoryService.java
 D:\develop\Vibe Coding\ArtVerse\ArtVerse\src\main\java\com\artverse\application\WorksService.java
 D:\develop\Vibe Coding\ArtVerse\ArtVerse\src\main\java\com\artverse\ArtVerseApplication.java
@@ -57,6 +61,7 @@ D:\develop\Vibe Coding\ArtVerse\ArtVerse\src\main\java\com\artverse\domain\Chara
 D:\develop\Vibe Coding\ArtVerse\ArtVerse\src\main\java\com\artverse\domain\ChatMessage.java
 D:\develop\Vibe Coding\ArtVerse\ArtVerse\src\main\java\com\artverse\domain\ColorMode.java
 D:\develop\Vibe Coding\ArtVerse\ArtVerse\src\main\java\com\artverse\domain\ContentSource.java
+D:\develop\Vibe Coding\ArtVerse\ArtVerse\src\main\java\com\artverse\domain\ImageGenRecord.java
 D:\develop\Vibe Coding\ArtVerse\ArtVerse\src\main\java\com\artverse\domain\MangaImage.java
 D:\develop\Vibe Coding\ArtVerse\ArtVerse\src\main\java\com\artverse\domain\MangaStyle.java
 D:\develop\Vibe Coding\ArtVerse\ArtVerse\src\main\java\com\artverse\domain\MessageRole.java
@@ -69,6 +74,7 @@ D:\develop\Vibe Coding\ArtVerse\ArtVerse\src\main\java\com\artverse\media\MediaS
 D:\develop\Vibe Coding\ArtVerse\ArtVerse\src\main\java\com\artverse\persistence\ChapterRepository.java
 D:\develop\Vibe Coding\ArtVerse\ArtVerse\src\main\java\com\artverse\persistence\CharacterProfileRepository.java
 D:\develop\Vibe Coding\ArtVerse\ArtVerse\src\main\java\com\artverse\persistence\ChatMessageRepository.java
+D:\develop\Vibe Coding\ArtVerse\ArtVerse\src\main\java\com\artverse\persistence\ImageGenRecordRepository.java
 D:\develop\Vibe Coding\ArtVerse\ArtVerse\src\main\java\com\artverse\persistence\MangaImageRepository.java
 D:\develop\Vibe Coding\ArtVerse\ArtVerse\src\main\java\com\artverse\persistence\StoryAssetGroupRepository.java
 D:\develop\Vibe Coding\ArtVerse\ArtVerse\src\main\java\com\artverse\persistence\StoryRepository.java

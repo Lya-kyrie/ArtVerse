@@ -20,7 +20,6 @@ import reactor.core.scheduler.Schedulers;
 import javax.imageio.ImageIO;
 import java.awt.image.BufferedImage;
 import java.io.ByteArrayInputStream;
-import java.io.ByteArrayOutputStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
@@ -38,27 +37,20 @@ public class WebClientImage2Client implements Image2Client {
     private final Dotenv dotenv;
 
     private static final Duration READ_TIMEOUT = Duration.ofSeconds(600);
+    private static final int MAX_IN_MEMORY_SIZE = 128 * 1024 * 1024;
 
     @Override
     public Mono<GeneratedImage> generate(ImageGenerationRequest request, String apiKey) {
         String key = resolveApiKey(apiKey);
         boolean hasReferences = request.referenceImages() != null && !request.referenceImages().isEmpty();
 
-        return (hasReferences ? generateWithReferences(request, key) : generateWithoutReferences(request, key))
-                .retry(2);
+        return hasReferences ? generateWithReferences(request, key) : generateWithoutReferences(request, key);
     }
 
     private Mono<GeneratedImage> generateWithoutReferences(ImageGenerationRequest request, String apiKey) {
-        WebClient client = WebClient.builder()
-                .baseUrl(properties.getImage().getBaseUrl())
-                .exchangeStrategies(ExchangeStrategies.builder()
-                        .codecs(c -> c.defaultCodecs().maxInMemorySize(16 * 1024 * 1024))
-                        .build())
-                .build();
-
         String body = buildGenerationsRequest(request);
 
-        return client.post()
+        return createClient().post()
                 .uri("/images/generations")
                 .header("Authorization", "Bearer " + apiKey)
                 .contentType(MediaType.APPLICATION_JSON)
@@ -70,13 +62,6 @@ public class WebClientImage2Client implements Image2Client {
     }
 
     private Mono<GeneratedImage> generateWithReferences(ImageGenerationRequest request, String apiKey) {
-        WebClient client = WebClient.builder()
-                .baseUrl(properties.getImage().getBaseUrl())
-                .exchangeStrategies(ExchangeStrategies.builder()
-                        .codecs(c -> c.defaultCodecs().maxInMemorySize(16 * 1024 * 1024))
-                        .build())
-                .build();
-
         MultipartBodyBuilder builder = new MultipartBodyBuilder();
         builder.part("prompt", request.prompt());
         builder.part("model", properties.getImage().getModel());
@@ -92,7 +77,7 @@ public class WebClientImage2Client implements Image2Client {
             }
         }
 
-        return client.post()
+        return createClient().post()
                 .uri("/images/edits")
                 .header("Authorization", "Bearer " + apiKey)
                 .contentType(MediaType.MULTIPART_FORM_DATA)
@@ -107,24 +92,29 @@ public class WebClientImage2Client implements Image2Client {
         return Mono.fromCallable(() -> {
             try {
                 JsonNode node = objectMapper.readTree(response);
+                if (node.has("error")) {
+                    throw new BusinessException(502, "Image2 returned error: " + node.get("error").toString());
+                }
                 JsonNode data = node.path("data").path(0);
+                if (data.isMissingNode()) {
+                    throw new BusinessException(502, "Image2 returned no data item");
+                }
 
                 byte[] imageBytes;
                 if (data.has("b64_json")) {
                     imageBytes = Base64.getDecoder().decode(data.get("b64_json").asText());
                 } else if (data.has("url")) {
-                    WebClient client = WebClient.builder()
-                            .exchangeStrategies(ExchangeStrategies.builder()
-                                    .codecs(c -> c.defaultCodecs().maxInMemorySize(16 * 1024 * 1024))
-                                    .build())
-                            .build();
-                    imageBytes = client.get().uri(data.get("url").asText())
+                    imageBytes = createClient().get().uri(data.get("url").asText())
                             .retrieve()
                             .bodyToMono(byte[].class)
                             .timeout(READ_TIMEOUT)
                             .block();
                 } else {
                     throw new BusinessException(502, "Image2 returned no image data");
+                }
+
+                if (imageBytes == null || imageBytes.length == 0) {
+                    throw new BusinessException(502, "Image2 returned empty image bytes");
                 }
 
                 BufferedImage image = ImageIO.read(new ByteArrayInputStream(imageBytes));
@@ -146,6 +136,15 @@ public class WebClientImage2Client implements Image2Client {
                 throw new BusinessException(502, "Failed to process Image2 response: " + e.getMessage());
             }
         }).subscribeOn(Schedulers.boundedElastic());
+    }
+
+    private WebClient createClient() {
+        return WebClient.builder()
+                .baseUrl(properties.getImage().getBaseUrl())
+                .exchangeStrategies(ExchangeStrategies.builder()
+                        .codecs(c -> c.defaultCodecs().maxInMemorySize(MAX_IN_MEMORY_SIZE))
+                        .build())
+                .build();
     }
 
     private String buildGenerationsRequest(ImageGenerationRequest request) {
