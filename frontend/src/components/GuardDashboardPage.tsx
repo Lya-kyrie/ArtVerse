@@ -1,0 +1,268 @@
+import { useEffect, useMemo, useState } from 'react';
+import { Activity, AlertTriangle, Gauge, RefreshCw, ShieldCheck, TimerReset, Zap } from 'lucide-react';
+import { getGuardEvents, getGuardStats, type GuardActionStats, type GuardEvent, type GuardStatsPayload } from '../api';
+
+const ACTION_LABELS: Record<string, string> = {
+  'image-gen': 'HTTP Image',
+  'generate-scenes': 'Scenes',
+  'generate-manga': 'Manga SSE',
+  'regenerate-image': 'Regenerate',
+};
+
+function percent(value: number): string {
+  return `${(value * 100).toFixed(1)}%`;
+}
+
+function number(value: number): string {
+  return new Intl.NumberFormat().format(value || 0);
+}
+
+function StatCard({
+  icon,
+  label,
+  value,
+  accent,
+}: {
+  icon: React.ReactNode;
+  label: string;
+  value: string;
+  accent: string;
+}) {
+  return (
+    <div className="rounded-lg border border-white/10 bg-gray-900/70 px-4 py-3">
+      <div className="flex items-center justify-between gap-3">
+        <span className="text-xs font-medium uppercase tracking-wide text-gray-500">{label}</span>
+        <span className={accent}>{icon}</span>
+      </div>
+      <div className="mt-3 text-2xl font-semibold text-gray-100">{value}</div>
+    </div>
+  );
+}
+
+function RateBar({ value, tone }: { value: number; tone: string }) {
+  return (
+    <div className="flex min-w-0 items-center gap-2">
+      <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-gray-800">
+        <div className={`h-full rounded-full ${tone}`} style={{ width: `${Math.min(100, Math.max(0, value * 100))}%` }} />
+      </div>
+      <span className="w-12 text-right text-xs tabular-nums text-gray-400">{percent(value)}</span>
+    </div>
+  );
+}
+
+function MiniMetric({ label, value, tone = 'text-gray-200' }: { label: string; value: string; tone?: string }) {
+  return (
+    <div className="rounded-md bg-gray-950/60 px-2 py-1.5">
+      <div className="text-[10px] uppercase tracking-wide text-gray-600">{label}</div>
+      <div className={`mt-0.5 text-sm font-medium tabular-nums ${tone}`}>{value}</div>
+    </div>
+  );
+}
+
+function decisionTone(decision: string): string {
+  if (decision === 'leader') return 'border-cyan-500/40 bg-cyan-500/10 text-cyan-200';
+  if (decision === 'follower') return 'border-amber-500/40 bg-amber-500/10 text-amber-200';
+  if (decision === 'success_hit' || decision === 'succeeded') return 'border-emerald-500/40 bg-emerald-500/10 text-emerald-200';
+  if (decision.includes('rejected')) return 'border-rose-500/40 bg-rose-500/10 text-rose-200';
+  if (decision.includes('failed')) return 'border-orange-500/40 bg-orange-500/10 text-orange-200';
+  return 'border-gray-600 bg-gray-800 text-gray-300';
+}
+
+function formatTime(value: string): string {
+  if (!value) return '-';
+  return new Date(value).toLocaleTimeString();
+}
+
+function formatSummary(summary?: Record<string, unknown>): string {
+  if (!summary) return '';
+  return Object.entries(summary)
+    .map(([key, value]) => {
+      if (value && typeof value === 'object') return `${key}=${JSON.stringify(value)}`;
+      return `${key}=${String(value)}`;
+    })
+    .join(' ');
+}
+
+function totals(actions: GuardActionStats[]) {
+  const sum = actions.reduce(
+    (acc, item) => {
+      acc.total += item.total;
+      acc.leader += item.leader;
+      acc.follower += item.follower;
+      acc.successHit += item.success_hit;
+      acc.failedHit += item.failed_hit;
+      acc.rejected += item.follower_rejected + item.processing_rejected;
+      acc.failed += item.failed;
+      return acc;
+    },
+    { total: 0, leader: 0, follower: 0, successHit: 0, failedHit: 0, rejected: 0, failed: 0 },
+  );
+  return {
+    ...sum,
+    hitRate: sum.total ? sum.successHit / sum.total : 0,
+    reuseRate: sum.total ? (sum.successHit + sum.failedHit) / sum.total : 0,
+  };
+}
+
+export default function GuardDashboardPage() {
+  const [data, setData] = useState<GuardStatsPayload | null>(null);
+  const [events, setEvents] = useState<GuardEvent[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const [error, setError] = useState('');
+
+  const load = async (quiet = false) => {
+    if (quiet) setRefreshing(true);
+    else setLoading(true);
+    setError('');
+    try {
+      const [statsPayload, eventsPayload] = await Promise.all([
+        getGuardStats(),
+        getGuardEvents(100),
+      ]);
+      setData(statsPayload);
+      setEvents(eventsPayload.events || []);
+    } catch (err: any) {
+      setError(err?.message || 'Failed to load guard stats');
+    } finally {
+      setLoading(false);
+      setRefreshing(false);
+    }
+  };
+
+  useEffect(() => {
+    load();
+    const timer = window.setInterval(() => load(true), 30000);
+    return () => window.clearInterval(timer);
+  }, []);
+
+  const summary = useMemo(() => totals(data?.actions || []), [data]);
+
+  return (
+    <div className="min-h-dvh bg-gray-950 text-gray-100">
+      <div className="mx-auto flex min-h-dvh w-full max-w-7xl flex-col px-5 py-5">
+        <header className="flex flex-wrap items-center justify-between gap-3 border-b border-white/10 pb-4">
+          <div>
+            <div className="flex items-center gap-2 text-sm font-medium text-cyan-300">
+              <ShieldCheck size={17} />
+              Guard Runtime
+            </div>
+            <h1 className="mt-2 text-2xl font-semibold text-white">Idempotency & Single-flight Dashboard</h1>
+          </div>
+          <button
+            onClick={() => load(true)}
+            disabled={refreshing}
+            className="inline-flex h-10 items-center gap-2 rounded-lg border border-white/10 bg-gray-900 px-3 text-sm font-medium text-gray-200 hover:border-cyan-500/60 hover:text-cyan-200 disabled:opacity-50"
+          >
+            <RefreshCw size={16} className={refreshing ? 'animate-spin' : ''} />
+            Refresh
+          </button>
+        </header>
+
+        {error && (
+          <div className="mt-4 flex items-center gap-2 rounded-lg border border-red-500/30 bg-red-950/40 px-4 py-3 text-sm text-red-200">
+            <AlertTriangle size={16} />
+            {error}
+          </div>
+        )}
+
+        <section className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
+          <StatCard icon={<Activity size={18} />} label="Total" value={number(summary.total)} accent="text-cyan-300" />
+          <StatCard icon={<Gauge size={18} />} label="Hit Rate" value={percent(summary.hitRate)} accent="text-emerald-300" />
+          <StatCard icon={<Zap size={18} />} label="Followers" value={number(summary.follower)} accent="text-amber-300" />
+          <StatCard icon={<TimerReset size={18} />} label="Rejected" value={number(summary.rejected)} accent="text-rose-300" />
+          <StatCard icon={<AlertTriangle size={18} />} label="Failed" value={number(summary.failed)} accent="text-orange-300" />
+        </section>
+
+        <main className="mt-5 grid flex-1 gap-4 overflow-hidden xl:grid-cols-[minmax(0,1fr)_360px]">
+          <section className="overflow-hidden rounded-lg border border-white/10 bg-gray-900/50">
+            <div className="flex items-center justify-between border-b border-white/10 px-4 py-3">
+              <div>
+                <h2 className="text-sm font-semibold text-gray-100">Action Metrics</h2>
+                <p className="mt-1 text-xs text-gray-500">
+                  Updated {data?.updated_at ? new Date(data.updated_at).toLocaleString() : '-'} · Auto refresh 30s
+                </p>
+              </div>
+            </div>
+
+            <div className="divide-y divide-white/10">
+              {(data?.actions || []).map((item) => (
+                <div key={item.action} className="grid gap-3 px-4 py-4 hover:bg-white/[0.03] lg:grid-cols-[170px_minmax(0,1fr)]">
+                  <div>
+                    <div className="font-medium text-gray-100">{ACTION_LABELS[item.action] || item.action}</div>
+                    <div className="mt-1 text-xs text-gray-500">{item.action}</div>
+                  </div>
+                  <div className="grid min-w-0 gap-3">
+                    <div className="grid grid-cols-3 gap-2 sm:grid-cols-4 xl:grid-cols-7">
+                      <MiniMetric label="Total" value={number(item.total)} />
+                      <MiniMetric label="Leader" value={number(item.leader)} />
+                      <MiniMetric label="Follower" value={number(item.follower)} tone="text-amber-200" />
+                      <MiniMetric label="Hit" value={number(item.success_hit)} tone="text-emerald-200" />
+                      <MiniMetric label="Fail Hit" value={number(item.failed_hit)} tone="text-lime-200" />
+                      <MiniMetric label="Rejected" value={number(item.follower_rejected + item.processing_rejected)} tone="text-rose-200" />
+                      <MiniMetric label="Failed" value={number(item.failed)} tone="text-orange-200" />
+                    </div>
+                    <div className="grid gap-2 md:grid-cols-3">
+                      <div>
+                        <div className="mb-1 text-[10px] uppercase tracking-wide text-gray-600">Reuse</div>
+                        <RateBar value={item.reuse_rate} tone="bg-emerald-400" />
+                      </div>
+                      <div>
+                        <div className="mb-1 text-[10px] uppercase tracking-wide text-gray-600">Single-flight</div>
+                        <RateBar value={item.single_flight_rate} tone="bg-amber-400" />
+                      </div>
+                      <div>
+                        <div className="mb-1 text-[10px] uppercase tracking-wide text-gray-600">Reject</div>
+                        <RateBar value={item.reject_rate} tone="bg-rose-400" />
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              ))}
+              {!loading && !data?.actions?.length && (
+                <div className="px-4 py-12 text-center text-sm text-gray-500">No guard metrics yet.</div>
+              )}
+              {loading && (
+                <div className="px-4 py-12 text-center text-sm text-gray-500">Loading guard metrics...</div>
+              )}
+            </div>
+          </section>
+
+          <aside className="min-h-[420px] overflow-hidden rounded-lg border border-white/10 bg-gray-900/50">
+            <div className="border-b border-white/10 px-4 py-3">
+              <h2 className="text-sm font-semibold text-gray-100">Recent Requests</h2>
+              <p className="mt-1 text-xs text-gray-500">Latest guard decisions and outcomes</p>
+            </div>
+            <div className="max-h-[calc(100dvh-260px)] overflow-y-auto p-3">
+              {events.map((event) => (
+                <div key={event.id} className="mb-3 rounded-lg border border-white/10 bg-gray-950/60 p-3">
+                  <div className="flex items-start justify-between gap-2">
+                    <div>
+                      <div className="text-sm font-medium text-gray-100">{ACTION_LABELS[event.action] || event.action}</div>
+                      <div className="mt-1 text-xs text-gray-500">{formatTime(event.time)} · {event.scope}</div>
+                    </div>
+                    <span className={`shrink-0 rounded-full border px-2 py-0.5 text-[11px] font-medium ${decisionTone(event.decision)}`}>
+                      {event.decision}
+                    </span>
+                  </div>
+                  <div className="mt-3 text-xs leading-relaxed text-gray-400">
+                    {formatSummary(event.summary)}
+                  </div>
+                  <div className="mt-3 flex flex-wrap items-center gap-2 text-[11px] text-gray-500">
+                    <span>result={event.result}</span>
+                    <span>key={event.key_hash}</span>
+                    {event.duration_ms != null && <span>{event.duration_ms}ms</span>}
+                  </div>
+                  {event.message && <div className="mt-2 text-xs text-gray-500">{event.message}</div>}
+                </div>
+              ))}
+              {!events.length && (
+                <div className="py-12 text-center text-sm text-gray-500">No request events yet.</div>
+              )}
+            </div>
+          </aside>
+        </main>
+      </div>
+    </div>
+  );
+}

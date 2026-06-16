@@ -53,12 +53,14 @@ public class GenerationRequestKeyBuilder {
     @Transactional(readOnly = true)
     public Map<String, Object> sceneGeneration(Long userId, Long chapterId) {
         Chapter chapter = chapterForIdempotency(chapterId);
-        Map<String, Object> canonical = chapterBase("generate-scenes", userId, chapter);
-        canonical.put("status", String.valueOf(chapter.getStatus()));
-        canonical.put("refImage", chapter.getRefImage() == null ? "" : chapter.getRefImage());
-        canonical.put("novelContent", idempotencyService.normalizeText(chapter.getNovelContent()));
-        canonical.put("messages", idempotencyService.normalizeText(chapter.novelContentOrJoinedMessages()));
-        canonical.put("scenes", chapter.getScenesText() == null ? "" : chapter.getScenesText());
+        Map<String, Object> canonical = new LinkedHashMap<>();
+        canonical.put("action", "generate-scenes");
+        canonical.put("userId", userId);
+        canonical.put("chapterId", chapter.getId());
+        canonical.put("storyId", chapter.getStory().getId());
+        canonical.put("imageCount", chapter.getImageCount());
+        canonical.put("workflowId", properties.getCoze().getWorkflowId());
+        canonical.put("material", idempotencyService.normalizeText(chapter.novelContentOrJoinedMessages()));
         return canonical;
     }
 

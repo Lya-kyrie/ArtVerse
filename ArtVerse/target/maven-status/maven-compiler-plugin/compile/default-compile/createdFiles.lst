@@ -12,6 +12,7 @@ com\artverse\api\dto\ChapterDto$MangaImageDto.class
 com\artverse\domain\CharacterProfile.class
 com\artverse\api\dto\AuthDtos$LoginRequest.class
 com\artverse\api\UserController.class
+com\artverse\application\GuardStatsService.class
 com\artverse\api\StaticMediaController.class
 com\artverse\application\NovelService.class
 com\artverse\api\CharacterController.class
@@ -20,6 +21,7 @@ com\artverse\domain\StorageProvider.class
 com\artverse\application\CharacterProfileService.class
 com\artverse\api\NovelController.class
 com\artverse\application\SceneService$1.class
+com\artverse\api\GuardStatsController.class
 com\artverse\application\SceneService.class
 com\artverse\config\ArtVerseProperties$SingleFlight.class
 com\artverse\application\IdempotencyService.class
@@ -56,6 +58,7 @@ com\artverse\domain\MangaStyle.class
 com\artverse\config\ArtVerseProperties$Upload.class
 com\artverse\config\AgentScopeConfig.class
 com\artverse\storage\MinioStorageService.class
+com\artverse\application\GuardEventService$1.class
 com\artverse\domain\Chapter.class
 com\artverse\agents\HarnessAgentGateway.class
 com\artverse\application\ApiKeyService$KeyInfo.class
@@ -93,6 +96,7 @@ com\artverse\application\IdempotencyService$2.class
 com\artverse\persistence\UserApiKeyRepository.class
 com\artverse\application\ApiKeyService.class
 com\artverse\config\ArtVerseProperties$RateLimit.class
+com\artverse\application\GuardEventService.class
 com\artverse\persistence\StoryRepository.class
 com\artverse\ai\CozeClient.class
 com\artverse\persistence\UserRepository.class

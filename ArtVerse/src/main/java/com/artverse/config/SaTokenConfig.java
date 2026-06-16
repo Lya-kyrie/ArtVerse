@@ -28,6 +28,7 @@ public class SaTokenConfig implements WebMvcConfigurer {
             // 公开端点不拦截
             String path = SaHolder.getRequest().getRequestPath();
             if (path.startsWith("/api/square/") || path.startsWith("/api/auth/")
+                    || path.startsWith("/api/internal/guard/")
                     || path.startsWith("/static/")
                     || path.equals("/actuator/health")) {
                 return;

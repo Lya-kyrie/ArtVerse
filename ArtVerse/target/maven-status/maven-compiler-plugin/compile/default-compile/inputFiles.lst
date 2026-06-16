@@ -17,6 +17,7 @@ D:\develop\Vibe Coding\ArtVerse\ArtVerse\src\main\java\com\artverse\api\ChatCont
 D:\develop\Vibe Coding\ArtVerse\ArtVerse\src\main\java\com\artverse\api\dto\AuthDtos.java
 D:\develop\Vibe Coding\ArtVerse\ArtVerse\src\main\java\com\artverse\api\dto\ChapterDto.java
 D:\develop\Vibe Coding\ArtVerse\ArtVerse\src\main\java\com\artverse\api\ExportImportController.java
+D:\develop\Vibe Coding\ArtVerse\ArtVerse\src\main\java\com\artverse\api\GuardStatsController.java
 D:\develop\Vibe Coding\ArtVerse\ArtVerse\src\main\java\com\artverse\api\ImageGenController.java
 D:\develop\Vibe Coding\ArtVerse\ArtVerse\src\main\java\com\artverse\api\MangaGenerationController.java
 D:\develop\Vibe Coding\ArtVerse\ArtVerse\src\main\java\com\artverse\api\NovelController.java
@@ -36,6 +37,8 @@ D:\develop\Vibe Coding\ArtVerse\ArtVerse\src\main\java\com\artverse\application\
 D:\develop\Vibe Coding\ArtVerse\ArtVerse\src\main\java\com\artverse\application\ExportImportService.java
 D:\develop\Vibe Coding\ArtVerse\ArtVerse\src\main\java\com\artverse\application\GenerationGuardService.java
 D:\develop\Vibe Coding\ArtVerse\ArtVerse\src\main\java\com\artverse\application\GenerationRequestKeyBuilder.java
+D:\develop\Vibe Coding\ArtVerse\ArtVerse\src\main\java\com\artverse\application\GuardEventService.java
+D:\develop\Vibe Coding\ArtVerse\ArtVerse\src\main\java\com\artverse\application\GuardStatsService.java
 D:\develop\Vibe Coding\ArtVerse\ArtVerse\src\main\java\com\artverse\application\IdempotencyService.java
 D:\develop\Vibe Coding\ArtVerse\ArtVerse\src\main\java\com\artverse\application\ImageGenService.java
 D:\develop\Vibe Coding\ArtVerse\ArtVerse\src\main\java\com\artverse\application\MangaGenerationJob.java
