@@ -25,6 +25,9 @@ public interface ChapterRepository extends JpaRepository<Chapter, Long> {
     @Query("SELECT DISTINCT c FROM Chapter c LEFT JOIN FETCH c.images LEFT JOIN FETCH c.messages WHERE c.id = :id")
     Optional<Chapter> findByIdWithDetails(@Param("id") Long id);
 
+    @Query("SELECT DISTINCT c FROM Chapter c JOIN FETCH c.story LEFT JOIN FETCH c.assetGroup LEFT JOIN FETCH c.messages WHERE c.id = :id")
+    Optional<Chapter> findByIdForIdempotency(@Param("id") Long id);
+
     @Query("SELECT DISTINCT c FROM Chapter c LEFT JOIN FETCH c.images LEFT JOIN FETCH c.messages WHERE c.story.id = :storyId ORDER BY c.chapterNumber ASC")
     List<Chapter> findByStoryIdWithDetails(@Param("storyId") Long storyId);
 }

@@ -1,3 +1,4 @@
+com\artverse\config\ArtVerseProperties$Idempotency.class
 com\artverse\common\GlobalExceptionHandler.class
 com\artverse\config\ArtVerseProperties.class
 com\artverse\application\MangaGenerationJob.class
@@ -20,6 +21,7 @@ com\artverse\api\NovelController.class
 com\artverse\application\SceneService$1.class
 com\artverse\application\SceneService.class
 com\artverse\config\ArtVerseProperties$SingleFlight.class
+com\artverse\application\IdempotencyService.class
 com\artverse\ai\WebClientImage2Client.class
 com\artverse\application\StoryService.class
 com\artverse\api\dto\AuthDtos$RegisterRequest.class
@@ -84,6 +86,7 @@ com\artverse\api\AssetGroupController.class
 com\artverse\application\SceneService$2.class
 com\artverse\domain\MangaImage.class
 com\artverse\api\ExportImportController.class
+com\artverse\application\IdempotencyService$2.class
 com\artverse\persistence\UserApiKeyRepository.class
 com\artverse\application\ApiKeyService.class
 com\artverse\config\ArtVerseProperties$RateLimit.class
@@ -94,6 +97,7 @@ com\artverse\config\BCryptPasswordEncoder.class
 com\artverse\application\ExportImportService.class
 com\artverse\config\ArtVerseProperties$Storage.class
 com\artverse\config\ArtVerseProperties$Character.class
+com\artverse\application\IdempotencyService$1.class
 com\artverse\agents\AgentTaskType.class
 com\artverse\ai\Image2Client.class
 com\artverse\api\ChatController.class

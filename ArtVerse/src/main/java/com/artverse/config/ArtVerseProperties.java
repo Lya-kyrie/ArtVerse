@@ -24,6 +24,7 @@ public class ArtVerseProperties {
     private Coze coze = new Coze();
     private RateLimit rateLimit = new RateLimit();
     private SingleFlight singleFlight = new SingleFlight();
+    private Idempotency idempotency = new Idempotency();
 
     @Data
     public static class Storage {
@@ -102,5 +103,15 @@ public class ArtVerseProperties {
     public static class SingleFlight {
         private boolean enabled = true;
         private int defaultTtlSeconds = 30;
+    }
+
+    @Data
+    public static class Idempotency {
+        private boolean enabled = true;
+        private int successTtlSeconds = 180;
+        private int failureTtlSeconds = 20;
+        private int processingTtlSeconds = 600;
+        private int followerWaitSeconds = 300;
+        private int maxFollowers = 5;
     }
 }

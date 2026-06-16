@@ -29,6 +29,7 @@ import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.function.Consumer;
 
 @Slf4j
 @Service
@@ -54,6 +55,12 @@ public class MangaGenerationService {
 
     @Transactional
     public SseEmitter generateMangaStream(Long chapterId, String imageApiKey, String deepseekApiKey) {
+        return generateMangaStream(chapterId, imageApiKey, deepseekApiKey, () -> {}, error -> {});
+    }
+
+    @Transactional
+    public SseEmitter generateMangaStream(Long chapterId, String imageApiKey, String deepseekApiKey,
+                                          Runnable onComplete, Consumer<String> onError) {
         Chapter chapter = chapterRepository.findById(chapterId)
                 .orElseThrow(() -> new BusinessException(404, "Chapter not found"));
 
@@ -83,13 +90,15 @@ public class MangaGenerationService {
         job.addSubscriber(emitter);
 
         // Start generation in background
-        executor.submit(() -> runGenerationJob(job, chapter, storyId, mangaStyle, storyRefImage, assetGroupId, imageApiKey, deepseekApiKey));
+        executor.submit(() -> runGenerationJob(job, chapter, storyId, mangaStyle, storyRefImage, assetGroupId,
+                imageApiKey, deepseekApiKey, onComplete, onError));
 
         return emitter;
     }
 
     private void runGenerationJob(MangaGenerationJob job, Chapter chapter, Long storyId, String mangaStyle,
-                                   String storyRefImage, Long assetGroupId, String imageApiKey, String deepseekApiKey) {
+                                   String storyRefImage, Long assetGroupId, String imageApiKey, String deepseekApiKey,
+                                   Runnable onComplete, Consumer<String> onError) {
         try {
             // Send scenes event
             job.broadcastEvent("scenes", objectMapper.writeValueAsString(Map.of("scenes", job.getScenes())));
@@ -216,6 +225,7 @@ public class MangaGenerationService {
             // Send done
             job.broadcastEvent("done", objectMapper.writeValueAsString(Map.of("images", job.getScenes().size())));
             job.complete();
+            onComplete.run();
 
         } catch (Exception e) {
             log.error("Manga generation failed for chapter {}: {}", chapter.getId(), e.getMessage(), e);
@@ -224,6 +234,7 @@ public class MangaGenerationService {
             } catch (Exception ignored) {
             }
             job.error(e.getMessage());
+            onError.accept(e.getMessage());
         } finally {
             activeJobs.remove(chapter.getId());
         }

@@ -2,6 +2,7 @@ package com.artverse.api;
 
 import com.artverse.application.ImageGenService;
 import com.artverse.application.ApiKeyService;
+import com.artverse.application.GenerationGuardService;
 import com.artverse.common.BusinessException;
 import com.artverse.domain.User;
 import com.artverse.persistence.UserRepository;
@@ -19,6 +20,7 @@ public class ImageGenController {
 
     private final ImageGenService imageGenService;
     private final ApiKeyService apiKeyService;
+    private final GenerationGuardService generationGuardService;
     private final UserRepository userRepository;
 
     @PostMapping("/generate")
@@ -28,7 +30,12 @@ public class ImageGenController {
         List<String> referenceImages = (List<String>) body.get("reference_images");
         User user = currentUser();
         String imageApiKey = apiKeyService.getDecryptedKey(user, "image2");
-        return imageGenService.generate(prompt, referenceImages, imageApiKey);
+        return generationGuardService.executeImageGeneration(
+                user.getId(),
+                prompt,
+                referenceImages,
+                () -> imageGenService.generate(prompt, referenceImages, imageApiKey)
+        );
     }
 
     @GetMapping("/history")
