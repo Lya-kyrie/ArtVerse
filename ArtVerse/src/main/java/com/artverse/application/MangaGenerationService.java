@@ -149,10 +149,15 @@ public class MangaGenerationService {
                             String objectKey = "stories/" + storyId + "/chapters/" + chapter.getId() + "/panels/" + filename;
                             StoredObject stored = objectStorageService.putPng(objectKey, generated.localFile(), "image/png");
 
-                            // Save to DB
-                            MangaImage mangaImage = new MangaImage();
-                            mangaImage.setChapter(chapter);
-                            mangaImage.setImageNumber(imageNumber);
+                            // Find existing or create new — update in place to avoid dup key on retry
+                            MangaImage mangaImage = mangaImageRepository
+                                    .findByChapterIdAndImageNumber(chapter.getId(), imageNumber)
+                                    .orElseGet(() -> {
+                                        MangaImage m = new MangaImage();
+                                        m.setChapter(chapter);
+                                        m.setImageNumber(imageNumber);
+                                        return m;
+                                    });
                             mangaImage.setImagePath(stored.objectKey());
                             mangaImage.setStorageProvider(StorageProvider.MINIO);
                             mangaImage.setBucket(stored.bucket());
@@ -160,7 +165,7 @@ public class MangaGenerationService {
                             mangaImage.setContentType(stored.contentType());
                             mangaImage.setSizeBytes(stored.sizeBytes());
                             mangaImage.setPrompt(optimizedPrompt);
-                            mangaImageRepository.save(mangaImage);
+                            mangaImageRepository.saveAndFlush(mangaImage);
 
                             // Send progress (after successful generation)
                             job.broadcastEvent("progress", objectMapper.writeValueAsString(Map.of(

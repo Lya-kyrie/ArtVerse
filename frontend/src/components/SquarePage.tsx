@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Search, X, ChevronLeft, BookOpenText } from 'lucide-react';
-import { listSquareStories, getSquareStoryDetail, type SquareStory, type SquareStoryDetail } from '../api';
+import { listSquareStories, getSquareStoryDetail, refImageUrl, mangaImageUrl, type SquareStory, type SquareStoryDetail } from '../api';
 
 export default function SquarePage() {
   const [stories, setStories] = useState<SquareStory[]>([]);
@@ -27,14 +27,14 @@ export default function SquarePage() {
         <h2 className="text-lg font-semibold text-white">{selected.title}</h2>
       </div>
       <div className="p-6 max-w-5xl mx-auto w-full">
-        {selected.cover_url && <img src={selected.cover_url} alt={selected.title} className="w-full max-h-64 object-cover rounded-xl mb-6"/>}
+        {selected.cover_url && <img src={refImageUrl(selected.cover_url)} alt={selected.title} className="w-full max-h-64 object-cover rounded-xl mb-6"/>}
         <p className="text-gray-400 mb-8">{selected.description}</p>
         <h3 className="text-lg font-medium text-white mb-4">Chapters</h3>
         <div className="space-y-6">
           {selected.chapters.map(ch=>(
             <div key={ch.id} className="border border-gray-800 rounded-xl p-4">
               <h4 className="text-md font-medium text-gray-200 mb-3">{ch.display_title}</h4>
-              {ch.images.length>0 ? <div className="grid grid-cols-2 md:grid-cols-4 gap-3">{ch.images.map(img=><img key={img.id} src={img.image_url} alt={'Panel '+img.image_number} className="rounded-lg border border-gray-700 w-full aspect-[2/3] object-cover"/>)}</div> : <p className="text-sm text-gray-600">No manga yet</p>}
+              {ch.images.length>0 ? <div className="grid grid-cols-2 md:grid-cols-4 gap-3">{ch.images.map(img=><img key={img.id} src={mangaImageUrl(img.image_url)} alt={'Panel '+img.image_number} className="rounded-lg border border-gray-700 w-full aspect-[2/3] object-cover"/>)}</div> : <p className="text-sm text-gray-600">No manga yet</p>}
             </div>
           ))}
         </div>
@@ -57,7 +57,7 @@ export default function SquarePage() {
       </div>
       {loading ? <div className="flex-1 flex items-center justify-center"><div className="animate-spin rounded-full h-8 w-8 border-b-2 border-violet-400"/></div> :
        stories.length===0 ? <div className="flex-1 flex items-center justify-center text-gray-500">{search?'No results':'No published works'}</div> :
-       <><div className="p-6 grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">{stories.map(s=><button key={s.id} onClick={()=>openDetail(s.id)} className="text-left border border-gray-800 rounded-xl overflow-hidden hover:border-violet-500/50 hover:bg-gray-900/50 transition-all group"><div className="aspect-[3/2] bg-gray-900 overflow-hidden">{s.cover_url?<img src={s.cover_url} alt={s.title} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"/>:<div className="w-full h-full flex items-center justify-center text-gray-700"><BookOpenText size={40}/></div>}</div><div className="p-3"><h3 className="font-medium text-sm text-gray-200 truncate">{s.title}</h3><p className="text-xs text-gray-500 mt-1 line-clamp-2">{s.description}</p></div></button>)}</div>
+       <><div className="p-6 grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">{stories.map(s=><button key={s.id} onClick={()=>openDetail(s.id)} className="text-left border border-gray-800 rounded-xl overflow-hidden hover:border-violet-500/50 hover:bg-gray-900/50 transition-all group"><div className="aspect-[3/2] bg-gray-900 overflow-hidden">{s.cover_url?<img src={refImageUrl(s.cover_url)} alt={s.title} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"/>:<div className="w-full h-full flex items-center justify-center text-gray-700"><BookOpenText size={40}/></div>}</div><div className="p-3"><h3 className="font-medium text-sm text-gray-200 truncate">{s.title}</h3><p className="text-xs text-gray-500 mt-1 line-clamp-2">{s.description}</p></div></button>)}</div>
        {totalPages>1 && <div className="flex items-center justify-center gap-2 py-4">{Array.from({length:totalPages},(_,i)=><button key={i} onClick={()=>{setPage(i);load(i,search)}} className={'w-8 h-8 rounded-lg text-sm font-medium '+(i===page?'bg-violet-600 text-white':'bg-gray-800 text-gray-400 hover:bg-gray-700')}>{i+1}</button>)}</div>}</>
       }
     </div>

@@ -72,8 +72,8 @@ public class AuthController {
         if (!StpUtil.isLogin()) {
             throw new BusinessException(401, "未登录");
         }
-        // Sa-Token 在 active-timeout=-1 时不会自动续期；
-        // 此端点提供一个"获取最新 token 信息"的能力
+        // 续期 token
+        StpUtil.renewTimeout(3600);
         return StpUtil.getTokenInfo();
     }
 
