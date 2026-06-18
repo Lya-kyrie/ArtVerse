@@ -33,7 +33,6 @@ public class MangaGenerationService {
     private final ChapterRepository chapterRepository;
     private final Image2Client image2Client;
     private final MangaImageStorageService mangaImageStorageService;
-    private final MangaGenerationConcurrencyGate concurrencyGate;
     @Qualifier("mangaGenerationExecutor")
     private final ExecutorService executor;
     private final CharacterProfileService characterProfileService;
@@ -73,7 +72,6 @@ public class MangaGenerationService {
         String storyRefImage = chapter.getStory().getRefImage();
         Long assetGroupId = chapter.getAssetGroup() != null ? chapter.getAssetGroup().getId() : null;
 
-        concurrencyGate.acquireOrReject();
         MangaGenerationJob job = new MangaGenerationJob(chapterId, scenes);
         activeJobs.put(chapterId, job);
 
@@ -81,17 +79,10 @@ public class MangaGenerationService {
         job.addSubscriber(emitter);
 
         try {
-            executor.submit(() -> {
-                try {
-                    runGenerationJob(job, chapter, storyId, mangaStyle, storyRefImage, assetGroupId,
-                            imageApiKey, deepseekApiKey, onComplete, onError);
-                } finally {
-                    concurrencyGate.release();
-                }
-            });
+            executor.submit(() -> runGenerationJob(job, chapter, storyId, mangaStyle, storyRefImage, assetGroupId,
+                    imageApiKey, deepseekApiKey, onComplete, onError));
         } catch (RuntimeException e) {
             activeJobs.remove(chapterId);
-            concurrencyGate.release();
             throw e;
         }
 

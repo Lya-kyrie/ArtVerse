@@ -13,6 +13,7 @@ public class GenerationGuardService {
 
     private final IdempotencyService idempotencyService;
     private final GenerationRequestKeyBuilder keyBuilder;
+    private final MangaGenerationConcurrencyGate mangaGenerationConcurrencyGate;
 
     public Map<String, Object> executeImageGeneration(Long userId, String prompt, java.util.List<String> referenceImages,
                                                       Callable<Map<String, Object>> leader) {
@@ -48,9 +49,27 @@ public class GenerationGuardService {
         Map<String, Object> canonical = keyBuilder.mangaGeneration(userId, chapterId);
         idempotencyService.rejectIfProcessing("generate-manga", userKey(userId), canonical);
         idempotencyService.markProcessing("generate-manga", userKey(userId), canonical);
+        try {
+            mangaGenerationConcurrencyGate.acquireOrReject();
+        } catch (RuntimeException e) {
+            idempotencyService.markFailed("generate-manga", userKey(userId), canonical, e.getMessage());
+            throw e;
+        }
         return new MangaStreamGuard(
-                () -> idempotencyService.markSucceeded("generate-manga", userKey(userId), canonical, Map.of("chapter_id", chapterId)),
-                error -> idempotencyService.markFailed("generate-manga", userKey(userId), canonical, error)
+                () -> {
+                    try {
+                        idempotencyService.markSucceeded("generate-manga", userKey(userId), canonical, Map.of("chapter_id", chapterId));
+                    } finally {
+                        mangaGenerationConcurrencyGate.release();
+                    }
+                },
+                error -> {
+                    try {
+                        idempotencyService.markFailed("generate-manga", userKey(userId), canonical, error);
+                    } finally {
+                        mangaGenerationConcurrencyGate.release();
+                    }
+                }
         );
     }
 

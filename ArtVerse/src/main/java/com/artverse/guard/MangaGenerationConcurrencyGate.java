@@ -1,4 +1,4 @@
-package com.artverse.application;
+package com.artverse.guard;
 
 import com.artverse.common.BusinessException;
 import com.artverse.config.ArtVerseProperties;
