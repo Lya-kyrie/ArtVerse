@@ -9,22 +9,31 @@ import java.util.concurrent.Callable;
 
 @Slf4j
 @Service
+@lombok.RequiredArgsConstructor
 public class AgentToolAuditService {
+
+    private final AgentRunToolStatus agentRunToolStatus;
 
     public Map<String, Object> around(String toolName, Long userId, Long chapterId, Callable<Map<String, Object>> action) {
         long startedAt = System.currentTimeMillis();
         try {
             Map<String, Object> result = action.call();
+            long durationMs = System.currentTimeMillis() - startedAt;
+            agentRunToolStatus.recordSucceeded(toolName, userId, chapterId, durationMs, result);
             log.info("Agent tool succeeded: {}", event(toolName, userId, chapterId, "succeeded",
-                    System.currentTimeMillis() - startedAt, null));
+                    durationMs, null));
             return result;
         } catch (RuntimeException e) {
+            long durationMs = System.currentTimeMillis() - startedAt;
+            agentRunToolStatus.recordFailed(toolName, userId, chapterId, durationMs, e.getMessage());
             log.warn("Agent tool failed: {}", event(toolName, userId, chapterId, "failed",
-                    System.currentTimeMillis() - startedAt, e.getMessage()));
+                    durationMs, e.getMessage()));
             throw e;
         } catch (Exception e) {
+            long durationMs = System.currentTimeMillis() - startedAt;
+            agentRunToolStatus.recordFailed(toolName, userId, chapterId, durationMs, e.getMessage());
             log.warn("Agent tool failed: {}", event(toolName, userId, chapterId, "failed",
-                    System.currentTimeMillis() - startedAt, e.getMessage()));
+                    durationMs, e.getMessage()));
             throw new IllegalStateException(e);
         }
     }

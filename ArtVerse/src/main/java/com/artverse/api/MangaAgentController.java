@@ -6,6 +6,7 @@ import com.artverse.application.MangaAgentService;
 import com.artverse.domain.User;
 import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
 @RestController
 @RequestMapping("/api/chapters/{chapterId}/manga-agent")
@@ -31,5 +32,12 @@ public class MangaAgentController {
         User user = currentUserService.requireCurrentUser();
         MangaAgentService.RunResult result = mangaAgentService.run(chapterId, body.message(), body.requestId(), user);
         return new MangaAgentDtos.RunResponse(result.reply(), result.requestId());
+    }
+
+    @PostMapping("/run-stream")
+    public SseEmitter runStream(@PathVariable Long chapterId,
+                                @RequestBody MangaAgentDtos.RunRequest body) {
+        User user = currentUserService.requireCurrentUser();
+        return mangaAgentService.runStream(chapterId, body.message(), body.requestId(), user);
     }
 }

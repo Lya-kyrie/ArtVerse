@@ -64,6 +64,23 @@ public class GenerationRequestKeyBuilder {
         return canonical;
     }
 
+    @Transactional(readOnly = true)
+    public Map<String, Object> mangaAgentRun(Long userId, Long chapterId, String requestId, String message,
+                                             String provider, String model, String baseUrlHash) {
+        Chapter chapter = chapterForIdempotency(chapterId);
+        Map<String, Object> canonical = new LinkedHashMap<>();
+        canonical.put("action", "manga-agent-run");
+        canonical.put("userId", userId);
+        canonical.put("chapterId", chapter.getId());
+        canonical.put("storyId", chapter.getStory().getId());
+        canonical.put("requestId", requestId);
+        canonical.put("message", canonicalizer.normalizeText(message));
+        canonical.put("provider", provider == null ? "" : provider);
+        canonical.put("model", model == null ? "" : model);
+        canonical.put("baseUrlHash", baseUrlHash == null ? "" : baseUrlHash);
+        return canonical;
+    }
+
     private Chapter chapterForIdempotency(Long chapterId) {
         return chapterRepository.findByIdForIdempotency(chapterId)
                 .orElseThrow(() -> new BusinessException(404, "Chapter not found"));

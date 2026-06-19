@@ -35,6 +35,17 @@ public class GenerationGuardService {
         );
     }
 
+    public Map<String, Object> executeMangaAgentRun(Long userId, Long chapterId, String requestId, String message,
+                                                    String provider, String model, String baseUrlHash,
+                                                    Callable<Map<String, Object>> leader) {
+        return idempotencyService.executeHttp(
+                "manga-agent-run",
+                userKey(userId),
+                keyBuilder.mangaAgentRun(userId, chapterId, requestId, message, provider, model, baseUrlHash),
+                leader
+        );
+    }
+
     public Map<String, Object> executeImageRegeneration(Long userId, Long chapterId, int imageNumber, String prompt,
                                                         Callable<Map<String, Object>> leader) {
         return idempotencyService.executeHttp(

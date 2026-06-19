@@ -39,7 +39,7 @@ public class AgentModelSpecFactory {
         return envKey == null ? "" : envKey;
     }
 
-    static String shortHash(String value) {
+    public static String shortHash(String value) {
         if (value == null || value.isBlank()) {
             return "none";
         }

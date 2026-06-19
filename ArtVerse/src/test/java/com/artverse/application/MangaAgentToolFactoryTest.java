@@ -31,8 +31,9 @@ class MangaAgentToolFactoryTest {
         ChapterRepository chapterRepository = mock(ChapterRepository.class);
         MangaImageRepository mangaImageRepository = mock(MangaImageRepository.class);
         SceneService sceneService = mock(SceneService.class);
+        StructuredStoryboardService structuredStoryboardService = mock(StructuredStoryboardService.class);
         GenerationGuardService generationGuardService = mock(GenerationGuardService.class);
-        AgentToolAuditService auditService = new AgentToolAuditService();
+        AgentToolAuditService auditService = new AgentToolAuditService(new AgentRunToolStatus());
         Chapter chapter = chapterWithOwner(7L, 1L);
 
         when(chapterRepository.findByIdForIdempotency(7L)).thenReturn(Optional.of(chapter));
@@ -44,6 +45,7 @@ class MangaAgentToolFactoryTest {
                 chapterRepository,
                 mangaImageRepository,
                 sceneService,
+                structuredStoryboardService,
                 generationGuardService,
                 auditService,
                 1L
@@ -61,8 +63,9 @@ class MangaAgentToolFactoryTest {
         ChapterRepository chapterRepository = mock(ChapterRepository.class);
         MangaImageRepository mangaImageRepository = mock(MangaImageRepository.class);
         SceneService sceneService = mock(SceneService.class);
+        StructuredStoryboardService structuredStoryboardService = mock(StructuredStoryboardService.class);
         GenerationGuardService generationGuardService = mock(GenerationGuardService.class);
-        AgentToolAuditService auditService = new AgentToolAuditService();
+        AgentToolAuditService auditService = new AgentToolAuditService(new AgentRunToolStatus());
 
         when(chapterRepository.findByIdForIdempotency(7L)).thenReturn(Optional.of(chapterWithOwner(7L, 1L)));
 
@@ -70,6 +73,7 @@ class MangaAgentToolFactoryTest {
                 chapterRepository,
                 mangaImageRepository,
                 sceneService,
+                structuredStoryboardService,
                 generationGuardService,
                 auditService,
                 2L
@@ -86,8 +90,9 @@ class MangaAgentToolFactoryTest {
         ChapterRepository chapterRepository = mock(ChapterRepository.class);
         MangaImageRepository mangaImageRepository = mock(MangaImageRepository.class);
         SceneService sceneService = mock(SceneService.class);
+        StructuredStoryboardService structuredStoryboardService = mock(StructuredStoryboardService.class);
         GenerationGuardService generationGuardService = mock(GenerationGuardService.class);
-        AgentToolAuditService auditService = new AgentToolAuditService();
+        AgentToolAuditService auditService = new AgentToolAuditService(new AgentRunToolStatus());
 
         when(chapterRepository.findByIdForIdempotency(7L)).thenReturn(Optional.of(chapterWithOwner(7L, 1L)));
 
@@ -95,6 +100,7 @@ class MangaAgentToolFactoryTest {
                 chapterRepository,
                 mangaImageRepository,
                 sceneService,
+                structuredStoryboardService,
                 generationGuardService,
                 auditService,
                 2L
@@ -106,15 +112,50 @@ class MangaAgentToolFactoryTest {
         verifyNoInteractions(sceneService);
     }
 
+    @Test
+    void saveStructuredStoryboardNormalizesAndSavesScenes() {
+        ChapterRepository chapterRepository = mock(ChapterRepository.class);
+        MangaImageRepository mangaImageRepository = mock(MangaImageRepository.class);
+        SceneService sceneService = mock(SceneService.class);
+        StructuredStoryboardService structuredStoryboardService = mock(StructuredStoryboardService.class);
+        GenerationGuardService generationGuardService = mock(GenerationGuardService.class);
+        AgentToolAuditService auditService = new AgentToolAuditService(new AgentRunToolStatus());
+        Chapter chapter = chapterWithOwner(7L, 1L);
+        Object pages = List.of(Map.of("panels", List.of("a", "b", "c", "d")));
+        List<String> scenes = List.of("第1页：【第1格】a【第2格】b【第3格】c【第4格】d");
+
+        when(chapterRepository.findByIdForIdempotency(7L)).thenReturn(Optional.of(chapter));
+        when(structuredStoryboardService.normalize(pages, 1)).thenReturn(scenes);
+        when(sceneService.updateScenes(7L, scenes)).thenReturn(scenes);
+
+        MangaAgentToolFactory.Tools tools = tools(
+                chapterRepository,
+                mangaImageRepository,
+                sceneService,
+                structuredStoryboardService,
+                generationGuardService,
+                auditService,
+                1L
+        );
+
+        Map<String, Object> result = tools.saveStructuredStoryboard(pages);
+
+        assertThat(result).containsEntry("scenes_count", 1);
+        verify(structuredStoryboardService).normalize(pages, 1);
+        verify(sceneService).updateScenes(7L, scenes);
+    }
+
     private MangaAgentToolFactory.Tools tools(ChapterRepository chapterRepository,
                                              MangaImageRepository mangaImageRepository,
                                              SceneService sceneService,
+                                             StructuredStoryboardService structuredStoryboardService,
                                              GenerationGuardService generationGuardService,
                                              AgentToolAuditService auditService,
                                              Long userId) {
         MangaAgentToolFactory factory = new MangaAgentToolFactory(
                 mangaImageRepository,
                 sceneService,
+                structuredStoryboardService,
                 new ChapterAccessService(chapterRepository),
                 generationGuardService,
                 auditService

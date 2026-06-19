@@ -26,6 +26,7 @@ public class ArtVerseProperties {
     private RateLimit rateLimit = new RateLimit();
     private SingleFlight singleFlight = new SingleFlight();
     private Idempotency idempotency = new Idempotency();
+    private Agent agent = new Agent();
 
     @Data
     public static class Storage {
@@ -119,5 +120,10 @@ public class ArtVerseProperties {
         private int processingTtlSeconds = 600;
         private int followerWaitSeconds = 300;
         private int maxFollowers = 5;
+    }
+
+    @Data
+    public static class Agent {
+        private int runTimeoutSeconds = 180;
     }
 }

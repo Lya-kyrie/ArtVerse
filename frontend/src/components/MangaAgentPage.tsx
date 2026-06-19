@@ -5,13 +5,15 @@ import {
   listChapters,
   listStories,
   runMangaAgent,
+  runMangaAgentStream,
   type Chapter,
   type MangaAgentMessage,
+  type MangaAgentRunEvent,
   type Story,
 } from '../api';
 
 interface Message {
-  role: 'user' | 'assistant';
+  role: 'user' | 'assistant' | 'system';
   content: string;
   requestId?: string;
 }
@@ -24,12 +26,32 @@ const STARTER_PROMPTS = [
 
 function toMessages(items: MangaAgentMessage[]): Message[] {
   return items
-    .filter((item) => item.role === 'user' || item.role === 'assistant')
-    .map((item) => ({
-      role: item.role,
-      content: item.content,
-      requestId: item.requestId ?? item.request_id,
-    }));
+    .flatMap((item) => {
+      if (item.role !== 'user' && item.role !== 'assistant' && item.role !== 'system') {
+        return [];
+      }
+      const content = item.role === 'system' ? formatSystemMessage(item.content) : item.content;
+      if (!content) {
+        return [];
+      }
+      return [{
+        role: item.role,
+        content,
+        requestId: item.requestId ?? item.request_id,
+      }];
+    });
+}
+
+function formatSystemMessage(content: string): string | null {
+  const type = content.match(/type=([^,}]+)/)?.[1]?.trim();
+  const message = content.match(/message=(.*?)(, [a-zA-Z_]+=|}$)/)?.[1]?.trim();
+  if (type === 'agent_run_degraded_after_tool_success') {
+    return null;
+  }
+  if (type === 'agent_run_failed') {
+    return `系统提示：智能体本次响应失败。${message ? `原因：${message}` : '请稍后重试。'}`;
+  }
+  return `系统提示：${content}`;
 }
 
 function createRequestId() {
@@ -178,6 +200,7 @@ export default function MangaAgentPage() {
   const [chapterLoading, setChapterLoading] = useState(false);
   const [historyLoading, setHistoryLoading] = useState(false);
   const [error, setError] = useState('');
+  const [runStatus, setRunStatus] = useState('正在思考当前章节...');
   const chapterIdRef = useRef('');
 
   useEffect(() => {
@@ -271,11 +294,12 @@ export default function MangaAgentPage() {
     const requestId = createRequestId();
     setLoading(true);
     setError('');
+    setRunStatus('智能体已开始处理当前章节...');
     setMessages((prev) => [...prev, { role: 'user', content: text, requestId }]);
     setInput('');
 
     try {
-      const result = await runMangaAgent(id, text, requestId);
+      const result = await runMangaAgentWithStream(id, text, requestId, requestChapterId);
       if (chapterIdRef.current === requestChapterId) {
         setMessages((prev) => [
           ...prev,
@@ -298,6 +322,65 @@ export default function MangaAgentPage() {
         setLoading(false);
       }
     }
+  };
+
+  const runMangaAgentWithStream = (
+    id: number,
+    text: string,
+    requestId: string,
+    requestChapterId: string,
+  ): Promise<{ reply: string; request_id?: string; requestId?: string }> => {
+    return new Promise((resolve, reject) => {
+      let settled = false;
+      const controller = runMangaAgentStream(id, text, requestId, (event: MangaAgentRunEvent) => {
+        if (chapterIdRef.current !== requestChapterId || settled) return;
+        if (event.type === 'status') {
+          setRunStatus(event.data.message || '智能体正在处理当前章节...');
+          return;
+        }
+        if (event.type === 'tool') {
+          const toolLabel = event.data.tool === 'save_structured_storyboard' || event.data.tool === 'save_storyboard'
+            ? '分镜保存'
+            : event.data.tool === 'generate_storyboard'
+              ? '分镜生成'
+              : '工具调用';
+          if (event.data.succeeded && event.data.saved) {
+            setRunStatus(`${toolLabel}已完成，正在整理回复...`);
+          } else if (!event.data.succeeded) {
+            setRunStatus(`${toolLabel}尝试未通过，智能体正在修正...`);
+          }
+          return;
+        }
+        if (event.type === 'done') {
+          settled = true;
+          controller.abort();
+          resolve({
+            reply: event.data.reply || '',
+            requestId: event.data.requestId,
+            request_id: event.data.request_id,
+          });
+          return;
+        }
+        if (event.type === 'error') {
+          settled = true;
+          controller.abort();
+          reject(new Error(event.data.detail || event.data.error || '智能体请求失败'));
+        }
+      });
+
+      window.setTimeout(async () => {
+        if (settled) return;
+        settled = true;
+        controller.abort();
+        setRunStatus('连接等待较久，正在尝试读取已完成的结果...');
+        try {
+          const result = await runMangaAgent(id, text, requestId);
+          resolve(result);
+        } catch (err) {
+          reject(err);
+        }
+      }, 240000);
+    });
   };
 
   const activeStory = stories.find((story) => String(story.id) === storyId) ?? null;
@@ -426,10 +509,12 @@ export default function MangaAgentPage() {
                         'max-w-[85%] rounded-3xl px-4 py-3 shadow-sm ' +
                         (msg.role === 'user'
                           ? 'whitespace-pre-wrap bg-amber-300 text-sm leading-7 text-gray-950'
-                          : 'border border-white/10 bg-white/[0.04] text-gray-200')
+                          : msg.role === 'system'
+                            ? 'border border-red-400/20 bg-red-950/30 text-red-100'
+                            : 'border border-white/10 bg-white/[0.04] text-gray-200')
                       }
                     >
-                      {msg.role === 'assistant' ? <MarkdownMessage content={msg.content} /> : msg.content}
+                      {msg.role === 'assistant' || msg.role === 'system' ? <MarkdownMessage content={msg.content} /> : msg.content}
                     </div>
                   </div>
                 ))}
@@ -437,7 +522,7 @@ export default function MangaAgentPage() {
                   <div className="flex justify-start">
                     <div className="inline-flex items-center gap-2 rounded-3xl border border-white/10 bg-white/[0.04] px-4 py-3 text-sm text-gray-400">
                       <Loader2 size={15} className="animate-spin" />
-                      正在思考当前章节...
+                      {runStatus}
                     </div>
                   </div>
                 )}

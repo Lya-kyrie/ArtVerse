@@ -1139,6 +1139,12 @@ export interface MangaAgentMessage {
   createdAt?: string;
 }
 
+export type MangaAgentRunEvent =
+  | { type: 'status'; data: { message?: string; requestId?: string; request_id?: string } }
+  | { type: 'tool'; data: { tool?: string; succeeded?: boolean; saved?: boolean; scenes_count?: number; error?: string } }
+  | { type: 'done'; data: { reply?: string; requestId?: string; request_id?: string } }
+  | { type: 'error'; data: { detail?: string; error?: string; requestId?: string; request_id?: string } };
+
 export async function getMangaAgentMessages(chapterId: number): Promise<MangaAgentMessage[]> {
   const res = await authFetch(`${BASE}/api/chapters/${chapterId}/manga-agent/messages`);
   if (!res.ok) throw new Error(parseApiError(await res.text()));
@@ -1154,4 +1160,74 @@ export async function runMangaAgent(chapterId: number, message: string, requestI
   });
   if (!res.ok) throw new Error(parseApiError(await res.text()));
   return res.json();
+}
+
+export function runMangaAgentStream(
+  chapterId: number,
+  message: string,
+  requestId: string | undefined,
+  onEvent: (event: MangaAgentRunEvent) => void,
+): AbortController {
+  const controller = new AbortController();
+
+  authFetch(`${BASE}/api/chapters/${chapterId}/manga-agent/run-stream`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ message, requestId }),
+    signal: controller.signal,
+  })
+    .then(async (res) => {
+      if (!res.ok) {
+        onEvent({ type: 'error', data: { detail: parseApiError(await res.text()), requestId } });
+        return;
+      }
+      const reader = res.body?.getReader();
+      if (!reader) {
+        onEvent({ type: 'error', data: { detail: '智能体连接不可用', requestId } });
+        return;
+      }
+      const decoder = new TextDecoder();
+      let buffer = '';
+      let currentEvent = 'message';
+      const handleLine = (line: string) => {
+        const trimmed = line.trim();
+        if (!trimmed || trimmed.startsWith(':')) return;
+        if (trimmed.startsWith('event:')) {
+          currentEvent = trimmed.slice(6).trim();
+          return;
+        }
+        if (!trimmed.startsWith('data:')) return;
+
+        const dataStr = trimmed.slice(5).trim();
+        try {
+          const data = JSON.parse(dataStr);
+          if (currentEvent === 'status' || currentEvent === 'tool' || currentEvent === 'done' || currentEvent === 'error') {
+            onEvent({ type: currentEvent, data } as MangaAgentRunEvent);
+          }
+        } catch {
+          // Ignore malformed stream chunks.
+        } finally {
+          currentEvent = 'message';
+        }
+      };
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split('\n');
+        buffer = lines.pop() || '';
+        for (const line of lines) {
+          handleLine(line);
+        }
+      }
+      if (buffer.trim()) handleLine(buffer);
+    })
+    .catch((err) => {
+      if (err.name !== 'AbortError') {
+        onEvent({ type: 'error', data: { detail: err.message || '智能体连接中断', requestId } });
+      }
+    });
+
+  return controller;
 }

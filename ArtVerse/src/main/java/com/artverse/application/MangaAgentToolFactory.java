@@ -20,6 +20,7 @@ public class MangaAgentToolFactory {
 
     private final MangaImageRepository mangaImageRepository;
     private final SceneService sceneService;
+    private final StructuredStoryboardService structuredStoryboardService;
     private final ChapterAccessService chapterAccessService;
     private final GenerationGuardService generationGuardService;
     private final AgentToolAuditService agentToolAuditService;
@@ -85,6 +86,8 @@ public class MangaAgentToolFactory {
                             List<String> scenes = sceneService.generateScenes(chapterId, cozeApiKey);
                             return Map.of(
                                     "chapter_display_name", chapterDisplayName(chapter),
+                                    "saved", true,
+                                    "changed", true,
                                     "scenes_count", scenes.size(),
                                     "scenes", scenes
                             );
@@ -106,6 +109,30 @@ public class MangaAgentToolFactory {
                 List<String> updated = sceneService.updateScenes(chapterId, scenes);
                 return Map.of(
                         "chapter_display_name", chapterDisplayName(chapter),
+                        "saved", true,
+                        "changed", true,
+                        "scenes_count", updated.size(),
+                        "scenes", updated
+                );
+            });
+        }
+
+        @Tool(
+                name = "save_structured_storyboard",
+                description = "Save storyboard pages as structured page/panel data. Input may be a list of pages or an object with pages. Each page must contain 4-6 panels.",
+                concurrencySafe = false
+        )
+        @Transactional
+        public Map<String, Object> saveStructuredStoryboard(
+                @ToolParam(name = "pages", description = "Storyboard pages with panels") Object pages) {
+            return agentToolAuditService.around("save_structured_storyboard", userId, chapterId, () -> {
+                Chapter chapter = chapterAccessService.requireVisible(chapterId, userId);
+                List<String> scenes = structuredStoryboardService.normalize(pages, chapter.getImageCount());
+                List<String> updated = sceneService.updateScenes(chapterId, scenes);
+                return Map.of(
+                        "chapter_display_name", chapterDisplayName(chapter),
+                        "saved", true,
+                        "changed", true,
                         "scenes_count", updated.size(),
                         "scenes", updated
                 );
