@@ -12,6 +12,7 @@ com\artverse\domain\UserApiKey.class
 com\artverse\application\MangaGenerationService.class
 com\artverse\domain\MangaAgentMessage.class
 com\artverse\api\dto\MangaAgentDtos$RunRequest.class
+com\artverse\application\AgentToolAuditService.class
 com\artverse\api\dto\ChapterDto$MangaImageDto.class
 com\artverse\domain\ImageGenRecord.class
 com\artverse\domain\CharacterProfile.class
@@ -53,6 +54,7 @@ com\artverse\common\aspect\RateLimit.class
 com\artverse\application\MangaAgentToolFactory.class
 com\artverse\agents\AgentScopeHarnessAgentGateway.class
 com\artverse\api\ChapterController.class
+com\artverse\application\ChapterAccessService.class
 com\artverse\api\dto\AuthDtos$ApiKeyRequest.class
 com\artverse\ai\ImageGenerationRequest.class
 com\artverse\ai\CozeClient$1.class

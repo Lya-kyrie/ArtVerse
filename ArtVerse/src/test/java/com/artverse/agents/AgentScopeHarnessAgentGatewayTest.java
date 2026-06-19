@@ -1,5 +1,6 @@
 package com.artverse.agents;
 
+import com.artverse.common.BusinessException;
 import org.junit.jupiter.api.Test;
 
 import java.nio.file.Path;
@@ -7,6 +8,7 @@ import java.util.List;
 import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 class AgentScopeHarnessAgentGatewayTest {
 
@@ -129,6 +131,18 @@ class AgentScopeHarnessAgentGatewayTest {
 
         assertThat(cacheKey(request, Path.of(".agentscope/workspace/users/user-1/stories/1")))
                 .isNotEqualTo(cacheKey(request, Path.of(".agentscope/workspace/users/user-2/stories/1")));
+    }
+
+    @Test
+    void parsesRequestUserIdForToolIdentity() {
+        assertThat(AgentScopeHarnessAgentGateway.parseUserIdForTool("42")).isEqualTo(42L);
+    }
+
+    @Test
+    void rejectsInvalidToolUserId() {
+        assertThatThrownBy(() -> AgentScopeHarnessAgentGateway.parseUserIdForTool("user-42"))
+                .isInstanceOf(BusinessException.class)
+                .hasMessage("Invalid agent user id");
     }
 
     private static AgentRunRequest requestWithSpec(String userId, AgentModelSpec spec) {

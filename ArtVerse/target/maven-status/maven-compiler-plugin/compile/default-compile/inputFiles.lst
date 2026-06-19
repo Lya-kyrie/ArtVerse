@@ -35,9 +35,11 @@ D:\develop\Vibe Coding\ArtVerse\ArtVerse\src\main\java\com\artverse\api\Storyboa
 D:\develop\Vibe Coding\ArtVerse\ArtVerse\src\main\java\com\artverse\api\StoryController.java
 D:\develop\Vibe Coding\ArtVerse\ArtVerse\src\main\java\com\artverse\api\UserController.java
 D:\develop\Vibe Coding\ArtVerse\ArtVerse\src\main\java\com\artverse\api\WorksController.java
+D:\develop\Vibe Coding\ArtVerse\ArtVerse\src\main\java\com\artverse\application\AgentToolAuditService.java
 D:\develop\Vibe Coding\ArtVerse\ArtVerse\src\main\java\com\artverse\application\ApiKeyService.java
 D:\develop\Vibe Coding\ArtVerse\ArtVerse\src\main\java\com\artverse\application\AssetGroupService.java
 D:\develop\Vibe Coding\ArtVerse\ArtVerse\src\main\java\com\artverse\application\AuthService.java
+D:\develop\Vibe Coding\ArtVerse\ArtVerse\src\main\java\com\artverse\application\ChapterAccessService.java
 D:\develop\Vibe Coding\ArtVerse\ArtVerse\src\main\java\com\artverse\application\ChapterService.java
 D:\develop\Vibe Coding\ArtVerse\ArtVerse\src\main\java\com\artverse\application\CharacterProfileService.java
 D:\develop\Vibe Coding\ArtVerse\ArtVerse\src\main\java\com\artverse\application\ChatService.java

@@ -1,6 +1,7 @@
 package com.artverse.agents;
 
 import com.artverse.application.MangaAgentToolFactory;
+import com.artverse.common.BusinessException;
 import com.artverse.config.ArtVerseProperties;
 import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.event.TextBlockDeltaEvent;
@@ -95,10 +96,19 @@ public class AgentScopeHarnessAgentGateway implements HarnessAgentGateway {
         if (request.taskType() == AgentTaskType.MANGA_DIRECTOR) {
             agent.getToolkit().registerTool(mangaAgentToolFactory.create(
                     String.valueOf(request.variables().getOrDefault("coze_api_key", "")),
-                    request.chapterId()
+                    request.chapterId(),
+                    parseUserIdForTool(request.userId())
             ));
         }
         return agent;
+    }
+
+    static Long parseUserIdForTool(String userId) {
+        try {
+            return Long.valueOf(userId);
+        } catch (Exception e) {
+            throw new BusinessException(400, "Invalid agent user id");
+        }
     }
 
     private String systemPromptFor(AgentTaskType taskType) {

@@ -11,7 +11,6 @@ import com.artverse.domain.Chapter;
 import com.artverse.domain.MangaAgentMessage;
 import com.artverse.domain.MessageRole;
 import com.artverse.domain.User;
-import com.artverse.persistence.ChapterRepository;
 import com.artverse.persistence.MangaAgentMessageRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -28,16 +27,16 @@ public class MangaAgentService {
 
     private static final int HISTORY_LIMIT_FOR_AGENT = 20;
 
-    private final ChapterRepository chapterRepository;
     private final MangaAgentMessageRepository mangaAgentMessageRepository;
     private final HarnessAgentGateway harnessAgentGateway;
     private final AgentModelSpecFactory agentModelSpecFactory;
     private final AgentWorkspaceSyncService agentWorkspaceSyncService;
     private final ApiKeyService apiKeyService;
+    private final ChapterAccessService chapterAccessService;
 
     @Transactional(readOnly = true)
     public List<MangaAgentMessage> listMessages(Long chapterId, User user) {
-        ensureChapterVisible(chapterId, user);
+        chapterAccessService.requireVisible(chapterId, user.getId());
         return mangaAgentMessageRepository.findByUserIdAndChapterIdOrderByCreatedAtAsc(user.getId(), chapterId);
     }
 
@@ -53,7 +52,7 @@ public class MangaAgentService {
             return new RunResult(cached.get().getContent(), effectiveRequestId);
         }
 
-        Chapter chapter = ensureChapterVisible(chapterId, user);
+        Chapter chapter = chapterAccessService.requireVisible(chapterId, user.getId());
         List<MangaAgentMessage> history = mangaAgentMessageRepository
                 .findByUserIdAndChapterIdOrderByCreatedAtAsc(user.getId(), chapterId);
 
@@ -98,15 +97,6 @@ public class MangaAgentService {
         } catch (Exception e) {
             throw new BusinessException(502, "Agent service failed: " + (e.getMessage() == null ? "unknown error" : e.getMessage()));
         }
-    }
-
-    private Chapter ensureChapterVisible(Long chapterId, User user) {
-        Chapter chapter = chapterRepository.findByIdForIdempotency(chapterId)
-                .orElseThrow(() -> new BusinessException(404, "Chapter not found"));
-        if (chapter.getStory().getUser() != null && !chapter.getStory().getUser().getId().equals(user.getId())) {
-            throw new BusinessException(403, "Forbidden");
-        }
-        return chapter;
     }
 
     @Transactional
