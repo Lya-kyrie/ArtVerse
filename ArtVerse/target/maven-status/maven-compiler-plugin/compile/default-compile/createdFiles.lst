@@ -45,6 +45,7 @@ com\artverse\agents\HarnessAgentGateway.class
 com\artverse\application\ApiKeyService$KeyInfo.class
 com\artverse\media\MediaStorageService.class
 com\artverse\config\RedisConfig.class
+com\artverse\agents\AgentScopeHitlSuspendHook.class
 com\artverse\config\ArtVerseProperties$Ref.class
 com\artverse\guard\RequestCanonicalizer.class
 com\artverse\api\dto\ChapterDto.class
@@ -97,6 +98,7 @@ com\artverse\application\AgentRunToolStatus$ScopeKey.class
 com\artverse\guard\Hashing.class
 com\artverse\api\StaticMediaController.class
 com\artverse\application\NovelService.class
+com\artverse\guard\GuardNonTerminalException.class
 com\artverse\config\ArtVerseProperties$Coze.class
 com\artverse\application\CharacterProfileService.class
 com\artverse\api\GuardStatsController.class

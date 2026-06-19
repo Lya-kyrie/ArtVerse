@@ -89,6 +89,11 @@ public class IdempotencyService {
             publish(channel);
             return result;
         } catch (RuntimeException e) {
+            if (e instanceof GuardNonTerminalException) {
+                redisTemplate.delete(key);
+                publish(channel);
+                throw e;
+            }
             metricsService.increment(action, "failed");
             writeState(key, Map.of(
                     "status", STATUS_FAILED,

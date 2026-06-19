@@ -6,6 +6,7 @@ import com.artverse.guard.GenerationGuardService;
 import com.artverse.persistence.MangaImageRepository;
 import io.agentscope.core.tool.Tool;
 import io.agentscope.core.tool.ToolParam;
+import io.agentscope.core.tool.ToolSuspendException;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
@@ -153,7 +154,7 @@ public class MangaAgentToolFactory {
             return agentToolAuditService.around("ask_user", userId, chapterId, () -> {
                 AgentUserInputRequest request = buildUserInputRequest(question, options, allowFreeText, reason);
                 agentRunToolStatus.requestUserInputForActiveRun(userId, chapterId, request);
-                throw new AgentUserInputRequiredException(request);
+                throw new ToolSuspendException("Waiting for user input");
             });
         }
     }

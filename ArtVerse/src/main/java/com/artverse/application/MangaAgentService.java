@@ -25,6 +25,7 @@ import org.springframework.http.MediaType;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
+import io.agentscope.core.tool.ToolSuspendException;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 
@@ -271,8 +272,12 @@ public class MangaAgentService {
                                 }))
                                 .blockLast(agentRunTimeout());
                         finished.set(true);
+                        throwIfWaitingForUser(toolState);
                     } catch (AgentUserInputRequiredException e) {
                         throw e;
+                    } catch (ToolSuspendException e) {
+                        throwIfWaitingForUser(toolState);
+                        throw new BusinessException(502, "Agent tool suspended without user input");
                     } catch (Exception e) {
                         String error = e.getMessage() == null ? "unknown error" : e.getMessage();
                         if (toolState.hasSuccessfulMutatingTool()) {
@@ -329,6 +334,7 @@ public class MangaAgentService {
 
         try {
             String reply = harnessAgentGateway.generateText(request).block(agentRunTimeout());
+            throwIfWaitingForUser(toolState);
             if (reply == null || reply.isBlank()) {
                 throw new BusinessException(502, "Agent returned empty response");
             }
@@ -336,6 +342,9 @@ public class MangaAgentService {
             return Map.of("reply", reply);
         } catch (AgentUserInputRequiredException e) {
             throw e;
+        } catch (ToolSuspendException e) {
+            throwIfWaitingForUser(toolState);
+            throw new BusinessException(502, "Agent tool suspended without user input");
         } catch (BusinessException e) {
             if (toolState.hasSuccessfulMutatingTool()) {
                 return fallbackAfterToolSuccess(user, chapter, effectiveRequestId, toolState, e.getMessage());
@@ -349,6 +358,13 @@ public class MangaAgentService {
             }
             saveFailureMessage(user, chapter, error, effectiveRequestId);
             throw new BusinessException(502, "Agent service failed: " + error);
+        }
+    }
+
+    private void throwIfWaitingForUser(AgentRunToolStatus.RunState toolState) {
+        AgentUserInputRequest waiting = toolState.userInputRequest();
+        if (waiting != null) {
+            throw new AgentUserInputRequiredException(waiting);
         }
     }
 

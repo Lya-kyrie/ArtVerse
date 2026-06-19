@@ -98,6 +98,8 @@ public class AgentScopeHarnessAgentGateway implements HarnessAgentGateway {
                 .model(effectiveModel)
                 .workspace(requestWorkspace)
                 .compaction(compactionConfig)
+                .enablePendingToolRecovery(true)
+                .hook(new AgentScopeHitlSuspendHook())
                 .build();
         if (request.taskType() == AgentTaskType.MANGA_DIRECTOR) {
             agent.getToolkit().registerTool(mangaAgentToolFactory.create(

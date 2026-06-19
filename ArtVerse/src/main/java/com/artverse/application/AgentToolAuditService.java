@@ -1,6 +1,7 @@
 package com.artverse.application;
 
 import lombok.extern.slf4j.Slf4j;
+import io.agentscope.core.tool.ToolSuspendException;
 import org.springframework.stereotype.Service;
 
 import java.util.LinkedHashMap;
@@ -27,6 +28,11 @@ public class AgentToolAuditService {
             long durationMs = System.currentTimeMillis() - startedAt;
             log.info("Agent tool waiting for user input: {}", event(toolName, userId, chapterId, "waiting_user",
                     durationMs, null));
+            throw e;
+        } catch (ToolSuspendException e) {
+            long durationMs = System.currentTimeMillis() - startedAt;
+            log.info("Agent tool suspended: {}", event(toolName, userId, chapterId, "waiting_user",
+                    durationMs, e.getReason()));
             throw e;
         } catch (RuntimeException e) {
             long durationMs = System.currentTimeMillis() - startedAt;

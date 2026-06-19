@@ -8,6 +8,7 @@ import com.artverse.domain.User;
 import com.artverse.guard.GenerationGuardService;
 import com.artverse.persistence.ChapterRepository;
 import com.artverse.persistence.MangaImageRepository;
+import io.agentscope.core.tool.ToolSuspendException;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;
@@ -173,7 +174,7 @@ class MangaAgentToolFactoryTest {
                     List.of(Map.of("label", "PostgreSQL", "recommended", true), Map.of("label", "MySQL")),
                     true,
                     "需要持久化方案"
-            )).isInstanceOf(AgentUserInputRequiredException.class);
+            )).isInstanceOf(ToolSuspendException.class);
         }
 
         AgentUserInputRequest waiting = runStatus.waitingInput(1L, 7L, requestId);
