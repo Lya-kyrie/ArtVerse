@@ -8,15 +8,16 @@ All endpoints are scoped to `/api/chapters/{chapterId}/manga-agent`.
 
 - `GET /messages`: returns persisted user, assistant, and system messages for the current user and chapter.
 - `POST /run`: synchronous run. Body: `{ message, requestId? }`. Response: `{ reply, requestId }`.
-- `POST /run-stream`: streaming run. Body: `{ message, requestId? }`. Emits `status`, `run_event`, `tool`, `user_input_requested`, `done`, and `error`.
+- `POST /run-stream`: streaming run. Body: `{ message, requestId? }`. Emits legacy business events (`status`, `run_event`, `tool`, `user_input_requested`, `done`, and `error`) plus AG-UI protocol events as default SSE `message` frames.
+- `POST /ag-ui/run`: streaming run for AG-UI clients. Body: `{ message, requestId? }`. Emits only AG-UI protocol events as default SSE `message` frames, so the frontend can consume it through the official `HttpAgent` event pipeline without legacy event noise.
 - `GET /runs/open`: returns the latest `RUNNING` or `WAITING_USER` run snapshot, if any.
 - `GET /runs/{requestId}`: returns a persisted run snapshot with events.
 - `POST /runs/{requestId}/resume`: synchronous resume. Body: `{ answer }`.
 - `POST /runs/{requestId}/resume-stream`: streaming resume. Body: `{ answer }`.
 
-Frontend types and stream parsing live in `frontend/src/api.ts`. The Manga Agent page restores open runs and consumes persisted events in `frontend/src/components/MangaAgentPage.tsx`.
+Frontend types and stream parsing live in `frontend/src/api.ts`. The frontend depends on `@ag-ui/core` and `@ag-ui/client` for formal AG-UI event types. `ArtVerseMangaAgentHttpAgent` extends the official `HttpAgent` and adapts AG-UI `RunAgentInput` to the current ArtVerse `{ message, requestId }` body. The Manga Agent page restores open runs from persisted business events and consumes live AG-UI events in `frontend/src/components/MangaAgentPage.tsx`.
 
-`MangaAgentPage.tsx` renders an AG-UI-style execution panel from the same stream. It shows the active request id, latest run status, recent event timeline, tool activity, and human-in-the-loop waiting state. The panel is restored from persisted run events after refresh or reconnect.
+`MangaAgentPage.tsx` renders the execution panel from the same stream. Live progress should prefer AG-UI events: `RUN_STARTED`, `STATE_SNAPSHOT`, `STEP_STARTED`, `STEP_FINISHED`, `TOOL_CALL_START`, `TOOL_CALL_END`, `TOOL_CALL_RESULT`, `TEXT_MESSAGE_CHUNK`, `RUN_FINISHED`, and `RUN_ERROR`. The panel shows the active request id, latest run status, recent event timeline, tool activity, and human-in-the-loop waiting state. The panel is restored from persisted run events after refresh or reconnect.
 
 ## New Stream Run
 
@@ -32,7 +33,7 @@ Frontend types and stream parsing live in `frontend/src/api.ts`. The Manga Agent
 10. `buildRunRequest` creates an `AgentRunRequest` with user, story, chapter, task type, model, user API key, and request id.
 11. `AgentScopeHarnessAgentGateway.streamEvents` sends messages to AgentScope.
 12. `AgentScopeEventMapper` maps AgentScope events into `AgentRunEvent`; text deltas append to the final reply.
-13. `MangaAgentRunEventPublisher` sends SSE events and persists non-text run events.
+13. `MangaAgentRunEventPublisher` sends SSE events and persists non-text run events. It also maps the run lifecycle into formal AG-UI events through `AgUiEventFactory` and emits them as default SSE `message` frames.
 14. On success, `MangaAgentRunService.markSucceeded` stores the final reply and `done` is emitted.
 15. The frontend execution panel summarizes the latest events and keeps the user informed while the assistant response is still streaming.
 

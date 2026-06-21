@@ -127,40 +127,45 @@ function timelineEventSummary(event: AgentRunTimelineEvent): {
   detail: string;
   icon: 'bot' | 'sparkles' | 'wrench' | 'question' | 'check' | 'warning' | 'clock';
 } {
-  if (event.type === 'status') {
+  const data = event.data || {};
+  const type = String(data.type || event.type);
+  const label = String(data.label || data.phase || data.toolName || event.label || event.type);
+
+  if (event.type === 'status' || type === 'ag_ui_state_snapshot') {
     return {
       tone: 'neutral',
       title: event.label || event.phase || '运行状态',
-      detail: event.text || event.data?.message ? String(event.text || event.data?.message) : '智能体正在推进任务',
+      detail: String(event.text || data.message || '智能体正在推进任务'),
       icon: 'clock',
     };
   }
-  if (event.type === 'tool') {
-    const tool = String(event.data.tool || 'tool');
-    const saved = event.data.saved === true ? '已保存' : '';
-    const scenesCount = typeof event.data.scenes_count === 'number' ? ` · ${event.data.scenes_count} 页` : '';
-    const suffix = event.data.error ? ` · ${event.data.error}` : `${saved}${scenesCount}`;
+  if (event.type === 'tool'
+    || type === 'ag_ui_tool_call_start'
+    || type === 'ag_ui_tool_call_end'
+    || type === 'ag_ui_tool_call_result') {
+    const tool = String(data.tool || event.toolName || 'tool');
+    const saved = data.saved === true ? '已保存' : '';
+    const scenesCount = typeof data.scenes_count === 'number' ? ` · ${data.scenes_count} 页` : '';
+    const suffix = data.error ? ` · ${String(data.error)}` : `${saved}${scenesCount}`;
     return {
-      tone: event.data.succeeded === false ? 'error' : 'tool',
+      tone: data.succeeded === false ? 'error' : 'tool',
       title: tool,
-      detail: event.data.succeeded === false
+      detail: data.succeeded === false
         ? `工具调用失败${suffix ? `：${suffix}` : ''}`
         : `工具调用完成${suffix}`,
-      icon: event.data.succeeded === false ? 'warning' : 'wrench',
+      icon: data.succeeded === false ? 'warning' : 'wrench',
     };
   }
 
-  const type = String(event.data?.type || event.type);
-  const label = String(event.data?.label || event.data?.phase || event.data?.toolName || event.type);
   if (type === 'text_delta') {
     return {
       tone: 'neutral',
       title: '回复生成中',
-      detail: event.data?.text ? String(event.data.text) : '智能体正在拼接最终回复',
+      detail: String(event.text || data.text || '智能体正在拼接最终回复'),
       icon: 'bot',
     };
   }
-  if (type === 'run_started') {
+  if (type === 'run_started' || type === 'ag_ui_run_started') {
     return {
       tone: 'thinking',
       title: label || '智能体已启动',
@@ -176,7 +181,7 @@ function timelineEventSummary(event: AgentRunTimelineEvent): {
       icon: 'sparkles',
     };
   }
-  if (type === 'model_started' || type === 'thinking_started') {
+  if (type === 'model_started' || type === 'thinking_started' || type === 'ag_ui_step_started') {
     return {
       tone: 'thinking',
       title: label || '模型推理中',
@@ -204,7 +209,7 @@ function timelineEventSummary(event: AgentRunTimelineEvent): {
     return {
       tone: 'waiting',
       title: '已收到用户选择',
-      detail: String(event.data?.answer || '继续默认方案'),
+      detail: String(data.answer || '继续默认方案'),
       icon: 'question',
     };
   }
@@ -216,7 +221,7 @@ function timelineEventSummary(event: AgentRunTimelineEvent): {
       icon: 'check',
     };
   }
-  if (type === 'run_finished') {
+  if (type === 'run_finished' || type === 'ag_ui_run_finished') {
     return {
       tone: 'success',
       title: label || '任务完成',
@@ -224,19 +229,20 @@ function timelineEventSummary(event: AgentRunTimelineEvent): {
       icon: 'check',
     };
   }
-  if (type === 'user_input_requested') {
+  if (type === 'user_input_requested' || type === 'ag_ui_run_interrupted') {
+    const options = Array.isArray(data.options) ? data.options : [];
     return {
       tone: 'waiting',
-      title: event.data.question || '需要你做个决定',
-      detail: event.data.reason || `可选项 ${event.data.options?.length || 0} 个`,
+      title: String(data.question || '需要你做个决定'),
+      detail: String(data.reason || `可选项 ${options.length} 个`),
       icon: 'question',
     };
   }
-  if (event.type === 'error') {
+  if (event.type === 'error' || type === 'ag_ui_run_error') {
     return {
       tone: 'error',
       title: '运行失败',
-      detail: String(event.data.detail || event.data.error || '智能体请求失败'),
+      detail: String(data.detail || data.error || data.message || '智能体请求失败'),
       icon: 'warning',
     };
   }
@@ -582,6 +588,99 @@ export default function MangaAgentPage() {
         setRunStatus(`${toolLabel}已完成，正在整理回复...`);
       } else if (!event.data.succeeded) {
         setRunStatus(`${toolLabel}尝试未通过，智能体正在修正...`);
+      }
+      return null;
+    }
+    if (event.type === 'ag_ui_event') {
+      const agEvent = event.data;
+      const rawEvent = agEvent.rawEvent as AgentRunTimelineEvent | undefined;
+      if (rawEvent?.type) {
+        setRunEvents((prev) => appendRunEvent(prev, rawEvent));
+        if (rawEvent.label) setRunStatus(rawEvent.label);
+      }
+      if (agEvent.type === 'STATE_SNAPSHOT') {
+        const message = agEvent.snapshot?.message;
+        if (message) setRunStatus(message);
+        setRunEvents((prev) => appendRunEvent(prev, {
+          type: 'ag_ui_state_snapshot',
+          phase: 'status',
+          label: message || '运行状态',
+          status: agEvent.snapshot?.status,
+          data: { type: 'ag_ui_state_snapshot', message },
+          createdAt: new Date().toISOString(),
+        }));
+        return null;
+      }
+      if (agEvent.type === 'RUN_STARTED') {
+        setRunEvents((prev) => appendRunEvent(prev, {
+          type: 'ag_ui_run_started',
+          phase: 'started',
+          label: '智能体已启动',
+          status: 'running',
+          data: { type: 'ag_ui_run_started' },
+          createdAt: new Date().toISOString(),
+        }));
+        return null;
+      }
+      if (agEvent.type === 'STEP_STARTED') {
+        const stepName = String((agEvent as any).stepName || '模型推理中');
+        setRunStatus(stepName);
+        setRunEvents((prev) => appendRunEvent(prev, {
+          type: 'ag_ui_step_started',
+          phase: 'thinking',
+          label: stepName,
+          status: 'running',
+          data: { type: 'ag_ui_step_started', label: stepName },
+          createdAt: new Date().toISOString(),
+        }));
+        return null;
+      }
+      if (agEvent.type === 'TOOL_CALL_START' || agEvent.type === 'TOOL_CALL_END' || agEvent.type === 'TOOL_CALL_RESULT') {
+        const toolName = String((agEvent as any).toolCallName || (agEvent as any).toolName || 'tool');
+        setRunStatus(`工具处理中：${toolName}`);
+        setRunEvents((prev) => appendRunEvent(prev, {
+          type: agEvent.type.toLowerCase(),
+          phase: 'tool',
+          label: toolName,
+          toolName,
+          status: agEvent.type === 'TOOL_CALL_START' ? 'running' : 'finished',
+          data: { type: agEvent.type.toLowerCase(), toolName },
+          createdAt: new Date().toISOString(),
+        }));
+        return null;
+      }
+      if (agEvent.type === 'TEXT_MESSAGE_CHUNK' || agEvent.type === 'TEXT_MESSAGE_CONTENT') {
+        const delta = String((agEvent as any).delta || (agEvent as any).content || '');
+        if (delta) setDraftReply((prev) => prev + delta);
+        return null;
+      }
+      if (agEvent.type === 'RUN_FINISHED') {
+        if (agEvent.outcome?.type === 'interrupt') {
+          const interrupt = agEvent.outcome.interrupts?.[0];
+          const metadata = interrupt?.metadata;
+          const requestId = agEvent.runId || fallbackRequestId;
+          if (metadata?.question && metadata?.options) {
+            activeRequestIdRef.current = requestId;
+            setUserInputRequest({
+              requestId,
+              question: metadata.question,
+              options: metadata.options,
+              allowFreeText: metadata.allowFreeText,
+              reason: interrupt?.reason,
+            });
+            setRunStatus('等待你的选择');
+            return { reply: '', requestId, waiting: true };
+          }
+        }
+        const requestId = agEvent.runId || fallbackRequestId;
+        activeRequestIdRef.current = null;
+        clearRunPoll();
+        return { reply: agEvent.result?.reply || '', requestId };
+      }
+      if (agEvent.type === 'RUN_ERROR') {
+        activeRequestIdRef.current = null;
+        clearRunPoll();
+        return new Error(String((agEvent as any).message || '智能体请求失败'));
       }
       return null;
     }

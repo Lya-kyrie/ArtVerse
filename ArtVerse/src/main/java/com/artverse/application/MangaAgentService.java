@@ -101,6 +101,12 @@ public class MangaAgentService {
         return emitter;
     }
 
+    public SseEmitter runAgUiStream(Long chapterId, String message, UUID requestId, User user) {
+        SseEmitter emitter = runStream(chapterId, message, requestId, user);
+        mangaAgentRunEventPublisher.markAgUiOnly(emitter);
+        return emitter;
+    }
+
     public SseEmitter resumeStream(Long chapterId, UUID requestId, String answer, User user) {
         if (requestId == null) {
             throw new BusinessException(400, "requestId is required");

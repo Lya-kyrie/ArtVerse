@@ -13,6 +13,7 @@ import java.time.OffsetDateTime;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.UUID;
+import java.util.concurrent.ConcurrentHashMap;
 
 @Slf4j
 @Service
@@ -21,32 +22,137 @@ public class MangaAgentRunEventPublisher {
 
     private final MangaAgentRunService mangaAgentRunService;
     private final ObjectMapper objectMapper;
+    private final AgUiEventFactory agUiEventFactory;
+    private final Map<SseEmitter, StreamProtocol> emitterProtocols = new ConcurrentHashMap<>();
+
+    public enum StreamProtocol {
+        LEGACY_AND_AG_UI,
+        AG_UI_ONLY
+    }
+
+    public RunEventSink legacyAndAgUi(SseEmitter emitter) {
+        return new RunEventSink(emitter, StreamProtocol.LEGACY_AND_AG_UI);
+    }
+
+    public RunEventSink agUiOnly(SseEmitter emitter) {
+        return new RunEventSink(emitter, StreamProtocol.AG_UI_ONLY);
+    }
+
+    public void markAgUiOnly(SseEmitter emitter) {
+        emitterProtocols.put(emitter, StreamProtocol.AG_UI_ONLY);
+        emitter.onCompletion(() -> emitterProtocols.remove(emitter));
+        emitter.onTimeout(() -> emitterProtocols.remove(emitter));
+        emitter.onError(error -> emitterProtocols.remove(emitter));
+    }
+
+    public final class RunEventSink {
+        private final SseEmitter emitter;
+        private final StreamProtocol protocol;
+
+        private RunEventSink(SseEmitter emitter, StreamProtocol protocol) {
+            this.emitter = emitter;
+            this.protocol = protocol;
+        }
+
+        public void sendStatus(MangaAgentRun run, String message, UUID requestId) {
+            MangaAgentRunEventPublisher.this.sendStatus(run, emitter, message, requestId, protocol);
+        }
+
+        public void sendToolEvent(MangaAgentRun run, AgentRunToolStatus.ToolEvent event) {
+            MangaAgentRunEventPublisher.this.sendToolEvent(run, emitter, event, protocol);
+        }
+
+        public void sendRunEvent(MangaAgentRun run, AgentRunEvent event) {
+            MangaAgentRunEventPublisher.this.sendRunEvent(run, emitter, event, protocol);
+        }
+
+        public void sendUserInputRequested(MangaAgentRun run, UUID requestId, AgentUserInputRequest request) {
+            MangaAgentRunEventPublisher.this.sendUserInputRequested(run, emitter, requestId, request, protocol);
+        }
+
+        public void sendUserAnswerEvent(MangaAgentRun run, UUID requestId, String answer) {
+            MangaAgentRunEventPublisher.this.sendUserAnswerEvent(run, emitter, requestId, answer, protocol);
+        }
+
+        public void sendDone(MangaAgentRun run, String reply, UUID requestId) {
+            MangaAgentRunEventPublisher.this.sendDone(run, emitter, reply, requestId, protocol);
+        }
+
+        public void sendError(MangaAgentRun run, UUID requestId, String detail) {
+            MangaAgentRunEventPublisher.this.sendError(run, emitter, requestId, detail, protocol);
+        }
+    }
 
     public void sendStatus(MangaAgentRun run, SseEmitter emitter, String message, UUID requestId) {
-        Map<String, Object> payload = new LinkedHashMap<>();
-        payload.put("message", message);
-        payload.put("requestId", requestId);
-        publish(run, emitter, "status", payload);
+        sendStatus(run, emitter, message, requestId, protocolFor(emitter));
     }
 
     public void sendToolEvent(MangaAgentRun run, SseEmitter emitter, AgentRunToolStatus.ToolEvent event) {
-        publish(run, emitter, "tool", toolEventPayload(event));
+        sendToolEvent(run, emitter, event, protocolFor(emitter));
     }
 
     public void sendRunEvent(MangaAgentRun run, SseEmitter emitter, AgentRunEvent event) {
-        Map<String, Object> payload = mangaAgentRunService.toPayload(event);
-        if (!"text_delta".equals(event.type())) {
-            appendRunEvent(run, "run_event", payload);
-        }
-        sendSse(emitter, "run_event", payload);
+        sendRunEvent(run, emitter, event, protocolFor(emitter));
     }
 
     public void sendUserInputRequested(MangaAgentRun run, SseEmitter emitter, UUID requestId,
                                        AgentUserInputRequest request) {
-        publish(run, emitter, "user_input_requested", userInputPayload(requestId, request));
+        sendUserInputRequested(run, emitter, requestId, request, protocolFor(emitter));
     }
 
     public void sendUserAnswerEvent(MangaAgentRun run, SseEmitter emitter, UUID requestId, String answer) {
+        sendUserAnswerEvent(run, emitter, requestId, answer, protocolFor(emitter));
+    }
+
+    public void sendDone(MangaAgentRun run, SseEmitter emitter, String reply, UUID requestId) {
+        sendDone(run, emitter, reply, requestId, protocolFor(emitter));
+    }
+
+    public void sendError(MangaAgentRun run, SseEmitter emitter, UUID requestId, String detail) {
+        sendError(run, emitter, requestId, detail, protocolFor(emitter));
+    }
+
+    private void sendStatus(MangaAgentRun run, SseEmitter emitter, String message, UUID requestId,
+                            StreamProtocol protocol) {
+        Map<String, Object> payload = new LinkedHashMap<>();
+        payload.put("message", message);
+        payload.put("requestId", requestId);
+        publish(run, emitter, "status", payload, protocol);
+        sendAgUi(emitter, agUiEventFactory.runStarted(run, requestId, message));
+        sendAgUi(emitter, agUiEventFactory.stateSnapshot(run, requestId, "RUNNING", message));
+    }
+
+    private void sendToolEvent(MangaAgentRun run, SseEmitter emitter, AgentRunToolStatus.ToolEvent event,
+                               StreamProtocol protocol) {
+        publish(run, emitter, "tool", toolEventPayload(event), protocol);
+        UUID requestId = run == null ? null : run.getRequestId();
+        sendAgUi(emitter, agUiEventFactory.toolAudit(requestId, event));
+    }
+
+    private void sendRunEvent(MangaAgentRun run, SseEmitter emitter, AgentRunEvent event,
+                              StreamProtocol protocol) {
+        Map<String, Object> payload = mangaAgentRunService.toPayload(event);
+        if (!"text_delta".equals(event.type())) {
+            appendRunEvent(run, "run_event", payload);
+        }
+        if (protocol == StreamProtocol.LEGACY_AND_AG_UI) {
+            sendSse(emitter, "run_event", payload);
+        }
+        UUID requestId = run == null ? null : run.getRequestId();
+        sendAgUi(emitter, agUiEventFactory.fromRunEvent(run, requestId, event));
+        if ("reply_ready".equals(event.type()) || "run_finished".equals(event.type())) {
+            sendAgUi(emitter, agUiEventFactory.textMessageEnd(requestId));
+        }
+    }
+
+    private void sendUserInputRequested(MangaAgentRun run, SseEmitter emitter, UUID requestId,
+                                        AgentUserInputRequest request, StreamProtocol protocol) {
+        publish(run, emitter, "user_input_requested", userInputPayload(requestId, request), protocol);
+        sendAgUi(emitter, agUiEventFactory.userInputRequested(run, requestId, request));
+    }
+
+    private void sendUserAnswerEvent(MangaAgentRun run, SseEmitter emitter, UUID requestId, String answer,
+                                     StreamProtocol protocol) {
         Map<String, Object> payload = new LinkedHashMap<>();
         payload.put("type", "user_answered");
         payload.put("phase", "human_input");
@@ -55,26 +161,34 @@ public class MangaAgentRunEventPublisher {
         payload.put("requestId", requestId);
         payload.put("answer", answer == null || answer.isBlank() ? "继续默认方案" : answer.trim());
         payload.put("createdAt", OffsetDateTime.now().toString());
-        publish(run, emitter, "run_event", payload);
+        publish(run, emitter, "run_event", payload, protocol);
+        sendAgUi(emitter, agUiEventFactory.stateSnapshot(run, requestId, "RUNNING", "已收到用户选择，继续执行"));
     }
 
-    public void sendDone(MangaAgentRun run, SseEmitter emitter, String reply, UUID requestId) {
+    private void sendDone(MangaAgentRun run, SseEmitter emitter, String reply, UUID requestId,
+                          StreamProtocol protocol) {
         Map<String, Object> payload = new LinkedHashMap<>();
         payload.put("reply", reply);
         payload.put("requestId", requestId);
-        publish(run, emitter, "done", payload);
+        publish(run, emitter, "done", payload, protocol);
+        sendAgUi(emitter, agUiEventFactory.runFinished(run, requestId, reply));
     }
 
-    public void sendError(MangaAgentRun run, SseEmitter emitter, UUID requestId, String detail) {
+    private void sendError(MangaAgentRun run, SseEmitter emitter, UUID requestId, String detail,
+                           StreamProtocol protocol) {
         Map<String, Object> payload = new LinkedHashMap<>();
         payload.put("detail", detail);
         payload.put("requestId", requestId);
-        publish(run, emitter, "error", payload);
+        publish(run, emitter, "error", payload, protocol);
+        sendAgUi(emitter, agUiEventFactory.runError(requestId, detail));
     }
 
-    private void publish(MangaAgentRun run, SseEmitter emitter, String eventName, Map<String, Object> payload) {
+    private void publish(MangaAgentRun run, SseEmitter emitter, String eventName, Map<String, Object> payload,
+                         StreamProtocol protocol) {
         appendRunEvent(run, eventName, payload);
-        sendSse(emitter, eventName, payload);
+        if (protocol == StreamProtocol.LEGACY_AND_AG_UI) {
+            sendSse(emitter, eventName, payload);
+        }
     }
 
     private Map<String, Object> toolEventPayload(AgentRunToolStatus.ToolEvent event) {
@@ -119,11 +233,22 @@ public class MangaAgentRunEventPublisher {
 
     private void sendSse(SseEmitter emitter, String eventName, Map<String, Object> payload) {
         try {
-            emitter.send(SseEmitter.event()
-                    .name(eventName)
-                    .data(objectMapper.writeValueAsString(payload), MediaType.APPLICATION_JSON));
+            SseEmitter.SseEventBuilder event = SseEmitter.event()
+                    .data(objectMapper.writeValueAsString(payload), MediaType.APPLICATION_JSON);
+            if (eventName != null && !eventName.isBlank()) {
+                event.name(eventName);
+            }
+            emitter.send(event);
         } catch (Exception e) {
             log.debug("Failed to send manga agent SSE {}: {}", eventName, e.getMessage());
         }
+    }
+
+    private void sendAgUi(SseEmitter emitter, Map<String, Object> event) {
+        sendSse(emitter, null, event);
+    }
+
+    private StreamProtocol protocolFor(SseEmitter emitter) {
+        return emitterProtocols.getOrDefault(emitter, StreamProtocol.LEGACY_AND_AG_UI);
     }
 }

@@ -156,6 +156,9 @@ public class MangaAgentConversationService {
                 Never use any database id as a visible chapter number. When speaking to the user, only use the current display chapter name.
 
                 You can use tools to inspect chapter context, generate storyboard scenes, save edited storyboard scenes, and ask the user for a decision.
+                The current chapter source text is stored in chapters.novel_content and is synced into KNOWLEDGE.md before each run.
+                Use get_chapter_context to inspect source content, storyboard scenes, image status, and current chapter metadata.
+                Do not use shell, execute, filesystem listing, or source-code search to find story or chapter content.
                 Prefer save_structured_storyboard when creating or rewriting storyboard pages: provide pages with 4-6 panels each, using fields like shot, description, dialogue, narration, and sfx.
                 Use save_storyboard only when you already have a complete validated text scene list.
                 Use ask_user instead of plain text questions when a decision blocks progress, such as choosing between incompatible workflow options, resolving conflicting story direction, choosing whether to overwrite existing storyboard scenes, or deciding how to handle mismatched page counts.

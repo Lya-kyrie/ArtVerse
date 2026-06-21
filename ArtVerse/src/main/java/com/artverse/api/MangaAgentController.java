@@ -43,6 +43,13 @@ public class MangaAgentController {
         return mangaAgentService.runStream(chapterId, body.message(), body.requestId(), user);
     }
 
+    @PostMapping("/ag-ui/run")
+    public SseEmitter runAgUi(@PathVariable Long chapterId,
+                              @RequestBody MangaAgentDtos.RunRequest body) {
+        User user = currentUserService.requireCurrentUser();
+        return mangaAgentService.runAgUiStream(chapterId, body.message(), body.requestId(), user);
+    }
+
     @GetMapping("/runs/open")
     public MangaAgentDtos.OpenRunResponse openRun(@PathVariable Long chapterId) {
         User user = currentUserService.requireCurrentUser();

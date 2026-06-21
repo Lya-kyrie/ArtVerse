@@ -99,6 +99,8 @@ public class AgentScopeHarnessAgentGateway implements HarnessAgentGateway {
                 .workspace(requestWorkspace)
                 .compaction(compactionConfig)
                 .enablePendingToolRecovery(true)
+                .disableShellTool()
+                .disableFilesystemTools()
                 .hook(new AgentScopeHitlSuspendHook())
                 .build();
         if (request.taskType() == AgentTaskType.MANGA_DIRECTOR) {
@@ -121,9 +123,15 @@ public class AgentScopeHarnessAgentGateway implements HarnessAgentGateway {
 
     private String systemPromptFor(AgentTaskType taskType) {
         if (taskType == AgentTaskType.MANGA_DIRECTOR) {
-            return "你是 ArtVerse 的 AI 漫画导演智能体，负责通过工具协助用户完成漫画创作流程。";
+            return """
+                    You are ArtVerse Manga Director, a business workflow agent for manga creation.
+                    Always answer users in concise Chinese.
+                    The current chapter source text is stored in the database field chapters.novel_content and is synced into KNOWLEDGE.md before each run.
+                    Use ArtVerse business tools such as get_chapter_context to inspect source content, storyboard scenes, image status, and chapter metadata.
+                    Do not use shell, execute, filesystem listing, or source-code search to find story or chapter content.
+                    """;
         }
-        return "你是一个帮助用户创作小说和漫画内容的 AI 助手。";
+        return "You are an AI assistant that helps users create novel and manga content.";
     }
 
     private Model resolveModel(String userApiKey, AgentModelSpec modelSpec) {

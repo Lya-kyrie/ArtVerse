@@ -1,3 +1,5 @@
+import { EventType, HttpAgent, type AGUIEvent, type RunAgentInput } from '@ag-ui/client';
+
 const BASE = '';
 export const DEEPSEEK_USAGE_URL = 'https://platform.deepseek.com/usage';
 export const IMAGE2_CONSOLE_URL = 'https://api.duojie.games/console/token';
@@ -660,6 +662,7 @@ export interface AssetGroup {
   id: number | null;
   name: string;
   description: string;
+  is_default?: boolean;
   characters: AssetGroupCharacter[];
 }
 
@@ -1145,7 +1148,36 @@ export type MangaAgentRunEvent =
   | { type: 'tool'; data: { tool?: string; succeeded?: boolean; saved?: boolean; scenes_count?: number; error?: string } }
   | { type: 'user_input_requested'; data: AgentUserInputRequest }
   | { type: 'done'; data: { reply?: string; requestId?: string; request_id?: string } }
-  | { type: 'error'; data: { detail?: string; error?: string; requestId?: string; request_id?: string } };
+  | { type: 'error'; data: { detail?: string; error?: string; requestId?: string; request_id?: string } }
+  | { type: 'ag_ui_event'; data: ArtVerseAgUiEvent };
+
+export type ArtVerseAgUiEvent = AGUIEvent & {
+  protocol?: 'ag-ui';
+  runId?: string;
+  rawEvent?: AgentRunTimelineEvent | Record<string, unknown>;
+  snapshot?: {
+    requestId?: string;
+    runId?: string;
+    status?: string;
+    message?: string;
+  };
+  result?: {
+    reply?: string;
+  };
+  outcome?: {
+    type?: 'success' | 'interrupt';
+    interrupts?: Array<{
+      id: string;
+      reason: string;
+      message?: string;
+      metadata?: {
+        question?: string;
+        options?: AgentUserInputOption[];
+        allowFreeText?: boolean;
+      };
+    }>;
+  };
+};
 
 export interface AgentRunTimelineEvent {
   type: string;
@@ -1227,6 +1259,65 @@ export function runMangaAgentStream(
   );
 }
 
+class ArtVerseMangaAgentHttpAgent extends HttpAgent {
+  private readonly message: string;
+  private readonly requestId?: string;
+
+  constructor(chapterId: number, message: string, requestId: string | undefined, abortController: AbortController) {
+    super({
+      url: `${BASE}/api/chapters/${chapterId}/manga-agent/ag-ui/run`,
+      headers: apiHeaders(true) as Record<string, string>,
+    });
+    this.message = message;
+    this.requestId = requestId;
+    this.abortController = abortController;
+  }
+
+  protected override requestInit(input: RunAgentInput): RequestInit {
+    return {
+      method: 'POST',
+      headers: {
+        ...this.headers,
+        'Content-Type': 'application/json',
+        Accept: 'text/event-stream',
+      },
+      body: JSON.stringify({
+        message: this.message,
+        requestId: this.requestId || input.runId,
+      }),
+      signal: this.abortController.signal,
+    };
+  }
+}
+
+export function runMangaAgentAgUiStream(
+  chapterId: number,
+  message: string,
+  requestId: string | undefined,
+  onEvent: (event: MangaAgentRunEvent) => void,
+): AbortController {
+  const controller = new AbortController();
+  const agent = new ArtVerseMangaAgentHttpAgent(chapterId, message, requestId, controller);
+  const subscription = agent.run({
+    threadId: `chapter-${chapterId}`,
+    runId: requestId || createClientRequestId(),
+    state: {},
+    messages: [{ id: `user-${requestId || Date.now()}`, role: 'user', content: message }],
+    tools: [],
+    context: [],
+    forwardedProps: {},
+  }).subscribe({
+    next: (event) => onEvent({ type: 'ag_ui_event', data: event as ArtVerseAgUiEvent }),
+    error: (err) => {
+      if (!controller.signal.aborted) {
+        onEvent({ type: 'error', data: { detail: err?.message || '智能体连接中断', requestId } });
+      }
+    },
+  });
+  controller.signal.addEventListener('abort', () => subscription.unsubscribe());
+  return controller;
+}
+
 function startMangaAgentEventStream(
   url: string,
   body: Record<string, unknown>,
@@ -1266,7 +1357,9 @@ function startMangaAgentEventStream(
         const dataStr = trimmed.slice(5).trim();
         try {
           const data = JSON.parse(dataStr);
-          if (currentEvent === 'status'
+          if (isAgUiEventPayload(data) && (currentEvent === 'message' || currentEvent === 'ag_ui_event')) {
+            onEvent({ type: 'ag_ui_event', data });
+          } else if (currentEvent === 'status'
             || currentEvent === 'run_event'
             || currentEvent === 'tool'
             || currentEvent === 'user_input_requested'
@@ -1300,6 +1393,19 @@ function startMangaAgentEventStream(
     });
 
   return controller;
+}
+
+function isAgUiEventPayload(value: unknown): value is ArtVerseAgUiEvent {
+  if (!value || typeof value !== 'object') return false;
+  const type = (value as { type?: unknown }).type;
+  return typeof type === 'string' && Object.values(EventType).includes(type as EventType);
+}
+
+function createClientRequestId(): string {
+  if (typeof crypto !== 'undefined' && 'randomUUID' in crypto) {
+    return crypto.randomUUID();
+  }
+  return `${Date.now()}-${Math.random().toString(16).slice(2)}`;
 }
 
 export async function getOpenMangaAgentRun(chapterId: number): Promise<MangaAgentRunSnapshot | null> {
