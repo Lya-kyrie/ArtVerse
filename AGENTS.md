@@ -66,3 +66,10 @@ Pull requests should include:
 ## Security & Configuration Tips
 
 Never commit API keys or local secrets. User API keys are stored through the application settings flow or backend `.env`. Be careful with internal observability endpoints such as `/internal/guard` and `/api/internal/guard/**`; they expose runtime metadata and should not be linked from user-facing navigation.
+
+## Chinese Display Rules
+
+- User-facing UI text must be valid Simplified Chinese by default.
+- Do not commit encoded garbage, mojibake, or mixed-language placeholders into visible labels, prompts, tooltips, or status bars.
+- If a screen must show English, keep it intentional and localize the rest of the surface consistently.
+- Treat any visible乱码 as a correctness defect and fix the source string, not just the rendering layer.

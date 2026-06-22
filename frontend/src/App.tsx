@@ -19,9 +19,9 @@ import {
   Trash2,
   X,
 } from 'lucide-react';
-import ChatPanel from './components/ChatPanel';
-import MangaPanel from './components/MangaPanel';
-import MangaAgentPage from './components/MangaAgentPage';
+import 对话Panel from './components/对话Panel';
+import 漫画Panel from './components/漫画Panel';
+import 漫画AgentPage from './components/漫画AgentPage';
 import HomePage from './components/HomePage';
 import LoginPage from './components/LoginPage';
 import SquarePage from './components/SquarePage';
@@ -29,7 +29,7 @@ import ImageGenPage from './components/ImageGenPage';
 import MyWorksPage from './components/MyWorksPage';
 import {
   listChapters,
-  createNextChapter,
+  create下一章Chapter,
   deleteChapter,
   getChapter,
   type Chapter,
@@ -258,11 +258,11 @@ export default function App() {
     localStorage.setItem(LS_CHAPTER_IDX, String(idx));
   };
 
-  const handlePrev = () => {
+  const handle上一章 = () => {
     if (currentIdx > 0) setChapterByIndex(currentIdx - 1);
   };
 
-  const handleNext = async () => {
+  const handle下一章 = async () => {
     if (currentIdx < chapters.length - 1) {
       setChapterByIndex(currentIdx + 1);
       return;
@@ -270,7 +270,7 @@ export default function App() {
     if (activeStoryId) {
       setCreatingChapter(true);
       try {
-        await createNextChapter(activeStoryId);
+        await create下一章Chapter(activeStoryId);
         const chs = await listChapters(activeStoryId);
         setChapters(chs);
         const idx = chs.length - 1;
@@ -391,7 +391,7 @@ export default function App() {
       </aside>
 
       <div className="flex min-h-0 flex-1 flex-col">
-        {view === 'home' && <MangaAgentPage />}
+        {view === 'home' && <漫画AgentPage />}
         {view === 'square' && <SquarePage />}
         {view === 'workspace' && <HomePage onSelectStory={(story) => loadEditor(story.id)} />}
         {view === 'imagegen' && <ImageGenPage />}
@@ -412,7 +412,7 @@ export default function App() {
                     className="rounded-lg border border-ink-border bg-ink px-2 py-1 text-xs text-cream focus:border-coral focus:outline-none"
                   >
                     {chapters.map((ch, i) => (
-                      <option key={ch.id} value={i}>Ch.{ch.chapter_number}</option>
+                      <option key={ch.id} value={i}>第{ch.chapter_number}</option>
                     ))}
                   </select>
                 )}
@@ -424,7 +424,7 @@ export default function App() {
                 <div className="flex gap-1">
                   {chapters.map((ch: Chapter, idx: number) => (
                     <button key={ch.id} onClick={() => setChapterByIndex(idx)} className={'shrink-0 rounded-full border px-3 py-1.5 text-xs transition-all duration-200 ' + (ch.id === currentChapter?.id ? 'border-coral bg-coral/15 text-coral' : 'border-ink-border bg-ink text-cream-dim hover:text-cream')}>
-                      Ch.{ch.chapter_number}
+                      第{ch.chapter_number}
                     </button>
                   ))}
                 </div>
@@ -435,11 +435,11 @@ export default function App() {
               <div className="flex border-b border-ink-border bg-ink-light">
                 <button onClick={() => setMobileTab('chat')} className={'flex flex-1 items-center justify-center gap-1.5 py-2.5 text-xs font-medium transition-colors ' + (mobileTab === 'chat' ? 'border-b-2 border-coral text-coral' : 'text-cream-dim hover:text-cream')}>
                   <MessageSquare size={14} />
-                  Chat
+                  对话
                 </button>
                 <button onClick={() => setMobileTab('manga')} className={'flex flex-1 items-center justify-center gap-1.5 py-2.5 text-xs font-medium transition-colors ' + (mobileTab === 'manga' ? 'border-b-2 border-coral text-coral' : 'text-cream-dim hover:text-cream')}>
                   <Image size={14} />
-                  Manga
+                  漫画
                 </button>
               </div>
             )}
@@ -447,27 +447,27 @@ export default function App() {
             {isMobile ? (
               <main className="min-h-0 flex-1">
                 <div className={'h-full ' + (mobileTab === 'chat' ? '' : 'hidden')}>
-                  <ChatPanel chapter={currentChapter} onMessageSent={refreshCurrentChapter} onChapterRefresh={handleChapterRefresh} />
+                  <对话Panel chapter={currentChapter} onMessageSent={refreshCurrentChapter} onChapterRefresh={handleChapterRefresh} />
                 </div>
                 <div className={'h-full ' + (mobileTab === 'manga' ? '' : 'hidden')}>
-                  <MangaPanel chapter={currentChapter} onChapterRefresh={handleChapterRefresh} />
+                  <漫画Panel chapter={currentChapter} onChapterRefresh={handleChapterRefresh} />
                 </div>
               </main>
             ) : (
               <main className="flex min-h-0 flex-1">
                 <div className="w-1/2 border-r border-ink-border">
-                  <ChatPanel chapter={currentChapter} onMessageSent={refreshCurrentChapter} onChapterRefresh={handleChapterRefresh} />
+                  <对话Panel chapter={currentChapter} onMessageSent={refreshCurrentChapter} onChapterRefresh={handleChapterRefresh} />
                 </div>
                 <div className="w-1/2">
-                  <MangaPanel chapter={currentChapter} onChapterRefresh={handleChapterRefresh} />
+                  <漫画Panel chapter={currentChapter} onChapterRefresh={handleChapterRefresh} />
                 </div>
               </main>
             )}
 
             <footer className="flex h-14 shrink-0 items-center justify-center gap-2 border-t border-ink-border bg-ink-light/80 px-2 backdrop-blur-md md:gap-4">
-              <button onClick={handlePrev} disabled={currentIdx === 0} className="flex items-center gap-1 rounded-lg border border-ink-border bg-ink px-3 py-2 text-sm font-medium text-cream-dim disabled:cursor-not-allowed disabled:opacity-30 hover:border-ink-muted hover:text-cream transition-colors">
+              <button onClick={handle上一章} disabled={currentIdx === 0} className="flex items-center gap-1 rounded-lg border border-ink-border bg-ink px-3 py-2 text-sm font-medium text-cream-dim disabled:cursor-not-allowed disabled:opacity-30 hover:border-ink-muted hover:text-cream transition-colors">
                 <ChevronLeft size={16} />
-                {!isMobile && 'Prev'}
+                {!isMobile && '上一章'}
               </button>
               <button onClick={handleDelete} disabled={!currentChapter || chapters.length <= 1} className="flex items-center gap-1.5 rounded-lg border border-coral-dark/30 bg-coral-dark/10 px-3 py-2 text-sm font-medium text-coral disabled:cursor-not-allowed disabled:opacity-30 hover:bg-coral-dark/20 transition-colors">
                 <Trash2 size={14} />
@@ -477,8 +477,8 @@ export default function App() {
                   <button key={ch.id} onClick={() => setChapterByIndex(i)} className={'h-2 w-2 rounded-full transition-colors duration-200 ' + (i === currentIdx ? 'bg-coral' : 'bg-ink-muted hover:bg-cream-dim')} />
                 ))}
               </div>
-              <button onClick={handleNext} disabled={creatingChapter} className="flex items-center gap-1 rounded-lg bg-coral px-3 py-2 text-sm font-medium text-white disabled:cursor-not-allowed disabled:opacity-40 hover:bg-coral-light transition-colors md:px-5">
-                {currentIdx === chapters.length - 1 ? (<><Plus size={16} />{creatingChapter ? '...' : isMobile ? 'New' : 'Next(New)'}</>) : (<><span>{!isMobile && 'Next'}</span><ChevronRight size={16} /></>)}
+              <button onClick={handle下一章} disabled={creatingChapter} className="flex items-center gap-1 rounded-lg bg-coral px-3 py-2 text-sm font-medium text-white disabled:cursor-not-allowed disabled:opacity-40 hover:bg-coral-light transition-colors md:px-5">
+                {currentIdx === chapters.length - 1 ? (<><Plus size={16} />{creatingChapter ? '...' : isMobile ? '新建' : '下一章(新建)'}</>) : (<><span>{!isMobile && '下一章'}</span><ChevronRight size={16} /></>)}
               </button>
             </footer>
           </div>
