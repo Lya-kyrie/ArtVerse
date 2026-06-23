@@ -1,6 +1,8 @@
 package com.artverse.application;
 
 import com.artverse.agents.AgentRunContext;
+import com.artverse.agents.MangaAgentRuntimeContext;
+import com.artverse.common.BusinessException;
 import com.artverse.domain.Chapter;
 import com.artverse.domain.MangaImage;
 import com.artverse.guard.GenerationGuardService;
@@ -29,6 +31,10 @@ public class MangaAgentToolFactory {
     private final AgentToolAuditService agentToolAuditService;
     private final AgentRunToolStatus agentRunToolStatus;
 
+    public Object create() {
+        return new Tools(null, null, null);
+    }
+
     public Object create(String cozeApiKey, Long chapterId, Long userId) {
         return new Tools(cozeApiKey, chapterId, userId);
     }
@@ -36,9 +42,9 @@ public class MangaAgentToolFactory {
     @RequiredArgsConstructor
     public class Tools {
 
-        private final String cozeApiKey;
-        private final Long chapterId;
-        private final Long userId;
+        private final String legacyCozeApiKey;
+        private final Long legacyChapterId;
+        private final Long legacyUserId;
 
         @Tool(
                 name = "get_chapter_context",
@@ -47,10 +53,11 @@ public class MangaAgentToolFactory {
         )
         @Transactional(readOnly = true)
         public Map<String, Object> getChapterContext(RuntimeContext runtimeContext) {
-            return agentToolAuditService.around("get_chapter_context", userId, chapterId, runtimeContext, () -> {
-                Chapter chapter = chapterAccessService.requireVisible(chapterId, userId);
-                List<String> scenes = sceneService.getScenes(chapterId);
-                List<MangaImage> images = mangaImageRepository.findByChapterIdOrderByImageNumberAsc(chapterId);
+            MangaAgentRuntimeContext context = resolveContext(runtimeContext);
+            return agentToolAuditService.around("get_chapter_context", context.userId(), context.chapterId(), runtimeContext, () -> {
+                Chapter chapter = chapterAccessService.requireVisible(context.chapterId(), context.userId());
+                List<String> scenes = sceneService.getScenes(context.chapterId());
+                List<MangaImage> images = mangaImageRepository.findByChapterIdOrderByImageNumberAsc(context.chapterId());
 
                 Map<String, Object> result = new LinkedHashMap<>();
                 result.put("story_title", chapter.getStory().getTitle());
@@ -85,13 +92,14 @@ public class MangaAgentToolFactory {
         )
         @Transactional
         public Map<String, Object> generateStoryboard(RuntimeContext runtimeContext) {
-            return agentToolAuditService.around("generate_storyboard", userId, chapterId, runtimeContext, () -> {
-                Chapter chapter = chapterAccessService.requireVisible(chapterId, userId);
+            MangaAgentRuntimeContext context = resolveContext(runtimeContext);
+            return agentToolAuditService.around("generate_storyboard", context.userId(), context.chapterId(), runtimeContext, () -> {
+                Chapter chapter = chapterAccessService.requireVisible(context.chapterId(), context.userId());
                 return generationGuardService.executeSceneGeneration(
-                        userId,
-                        chapterId,
+                        context.userId(),
+                        context.chapterId(),
                         () -> {
-                            List<String> scenes = sceneService.generateScenes(chapterId, cozeApiKey);
+                            List<String> scenes = sceneService.generateScenes(context.chapterId(), context.cozeApiKey());
                             return Map.of(
                                     "chapter_display_name", chapterDisplayName(chapter),
                                     "saved", true,
@@ -117,9 +125,10 @@ public class MangaAgentToolFactory {
         public Map<String, Object> saveStoryboard(
                 @ToolParam(name = "scenes", description = "Complete storyboard scene list") List<String> scenes,
                 RuntimeContext runtimeContext) {
-            return agentToolAuditService.around("save_storyboard", userId, chapterId, runtimeContext, () -> {
-                Chapter chapter = chapterAccessService.requireVisible(chapterId, userId);
-                List<String> updated = sceneService.updateScenes(chapterId, scenes);
+            MangaAgentRuntimeContext context = resolveContext(runtimeContext);
+            return agentToolAuditService.around("save_storyboard", context.userId(), context.chapterId(), runtimeContext, () -> {
+                Chapter chapter = chapterAccessService.requireVisible(context.chapterId(), context.userId());
+                List<String> updated = sceneService.updateScenes(context.chapterId(), scenes);
                 return Map.of(
                         "chapter_display_name", chapterDisplayName(chapter),
                         "saved", true,
@@ -143,10 +152,11 @@ public class MangaAgentToolFactory {
         public Map<String, Object> saveStructuredStoryboard(
                 @ToolParam(name = "pages", description = "Storyboard pages with panels") Object pages,
                 RuntimeContext runtimeContext) {
-            return agentToolAuditService.around("save_structured_storyboard", userId, chapterId, runtimeContext, () -> {
-                Chapter chapter = chapterAccessService.requireVisible(chapterId, userId);
+            MangaAgentRuntimeContext context = resolveContext(runtimeContext);
+            return agentToolAuditService.around("save_structured_storyboard", context.userId(), context.chapterId(), runtimeContext, () -> {
+                Chapter chapter = chapterAccessService.requireVisible(context.chapterId(), context.userId());
                 List<String> scenes = structuredStoryboardService.normalize(pages, chapter.getImageCount());
-                List<String> updated = sceneService.updateScenes(chapterId, scenes);
+                List<String> updated = sceneService.updateScenes(context.chapterId(), scenes);
                 return Map.of(
                         "chapter_display_name", chapterDisplayName(chapter),
                         "saved", true,
@@ -172,15 +182,34 @@ public class MangaAgentToolFactory {
                 @ToolParam(name = "allow_free_text", description = "Whether the user may type a custom answer") Boolean allowFreeText,
                 @ToolParam(name = "reason", description = "Short reason why user input is needed") String reason,
                 RuntimeContext runtimeContext) {
-            return agentToolAuditService.around("ask_user", userId, chapterId, runtimeContext, () -> {
+            MangaAgentRuntimeContext context = resolveContext(runtimeContext);
+            return agentToolAuditService.around("ask_user", context.userId(), context.chapterId(), runtimeContext, () -> {
                 AgentUserInputRequest request = buildUserInputRequest(question, options, allowFreeText, reason);
-                requestUserInput(userId, chapterId, runtimeContext, request);
+                requestUserInput(context.userId(), context.chapterId(), runtimeContext, request);
                 throw new ToolSuspendException("Waiting for user input");
             });
         }
 
         public Map<String, Object> askUser(String question, Object options, Boolean allowFreeText, String reason) {
             return askUser(question, options, allowFreeText, reason, null);
+        }
+
+        private MangaAgentRuntimeContext resolveContext(RuntimeContext runtimeContext) {
+            MangaAgentRuntimeContext context = runtimeContext == null ? null : runtimeContext.get(MangaAgentRuntimeContext.class);
+            if (context != null) {
+                return context;
+            }
+            if (legacyUserId == null || legacyChapterId == null) {
+                throw new BusinessException(500, "Manga Agent runtime context is missing user id or chapter id");
+            }
+            return new MangaAgentRuntimeContext(
+                    legacyUserId,
+                    null,
+                    legacyChapterId,
+                    null,
+                    null,
+                    legacyCozeApiKey == null ? "" : legacyCozeApiKey
+            );
         }
     }
 
@@ -200,7 +229,7 @@ public class MangaAgentToolFactory {
         if (options.isEmpty()) {
             options = List.of(
                     new AgentUserInputRequest.Option("a", "继续默认方案", "让智能体按当前上下文选择一个稳妥方案", true),
-                    new AgentUserInputRequest.Option("b", "先给出建议", "先不要执行，让智能体说明推荐路径", false)
+                    new AgentUserInputRequest.Option("b", "先给出建议", "先不执行，让智能体说明推荐路径", false)
             );
         }
         return new AgentUserInputRequest(
@@ -250,7 +279,9 @@ public class MangaAgentToolFactory {
     }
 
     private String excerpt(String text, int maxChars) {
-        if (text == null || text.isBlank()) return "";
+        if (text == null || text.isBlank()) {
+            return "";
+        }
         String normalized = text.replaceAll("\\s+", " ").trim();
         return normalized.length() <= maxChars ? normalized : normalized.substring(0, maxChars) + "...";
     }

@@ -146,6 +146,36 @@ class AgentScopeHarnessAgentGatewayTest {
     }
 
     @Test
+    void mangaDirectorRuntimeContextCarriesBusinessToolContext() {
+        UUID requestId = UUID.randomUUID();
+        UUID conversationId = UUID.randomUUID();
+        AgentRunRequest request = new AgentRunRequest(
+                "42",
+                1L,
+                2L,
+                AgentTaskType.MANGA_DIRECTOR,
+                List.of(new AgentMessage("user", "hi")),
+                Map.of("coze_api_key", "coze-secret"),
+                new AgentModelSpec("deepseek", "https://api.deepseek.com", "deepseek-chat", "key-a"),
+                "secret",
+                requestId,
+                conversationId
+        );
+
+        MangaAgentRuntimeContext context = AgentScopeHarnessAgentGateway
+                .buildRuntimeContextForTest(request, new AgentSessionIdFactory())
+                .get(MangaAgentRuntimeContext.class);
+
+        assertThat(context).isNotNull();
+        assertThat(context.userId()).isEqualTo(42L);
+        assertThat(context.storyId()).isEqualTo(1L);
+        assertThat(context.chapterId()).isEqualTo(2L);
+        assertThat(context.requestId()).isEqualTo(requestId);
+        assertThat(context.conversationId()).isEqualTo(conversationId);
+        assertThat(context.cozeApiKey()).isEqualTo("coze-secret");
+    }
+
+    @Test
     void cacheKeyChangesWhenWorkspaceChanges() {
         AgentRunRequest request = requestWithSpec("user-1", new AgentModelSpec(
                 "deepseek",

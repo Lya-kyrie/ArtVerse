@@ -1,5 +1,6 @@
 package com.artverse.application.workflow;
 
+import com.artverse.application.CharacterProfileService;
 import com.artverse.application.MangaAgentConversationService;
 import com.artverse.domain.Chapter;
 import com.artverse.domain.MangaAgentConversation;
@@ -8,7 +9,6 @@ import com.artverse.domain.MangaImage;
 import com.artverse.domain.MessageRole;
 import com.artverse.domain.Story;
 import com.artverse.persistence.MangaImageRepository;
-import com.artverse.application.CharacterProfileService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 
@@ -37,7 +37,7 @@ public class MangaWorkflowContextAssembler {
                 story.getId(),
                 chapter.getId(),
                 story.getTitle(),
-                "Chapter " + chapter.getChapterNumber(),
+                chapterDisplayName(chapter),
                 story.getMangaStyle(),
                 countScenes(chapter.getScenesText()),
                 images == null ? 0 : images.size(),
@@ -86,6 +86,13 @@ public class MangaWorkflowContextAssembler {
             sb.append("user: ").append(excerpt(userMessage, 220)).append("\n");
         }
         return sb.toString().trim();
+    }
+
+    private String chapterDisplayName(Chapter chapter) {
+        if (chapter.getDisplayTitle() != null && !chapter.getDisplayTitle().isBlank()) {
+            return chapter.getDisplayTitle();
+        }
+        return "第" + chapter.getChapterNumber() + "话";
     }
 
     private String excerpt(String text, int limit) {

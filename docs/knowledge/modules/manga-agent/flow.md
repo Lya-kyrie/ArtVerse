@@ -50,6 +50,8 @@ Frontend types and stream parsing live in `frontend/src/api.ts`. The frontend de
 
 ## Human-In-The-Loop Resume
 
+`AgentScopeHarnessAgentGateway` adds `MangaAgentRuntimeContext` to AgentScope v2 `RuntimeContext` for Manga Director runs. Tools read user id, chapter id, conversation id, request id, and Coze API key from that typed context instead of relying on factory-captured fields.
+
 `MangaAgentToolFactory.ask_user` stores the current `AgentUserInputRequest` in `AgentRunToolStatus` using `AgentRunContext.requestId`, then throws `ToolSuspendException`.
 
 `MangaAgentService` catches `AgentUserInputRequiredException`, marks the run `WAITING_USER`, emits `user_input_requested`, and completes the stream. The frontend displays the options and can call resume.
@@ -92,6 +94,6 @@ There are three separate context channels:
 - Story workspace knowledge from `AgentWorkspaceSyncService.buildKnowledge`, written to AgentScope `KNOWLEDGE.md`.
 - AgentScope agent system prompt from `AgentScopeHarnessAgentGateway.systemPromptFor`.
 
-AgentScope `RuntimeContext.sessionId` includes user, story, chapter, conversation id, and task suffix. A new conversation must produce a new session id. `RuntimeContext.userId` remains the ArtVerse user id for multi-tenant isolation.
+AgentScope `RuntimeContext.sessionId` includes user, story, chapter, conversation id, and task suffix. A new conversation must produce a new session id. `RuntimeContext.userId` remains the ArtVerse user id for multi-tenant isolation. `MangaAgentRuntimeContext` carries the per-call business context that tools need.
 
 When reducing token usage, prefer shrinking history, story knowledge excerpts, or duplicated prompt instructions before changing business behavior.

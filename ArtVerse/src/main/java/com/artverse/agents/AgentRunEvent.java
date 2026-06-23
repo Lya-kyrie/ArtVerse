@@ -24,7 +24,7 @@ public record AgentRunEvent(
     }
 
     public static AgentRunEvent text(String delta) {
-        return new AgentRunEvent("text_delta", "replying", "姝ｅ湪鏁寸悊鍥炲", null, "running",
+        return new AgentRunEvent("text_delta", "replying", "正在整理回复", null, "running",
                 delta, Map.of(), OffsetDateTime.now());
     }
 

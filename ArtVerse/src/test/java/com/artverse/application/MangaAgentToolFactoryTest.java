@@ -1,6 +1,7 @@
 package com.artverse.application;
 
 import com.artverse.common.BusinessException;
+import com.artverse.agents.MangaAgentRuntimeContext;
 import com.artverse.domain.Chapter;
 import com.artverse.domain.ColorMode;
 import com.artverse.domain.Story;
@@ -59,6 +60,50 @@ class MangaAgentToolFactoryTest {
         assertThat(result).containsEntry("scenes_count", 1);
         verify(generationGuardService).executeSceneGeneration(eq(1L), eq(7L), any());
         verify(sceneService).generateScenes(7L, "coze-key");
+    }
+
+    @Test
+    void generateStoryboardCanUseRuntimeContextInsteadOfFactoryCapturedFields() {
+        ChapterRepository chapterRepository = mock(ChapterRepository.class);
+        MangaImageRepository mangaImageRepository = mock(MangaImageRepository.class);
+        SceneService sceneService = mock(SceneService.class);
+        StructuredStoryboardService structuredStoryboardService = mock(StructuredStoryboardService.class);
+        GenerationGuardService generationGuardService = mock(GenerationGuardService.class);
+        AgentToolAuditService auditService = new AgentToolAuditService(new AgentRunToolStatus());
+        Chapter chapter = chapterWithOwner(7L, 1L);
+
+        when(chapterRepository.findByIdForIdempotency(7L)).thenReturn(Optional.of(chapter));
+        when(sceneService.generateScenes(7L, "coze-from-context")).thenReturn(List.of("scene 1"));
+        when(generationGuardService.executeSceneGeneration(eq(1L), eq(7L), any()))
+                .thenAnswer(invocation -> invocation.<Callable<Map<String, Object>>>getArgument(2).call());
+
+        MangaAgentToolFactory factory = new MangaAgentToolFactory(
+                mangaImageRepository,
+                sceneService,
+                structuredStoryboardService,
+                new ChapterAccessService(chapterRepository),
+                generationGuardService,
+                auditService,
+                new AgentRunToolStatus()
+        );
+        MangaAgentToolFactory.Tools tools = (MangaAgentToolFactory.Tools) factory.create();
+        RuntimeContext runtimeContext = RuntimeContext.builder()
+                .userId("1")
+                .sessionId("session")
+                .put(MangaAgentRuntimeContext.class, new MangaAgentRuntimeContext(
+                        1L,
+                        3L,
+                        7L,
+                        UUID.randomUUID(),
+                        UUID.randomUUID(),
+                        "coze-from-context"
+                ))
+                .build();
+
+        Map<String, Object> result = tools.generateStoryboard(runtimeContext);
+
+        assertThat(result).containsEntry("scenes_count", 1);
+        verify(sceneService).generateScenes(7L, "coze-from-context");
     }
 
     @Test

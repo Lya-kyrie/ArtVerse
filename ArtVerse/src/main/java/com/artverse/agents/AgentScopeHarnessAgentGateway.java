@@ -29,7 +29,7 @@ import java.util.concurrent.ConcurrentHashMap;
 @Primary
 public class AgentScopeHarnessAgentGateway implements HarnessAgentGateway {
 
-    static final String PROMPT_VERSION = "v1";
+    static final String PROMPT_VERSION = "v2-runtime-context";
 
     private final Model model;
     private final CompactionConfig compactionConfig;
@@ -104,11 +104,7 @@ public class AgentScopeHarnessAgentGateway implements HarnessAgentGateway {
                 .hook(new AgentScopeHitlSuspendHook())
                 .build();
         if (request.taskType() == AgentTaskType.MANGA_DIRECTOR) {
-            agent.getToolkit().registerTool(mangaAgentToolFactory.create(
-                    String.valueOf(request.variables().getOrDefault("coze_api_key", "")),
-                    request.chapterId(),
-                    parseUserIdForTool(request.userId())
-            ));
+            agent.getToolkit().registerTool(mangaAgentToolFactory.create());
         }
         return agent;
     }
@@ -196,6 +192,16 @@ public class AgentScopeHarnessAgentGateway implements HarnessAgentGateway {
         if (request.requestId() != null) {
             builder.put(AgentRunContext.class, new AgentRunContext(request.requestId()));
         }
+        if (request.taskType() == AgentTaskType.MANGA_DIRECTOR) {
+            builder.put(MangaAgentRuntimeContext.class, new MangaAgentRuntimeContext(
+                    parseUserIdForTool(request.userId()),
+                    request.storyId(),
+                    request.chapterId(),
+                    request.conversationId(),
+                    request.requestId(),
+                    String.valueOf(request.variables().getOrDefault("coze_api_key", ""))
+            ));
+        }
         return builder.build();
     }
 
@@ -205,6 +211,16 @@ public class AgentScopeHarnessAgentGateway implements HarnessAgentGateway {
                 .userId(request.userId());
         if (request.requestId() != null) {
             builder.put(AgentRunContext.class, new AgentRunContext(request.requestId()));
+        }
+        if (request.taskType() == AgentTaskType.MANGA_DIRECTOR) {
+            builder.put(MangaAgentRuntimeContext.class, new MangaAgentRuntimeContext(
+                    parseUserIdForTool(request.userId()),
+                    request.storyId(),
+                    request.chapterId(),
+                    request.conversationId(),
+                    request.requestId(),
+                    String.valueOf(request.variables().getOrDefault("coze_api_key", ""))
+            ));
         }
         return builder.build();
     }

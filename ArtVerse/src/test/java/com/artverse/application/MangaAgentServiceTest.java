@@ -5,6 +5,7 @@ import com.artverse.agents.AgentRunRequest;
 import com.artverse.agents.AgentScopeEventMapper;
 import com.artverse.agents.AgentWorkspaceSyncService;
 import com.artverse.agents.HarnessAgentGateway;
+import com.artverse.application.workflow.MangaWorkflowContextAssembler;
 import com.artverse.common.BusinessException;
 import com.artverse.config.ArtVerseProperties;
 import com.artverse.domain.Chapter;
@@ -17,7 +18,7 @@ import com.artverse.domain.Story;
 import com.artverse.domain.User;
 import com.artverse.guard.GenerationGuardService;
 import com.artverse.persistence.MangaAgentMessageRepository;
-import io.github.cdimascio.dotenv.Dotenv;
+import com.artverse.persistence.MangaImageRepository;
 import org.junit.jupiter.api.Test;
 import reactor.core.publisher.Mono;
 
@@ -114,18 +115,19 @@ class MangaAgentServiceTest {
         MangaAgentRunService runService = mock(MangaAgentRunService.class);
         MangaAgentRunEventPublisher eventPublisher = mock(MangaAgentRunEventPublisher.class);
         MangaAgentConversationRegistry conversationRegistry = mock(MangaAgentConversationRegistry.class);
+        MangaImageRepository imageRepository = mock(MangaImageRepository.class);
+        CharacterProfileService characterProfileService = mock(CharacterProfileService.class);
         ArtVerseProperties properties = new ArtVerseProperties();
         AgentRunToolStatus toolStatus = new AgentRunToolStatus();
         properties.getAgent().setRunTimeoutSeconds(5);
         properties.getDeepseek().setModel("deepseek-chat");
-        Dotenv dotenv = mock(Dotenv.class);
-        when(dotenv.get("DEEPSEEK_API_KEY", "")).thenReturn("");
-
         User user = user(1L);
         Chapter chapter = chapter(user);
         MangaAgentConversation conversation = conversation(user, chapter);
         List<MangaAgentMessage> saved = new ArrayList<>();
         when(accessService.requireVisible(7L, 1L)).thenReturn(chapter);
+        when(imageRepository.findByChapterIdOrderByImageNumberAsc(7L)).thenReturn(List.of());
+        when(characterProfileService.resolveEffective(7L)).thenReturn(Map.of("content", "", "source", "none"));
         when(conversationRegistry.activeOrCreate(7L, user)).thenReturn(conversation);
         when(apiKeyService.getDecryptedKey(user, "deepseek")).thenReturn("deepseek-key");
         when(apiKeyService.getDecryptedKey(user, "coze")).thenReturn("coze-key");
@@ -141,11 +143,13 @@ class MangaAgentServiceTest {
 
         MangaAgentConversationService conversationService =
                 new MangaAgentConversationService(messageRepository, accessService);
+        MangaWorkflowContextAssembler workflowContextAssembler =
+                new MangaWorkflowContextAssembler(imageRepository, characterProfileService, conversationService);
         MangaAgentService service = new MangaAgentService(
                 conversationService,
                 conversationRegistry,
                 gateway,
-                new AgentModelSpecFactory(properties, dotenv),
+                new AgentModelSpecFactory(properties),
                 syncService,
                 apiKeyService,
                 accessService,
@@ -155,6 +159,7 @@ class MangaAgentServiceTest {
                 new AgentScopeEventMapper(),
                 runService,
                 eventPublisher,
+                workflowContextAssembler,
                 Executors.newSingleThreadExecutor()
         );
         return new Fixture(service, gateway, guard, toolStatus, user, saved);

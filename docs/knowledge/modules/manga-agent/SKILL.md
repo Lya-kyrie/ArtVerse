@@ -27,7 +27,8 @@ Image generation is not performed by the Manga Agent. The agent prepares or refi
 - AgentScope bridge and tool registration: `ArtVerse/src/main/java/com/artverse/agents/AgentScopeHarnessAgentGateway.java`.
 - Story knowledge sync: `ArtVerse/src/main/java/com/artverse/agents/AgentWorkspaceSyncService.java`.
 - Runtime workspace files: `ArtVerse/src/main/java/com/artverse/agents/AgentWorkspaceService.java`.
-- Agent tools: `ArtVerse/src/main/java/com/artverse/application/MangaAgentToolFactory.java`.
+- Agent tools and typed runtime context: `ArtVerse/src/main/java/com/artverse/application/MangaAgentToolFactory.java`, `ArtVerse/src/main/java/com/artverse/agents/MangaAgentRuntimeContext.java`.
+- AgentScope v2 migration plan: `docs/knowledge/modules/manga-agent/agentscope-v2-refactor-plan.md`.
 - Frontend API and stream parser: `frontend/src/api.ts`.
 - Frontend UI state machine: `frontend/src/components/MangaAgentPage.tsx`.
 - Frontend navigation shell: `frontend/src/App.tsx`; main nav `home` renders `MangaAgentPage`, while `workspace` renders the story/workspace list (`HomePage`).
@@ -40,7 +41,7 @@ For a new run, `MangaAgentService` resolves the active `MangaAgentConversation` 
 
 For resume, the service requires an existing `WAITING_USER` run, reconstructs a continuation message from the stored user-input request and the user's answer, clears waiting state, and continues the same request id.
 
-`AgentScopeHarnessAgentGateway` creates or reuses a per-user/story/chapter/conversation/task/model/workspace agent. For `AgentTaskType.MANGA_DIRECTOR`, it registers `MangaAgentToolFactory.Tools`.
+`AgentScopeHarnessAgentGateway` creates or reuses a per-user/story/chapter/conversation/task/model/workspace agent. For `AgentTaskType.MANGA_DIRECTOR`, it registers `MangaAgentToolFactory.Tools` once and passes per-call business values through AgentScope v2 `RuntimeContext` as `MangaAgentRuntimeContext`.
 
 The frontend consumes AG-UI as the default live protocol. `POST /conversations/{conversationId}/ag-ui/run` and `POST /conversations/{conversationId}/ag-ui/runs/{requestId}/resume` are the preferred endpoints. Legacy chapter-level endpoints auto-resolve the active conversation and remain compatibility paths. Keep the execution panel as the single place that explains what the agent is doing; do not add a second competing progress widget.
 
@@ -66,6 +67,7 @@ After a mutating tool succeeds, failures in the final agent response may degrade
 - AG-UI events are the live observability protocol. Legacy events remain compatibility payloads and persisted restore input.
 - Chapter source text lives in `chapters.novel_content`; chat-derived fallback comes from `Chapter.novelContentOrJoinedMessages()`. `AgentWorkspaceSyncService` writes this into the story workspace `KNOWLEDGE.md` before a Manga Director run.
 - Manga Director must not use AgentScope shell/filesystem tools to find business content. `AgentScopeHarnessAgentGateway` disables Harness shell/filesystem tools for this business agent; chapter/story facts must come from `get_chapter_context`, synced `KNOWLEDGE.md`, and registered ArtVerse tools.
+- Manga Director tools should read user, chapter, conversation, request id, and Coze key from `MangaAgentRuntimeContext` injected through `RuntimeContext`. Avoid adding new factory-captured per-run fields.
 - When backend emits AG-UI frames, `MangaAgentPage.tsx` must translate `ag_ui_event` frames into execution panel state and synchronize final persisted messages after `RUN_FINISHED`; otherwise the frontend can appear stuck or require a manual refresh.
 - Use `ask_user` for blocking decisions instead of plain-text questions.
 - Keep controllers thin. Put workflow behavior in application services.
@@ -79,6 +81,7 @@ After a mutating tool succeeds, failures in the final agent response may degrade
 - If cancellation or stale-run repair changes, update backend status tests, frontend terminal-state rendering, and the flow reference.
 - If prompt or workspace knowledge changes, check both `MangaAgentConversationService.buildSystemPrompt` and `AgentWorkspaceSyncService.buildKnowledge`.
 - If AgentScope session/cache key inputs change, update `AgentScopeHarnessAgentGatewayTest` and `AgentSessionIdFactoryTest`.
+- If `MangaAgentRuntimeContext` changes, update `AgentScopeHarnessAgentGatewayTest`, `MangaAgentToolFactoryTest`, and the v2 refactor plan.
 - If conversation isolation changes, update `MangaAgentConversationRegistry`, message/run repositories, frontend conversation API helpers, and this skill.
 - If this skill disagrees with code, trust code first and update this skill or `flow.md`.
 
