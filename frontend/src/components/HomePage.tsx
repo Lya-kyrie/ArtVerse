@@ -46,6 +46,8 @@ import {
   deleteCharRefImage,
 } from '../api';
 
+import ImageEditor from './ImageEditor';
+
 interface Props {
   onSelectStory: (story: Story) => void;
 }
@@ -60,19 +62,25 @@ export default function HomePage({ onSelectStory }: Props) {
   const [newDesc, setNewDesc] = useState('');
   const [newCoverPreview, setNewCoverPreview] = useState<string | null>(null);
   const [newCoverBase64, setNewCoverBase64] = useState<string | null>(null);
-  const newCoverInputRef = useRef<HTMLInputElement>(null);
 
   // Edit mode
   const [editingId, setEditingId] = useState<number | null>(null);
   const [editTitle, setEditTitle] = useState('');
   const [editDesc, setEditDesc] = useState('');
 
-  const fileRef = useRef<HTMLInputElement>(null);
   const importFileRef = useRef<HTMLInputElement>(null);
   const [uploadingCover, setUploadingCover] = useState<number | null>(null);
   const [importingStory, setImportingStory] = useState(false);
   const [importProgress, setImportProgress] = useState<{ message: string; percent?: number } | null>(null);
   const [exportingStoryId, setExportingStoryId] = useState<number | null>(null);
+
+  // Image editor state
+  const [editorOpen, setEditorOpen] = useState(false);
+  const [editorImageDataUrl, setEditorImageDataUrl] = useState<string | null>(null);
+  // 'new' = from new story modal, 'existing' = from story card cover click
+  const [editorMode, setEditorMode] = useState<'new' | 'existing' | null>(null);
+  const [editorStoryId, setEditorStoryId] = useState<number | null>(null);
+  const editorFileInputRef = useRef<HTMLInputElement>(null);
 
   // Character card modal (profile-based)
   const [charModalStoryId, setCharModalStoryId] = useState<number | null>(null);
@@ -350,17 +358,49 @@ export default function HomePage({ onSelectStory }: Props) {
     }
   };
 
-  const handleNewCoverFile = (e: React.ChangeEvent<HTMLInputElement>) => {
+  // Editor handler: called when explicit edit trigger is used (non-modal cover input)
+  const handleEditorFileTrigger = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
     const reader = new FileReader();
     reader.onload = () => {
       const dataUrl = reader.result as string;
-      setNewCoverPreview(dataUrl);
-      setNewCoverBase64(dataUrl.split(',')[1]);
+      setEditorImageDataUrl(dataUrl);
+      setEditorOpen(true);
     };
     reader.readAsDataURL(file);
     e.target.value = '';
+  };
+
+  const handleEditorConfirm = (croppedBase64: string) => {
+    const dataUrl = 'data:image/jpeg;base64,' + croppedBase64;
+    if (editorMode === 'new') {
+      // New story modal
+      setNewCoverPreview(dataUrl);
+      setNewCoverBase64(croppedBase64);
+    } else if (editorMode === 'existing' && editorStoryId !== null) {
+      // Existing story cover replace
+      uploadStoryCover(editorStoryId, croppedBase64)
+        .then((coverPath) => {
+          setStories((prev) =>
+            prev.map((s) => (s.id === editorStoryId ? { ...s, cover_image: coverPath } : s))
+          );
+        })
+        .catch((err: any) => {
+          alert(`上传封面失败: ${err.message}`);
+        })
+        .finally(() => {
+          setUploadingCover(null);
+        });
+    }
+    closeEditor();
+  };
+
+  const closeEditor = () => {
+    setEditorOpen(false);
+    setEditorImageDataUrl(null);
+    setEditorMode(null);
+    setEditorStoryId(null);
   };
 
   const handleCreate = async () => {
@@ -442,34 +482,10 @@ export default function HomePage({ onSelectStory }: Props) {
   };
 
   const handleCoverClick = (storyId: number) => {
+    setEditorMode('existing');
+    setEditorStoryId(storyId);
     setUploadingCover(storyId);
-    fileRef.current?.click();
-  };
-
-  const handleCoverFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file || uploadingCover === null) return;
-    const storyId = uploadingCover;
-    const reader = new FileReader();
-    reader.onload = async () => {
-      try {
-        const b64 = (reader.result as string).split(',')[1];
-        const coverPath = await uploadStoryCover(storyId, b64);
-        setStories((prev) =>
-          prev.map((s) => (s.id === storyId ? { ...s, cover_image: coverPath } : s))
-        );
-      } catch (err: any) {
-        alert(`上传封面失败: ${err.message}`);
-      } finally {
-        setUploadingCover(null);
-      }
-    };
-    reader.onerror = () => {
-      alert('读取封面文件失败');
-      setUploadingCover(null);
-    };
-    reader.readAsDataURL(file);
-    e.target.value = '';
+    editorFileInputRef.current?.click();
   };
 
   if (loading) {
@@ -486,11 +502,11 @@ export default function HomePage({ onSelectStory }: Props) {
   return (
     <div className="min-h-screen bg-ink text-cream">
       <input
-        ref={fileRef}
+        ref={editorFileInputRef}
         type="file"
         accept="image/*"
         className="hidden"
-        onChange={handleCoverFile}
+        onChange={handleEditorFileTrigger}
       />
       <input
         ref={importFileRef}
@@ -499,6 +515,14 @@ export default function HomePage({ onSelectStory }: Props) {
         className="hidden"
         onChange={handleImportFile}
       />
+
+      {editorOpen && editorImageDataUrl && (
+        <ImageEditor
+          imageDataUrl={editorImageDataUrl}
+          onConfirm={handleEditorConfirm}
+          onCancel={closeEditor}
+        />
+      )}
       {importProgress && (
         <div className="fixed inset-x-0 top-4 z-[70] mx-auto w-[calc(100%-32px)] max-w-md rounded-xl border border-ink-border glass p-4 shadow-2xl backdrop-blur">
           <div className="mb-2 flex items-center gap-2 text-sm font-medium text-cream">
@@ -596,8 +620,8 @@ export default function HomePage({ onSelectStory }: Props) {
                 <div>
                   <label className="block text-xs text-cream-dim mb-1.5">小说封面（可选）</label>
                   <div
-                    onClick={() => { newCoverInputRef.current?.click(); }}
-                    className="relative w-full h-40 bg-ink-lighter border border-dashed border-ink-muted hover:border-coral rounded-lg cursor-pointer flex flex-col items-center justify-center overflow-hidden transition-colors group"
+                    onClick={() => { setEditorMode('new'); editorFileInputRef.current?.click(); }}
+                    className="relative w-full aspect-[3/4] bg-ink-lighter border border-dashed border-ink-muted hover:border-coral rounded-lg cursor-pointer flex flex-col items-center justify-center overflow-hidden transition-colors group"
                   >
                     {newCoverPreview ? (
                       <img
@@ -625,13 +649,6 @@ export default function HomePage({ onSelectStory }: Props) {
                       移除封面
                     </button>
                   )}
-                  <input
-                    ref={newCoverInputRef}
-                    type="file"
-                    accept="image/*"
-                    className="hidden"
-                    onChange={handleNewCoverFile}
-                  />
                 </div>
               </div>
 
@@ -672,7 +689,7 @@ export default function HomePage({ onSelectStory }: Props) {
 
         {/* Story cards grid */}
         {stories.length > 0 && (
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-4">
             {stories.map((s) => (
               <div
                 key={s.id}
@@ -682,7 +699,7 @@ export default function HomePage({ onSelectStory }: Props) {
               >
                 {/* Cover */}
                 <div
-                  className="relative h-48 bg-gradient-to-br from-gray-800 to-gray-900 cursor-pointer overflow-hidden"
+                  className="relative aspect-[3/4] bg-gradient-to-br from-gray-800 to-gray-900 cursor-pointer overflow-hidden"
                   onClick={() => handleCoverClick(s.id)}
                 >
                   {s.cover_image ? (
