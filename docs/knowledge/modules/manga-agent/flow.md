@@ -35,14 +35,14 @@ Frontend types and stream parsing live in `frontend/src/api.ts`. The frontend de
 1. `MangaAgentController.runStream` resolves the current user.
 2. `MangaAgentService.runStream` resolves the active conversation or the supplied conversation id, creates an effective `requestId`, creates an `SseEmitter`, and submits work to `mangaGenerationExecutor`.
 3. `AgentRunToolStatus.start` opens per-run tool tracking and forwards tool events to `MangaAgentRunEventPublisher`.
-4. `runStreamLeader` validates message text and loads the visible chapter through `ChapterAccessService`.
+4. `MangaWorkflowOrchestrator.runStreamLeader` validates message text and prepares workflow execution.
 5. `MangaAgentRunService.startOrReuse` creates or resumes a conversation-scoped `MangaAgentRun` with status `RUNNING`.
 6. A `status` SSE event announces context loading.
 7. `GenerationGuardService.executeMangaAgentRun` protects the run with idempotency/rate-limit logic.
 8. `prepareAgentMessages` saves the user message to the selected conversation and builds history-limited agent messages from that conversation only.
 9. `AgentWorkspaceSyncService.syncMangaDirectorKnowledge` writes `KNOWLEDGE.md` for the user/story workspace.
-10. `buildRunRequest` creates an `AgentRunRequest` with user, story, chapter, conversation id, task type, model, user API key, and request id.
-11. `AgentScopeHarnessAgentGateway.streamEvents` sends messages to AgentScope.
+10. `MangaWorkflowOrchestrator.buildRunRequest` creates an `AgentRunRequest` with user, story, chapter, conversation id, task type, model, user API key, and request id.
+11. `AgentScopeHarnessAgentGateway.streamEvents` obtains the cached `HarnessAgent` from `AgentScopeAgentFactory`, builds per-call context through `AgentScopeRuntimeContextFactory`, and sends messages to AgentScope.
 12. `AgentScopeEventMapper` maps AgentScope events into `AgentRunEvent`; text deltas append to the final reply.
 13. `MangaAgentRunEventPublisher` sends SSE events and persists non-text run events. It also maps the run lifecycle into formal AG-UI events through `AgUiEventFactory` and emits them as default SSE `message` frames.
 14. On success, `MangaAgentRunService.markSucceeded` stores the final reply and `done` is emitted.
@@ -50,11 +50,11 @@ Frontend types and stream parsing live in `frontend/src/api.ts`. The frontend de
 
 ## Human-In-The-Loop Resume
 
-`AgentScopeHarnessAgentGateway` adds `MangaAgentRuntimeContext` to AgentScope v2 `RuntimeContext` for Manga Director runs. Tools read user id, chapter id, conversation id, request id, and Coze API key from that typed context instead of relying on factory-captured fields.
+`AgentScopeRuntimeContextFactory` adds `MangaAgentRuntimeContext` to AgentScope v2 `RuntimeContext` for Manga Director runs. Tools read user id, chapter id, conversation id, request id, and Coze API key from that typed context instead of relying on factory-captured fields.
 
-`MangaAgentToolFactory.ask_user` stores the current `AgentUserInputRequest` in `AgentRunToolStatus` using `AgentRunContext.requestId`, then throws `ToolSuspendException`.
+`MangaAgentToolkitFactory` registers Manga Director tools into `context-tools`, `storyboard-tools`, and `hitl-tools`. `MangaHitlTools.ask_user` stores the current `AgentUserInputRequest` in `AgentRunToolStatus` using `AgentRunContext.requestId`, then throws `ToolSuspendException`.
 
-`MangaAgentService` catches `AgentUserInputRequiredException`, marks the run `WAITING_USER`, emits `user_input_requested`, and completes the stream. The frontend displays the options and can call resume.
+`MangaWorkflowOrchestrator` detects the tool-suspended waiting state and raises `AgentUserInputRequiredException`. `MangaAgentService` catches it, marks the run `WAITING_USER`, emits `user_input_requested`, and completes the stream. The frontend displays the options and can call resume.
 
 Resume requires the same `conversationId` and `requestId`. `MangaAgentRunService.requireWaitingRun` verifies status inside the selected conversation. `MangaAgentConversationService.resumeMessage` combines original input, the stored question, and the user's answer into a continuation prompt. The run is marked `RUNNING` and the normal stream flow continues.
 
@@ -92,7 +92,7 @@ There are three separate context channels:
 
 - Conversation prompt from `MangaAgentConversationService.buildSystemPrompt` plus visible history from the selected conversation.
 - Story workspace knowledge from `AgentWorkspaceSyncService.buildKnowledge`, written to AgentScope `KNOWLEDGE.md`.
-- AgentScope agent system prompt from `AgentScopeHarnessAgentGateway.systemPromptFor`.
+- AgentScope agent system prompt from `MangaAgentPromptProvider`.
 
 AgentScope `RuntimeContext.sessionId` includes user, story, chapter, conversation id, and task suffix. A new conversation must produce a new session id. `RuntimeContext.userId` remains the ArtVerse user id for multi-tenant isolation. `MangaAgentRuntimeContext` carries the per-call business context that tools need.
 

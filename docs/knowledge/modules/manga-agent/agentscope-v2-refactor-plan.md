@@ -14,9 +14,9 @@ The target architecture should align with AgentScope Java v2:
 
 ## Current Pain Points
 
-- `AgentScopeHarnessAgentGateway` mixes model resolution, cache-key construction, workspace selection, prompt selection, tool registration, message conversion, and `RuntimeContext` construction.
+- `AgentScopeHarnessAgentGateway` previously mixed model resolution, cache-key construction, workspace selection, prompt selection, tool registration, message conversion, and `RuntimeContext` construction. The first split moved Agent construction, prompt selection, toolkit setup, and runtime context creation into dedicated factories.
 - `MangaAgentService` owns conversation state, idempotency, run persistence, SSE publishing, AgentScope execution, HITL resume, cancellation checks, and degraded fallback handling.
-- `MangaAgentToolFactory` captures `cozeApiKey`, `chapterId`, and `userId` at tool creation time. That makes the tool object session-specific and prevents clean reuse of a single `HarnessAgent` instance per task/model/workspace.
+- The compatibility path in `MangaAgentToolFactory` can still capture `cozeApiKey`, `chapterId`, and `userId` for direct tests and older callers. AgentScope registration now uses stateless tool objects with per-call values supplied through `RuntimeContext`.
 - HITL currently uses `ask_user` plus `ToolSuspendException` and business-side state lookup. This is compatible with the existing frontend, but it is not yet modeled around v2 permission/external-execution events.
 - Several visible Chinese strings in the Manga Agent path are mojibake. Treat these as correctness defects.
 
@@ -64,6 +64,12 @@ Owns business operations available to the agent:
 
 Tool implementations should receive per-call business identity from `RuntimeContext`, using a typed value such as `MangaAgentRuntimeContext`.
 
+Manga Director tools are registered through AgentScope tool groups:
+
+- `context-tools`: read-only chapter/story/storyboard/image context.
+- `storyboard-tools`: storyboard generation and storyboard persistence.
+- `hitl-tools`: blocking user question/confirmation flow.
+
 ## Migration Phases
 
 ### Phase 1: RuntimeContext-based tool context
@@ -80,18 +86,34 @@ Expected behavior should not change.
 
 ### Phase 2: Split AgentScope construction
 
-- Extract `AgentScopeRuntimeContextFactory`.
-- Extract `MangaDirectorAgentFactory` or `AgentScopeAgentFactory`.
-- Move cache-key construction next to agent construction.
-- Rename `PROMPT_VERSION` to `MANGA_DIRECTOR_PROMPT_VERSION` and bump it when prompt semantics change.
-- Add focused tests for context construction and tool registration.
+Status: foundation implemented.
+
+- Extracted `AgentScopeRuntimeContextFactory`.
+- Extracted `AgentScopeAgentFactory`.
+- Extracted `MangaAgentPromptProvider`.
+- Added `MangaAgentToolkitFactory` for AgentScope tool group registration.
+- Moved cache-key construction next to agent construction.
+- Replaced `PROMPT_VERSION` with `MANGA_DIRECTOR_PROMPT_VERSION`.
+- Added focused tests for context construction and tool group registration.
+
+Remaining follow-up:
+
+- Use workflow node identity to choose allowed tool groups per Agent node.
+- Revisit AgentScope tool group scope when upgrading from `2.0.0-RC3`; this local version uses the available `createToolGroup(name, description, active)` API.
 
 ### Phase 3: Split run execution from run coordination
 
-- Extract `MangaAgentExecutionService` for sync and streaming AgentScope execution.
-- Extract a small result type for reply, degraded flag, and terminal/cancelled outcome.
-- Keep `MangaAgentService` as the public application facade for controllers.
-- Preserve existing API contracts while reducing method size and parameter passing.
+Status: foundation implemented.
+
+- Extracted `MangaWorkflowOrchestrator` for sync and streaming workflow execution.
+- Kept `MangaAgentService` as the public application facade for controllers, conversations, run scope, resume/cancel/open-run APIs, and SSE sink setup.
+- Preserved existing API contracts while reducing `MangaAgentService` method size and AgentScope execution coupling.
+
+Remaining follow-up:
+
+- Split `MangaWorkflowOrchestrator` into node handlers such as Director, Storyboard, Review, and Generation.
+- Add explicit workflow result types for reply, degraded flag, waiting state, and terminal/cancelled outcome.
+- Move node-specific tool group selection into workflow node configuration.
 
 ### Phase 4: HITL v2 alignment
 
@@ -114,7 +136,7 @@ For backend changes:
 ```bash
 cd ArtVerse
 mvn -q -DskipTests compile
-mvn -q -Dtest=AgentScopeHarnessAgentGatewayTest,MangaAgentToolFactoryTest test
+mvn -q -Dtest=AgentScopeHarnessAgentGatewayTest,MangaAgentToolFactoryTest,MangaAgentToolkitFactoryTest test
 ```
 
 For frontend or AG-UI contract changes:
@@ -132,4 +154,3 @@ When a phase changes behavior, update:
 - `docs/knowledge/modules/manga-agent/flow.md`
 - Related backend tests
 - `frontend/src/api.ts` and `frontend/src/components/MangaAgentPage.tsx` for protocol changes
-

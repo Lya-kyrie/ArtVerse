@@ -30,8 +30,8 @@ class AgentScopeHarnessAgentGatewayTest {
         List<AgentMessage> messages = AgentScopeHarnessAgentGateway.prepareInputMessages(request);
 
         assertThat(messages).hasSize(1);
-        assertThat(messages.get(0).role()).isEqualTo("user");
-        assertThat(messages.get(0).content()).contains("系统提示", "用户内容");
+        assertThat(messages.getFirst().role()).isEqualTo("user");
+        assertThat(messages.getFirst().content()).contains("系统提示", "用户内容");
     }
 
     @Test

@@ -1,7 +1,7 @@
 package com.artverse.application;
 
-import com.artverse.common.BusinessException;
 import com.artverse.agents.MangaAgentRuntimeContext;
+import com.artverse.common.BusinessException;
 import com.artverse.domain.Chapter;
 import com.artverse.domain.ColorMode;
 import com.artverse.domain.Story;
@@ -16,8 +16,8 @@ import org.junit.jupiter.api.Test;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
-import java.util.concurrent.Callable;
 import java.util.UUID;
+import java.util.concurrent.Callable;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -86,7 +86,7 @@ class MangaAgentToolFactoryTest {
                 auditService,
                 new AgentRunToolStatus()
         );
-        MangaAgentToolFactory.Tools tools = (MangaAgentToolFactory.Tools) factory.create();
+        MangaAgentToolFactory.Tools tools = factory.create();
         RuntimeContext runtimeContext = RuntimeContext.builder()
                 .userId("1")
                 .sessionId("session")
@@ -170,7 +170,7 @@ class MangaAgentToolFactoryTest {
         AgentToolAuditService auditService = new AgentToolAuditService(new AgentRunToolStatus());
         Chapter chapter = chapterWithOwner(7L, 1L);
         Object pages = List.of(Map.of("panels", List.of("a", "b", "c", "d")));
-        List<String> scenes = List.of("第1页：【第1格】a【第2格】b【第3格】c【第4格】d");
+        List<String> scenes = List.of("第1页: [第1格] a [第2格] b [第3格] c [第4格] d");
 
         when(chapterRepository.findByIdForIdempotency(7L)).thenReturn(Optional.of(chapter));
         when(structuredStoryboardService.normalize(pages, 1)).thenReturn(scenes);
@@ -202,7 +202,7 @@ class MangaAgentToolFactoryTest {
         GenerationGuardService generationGuardService = mock(GenerationGuardService.class);
         AgentRunToolStatus runStatus = new AgentRunToolStatus();
         AgentToolAuditService auditService = new AgentToolAuditService(runStatus);
-        java.util.UUID requestId = java.util.UUID.randomUUID();
+        UUID requestId = UUID.randomUUID();
 
         try (AgentRunToolStatus.RunScope ignored = runStatus.start(1L, 7L, requestId)) {
             MangaAgentToolFactory.Tools tools = tools(
@@ -261,10 +261,10 @@ class MangaAgentToolFactoryTest {
                     .build();
 
             assertThatThrownBy(() -> tools.askUser(
-                    "閫夋嫨鏁版嵁搴擄紵",
+                    "请选择分镜保存方案",
                     List.of(Map.of("label", "PostgreSQL", "recommended", true), Map.of("label", "MySQL")),
                     true,
-                    "闇€瑕佹寔涔呭寲鏂规",
+                    "需要确认持久化路径",
                     runtimeContext
             )).isInstanceOf(ToolSuspendException.class);
         }
@@ -300,7 +300,7 @@ class MangaAgentToolFactoryTest {
                 auditService,
                 runStatus
         );
-        return (MangaAgentToolFactory.Tools) factory.create("coze-key", 7L, userId);
+        return factory.create("coze-key", 7L, userId);
     }
 
     private Chapter chapterWithOwner(Long chapterId, Long ownerId) {
