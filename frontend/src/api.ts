@@ -1042,10 +1042,10 @@ export async function listMyWorks(): Promise<MyWork[]> {
 // ---- Image Gen ----
 export interface ImageGenRecord { id: number; prompt: string; image_url: string; model: string; size: string; created_at: string; }
 
-export async function generateImage(prompt: string, referenceImages?: string[]): Promise<ImageGenRecord> {
+export async function generateImage(prompt: string, referenceImages?: string[], size?: string): Promise<ImageGenRecord> {
   const res = await authFetch(BASE+'/api/image-gen/generate', {
     method: 'POST', headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ prompt, reference_images: referenceImages || [] }),
+    body: JSON.stringify({ prompt, reference_images: referenceImages || [], ...(size ? { size } : {}) }),
   });
   if (!res.ok) throw new Error(parseApiError(await res.text()));
   return res.json();
