@@ -1,6 +1,7 @@
 package com.artverse.domain;
 
 import com.fasterxml.jackson.annotation.JsonIgnore;
+import com.artverse.application.workflow.MangaWorkflowRoute;
 import jakarta.persistence.*;
 import lombok.Getter;
 import lombok.Setter;
@@ -47,6 +48,10 @@ public class MangaAgentRun {
     @Enumerated(EnumType.STRING)
     @Column(nullable = false, length = 32)
     private MangaAgentRunStatus status = MangaAgentRunStatus.RUNNING;
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "route", nullable = false, length = 32)
+    private MangaWorkflowRoute route = MangaWorkflowRoute.DIRECTOR;
 
     @Column(name = "input_message", nullable = false, columnDefinition = "TEXT")
     private String inputMessage;

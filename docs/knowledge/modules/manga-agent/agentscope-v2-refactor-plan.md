@@ -100,6 +100,7 @@ Remaining follow-up:
 
 - Use workflow node declarations to choose allowed tool groups per Agent node. The gateway now reapplies request-scoped active groups before each AgentScope call so cached agents can safely serve different node scopes.
 - Revisit AgentScope tool group scope when upgrading past `2.0.0-RC4`; this local version uses the available `createToolGroup(name, description, active)` API.
+- Keep the frontend route selector and AG-UI route echo aligned with the persisted run route so reconnects restore the same execution mode.
 
 ### Phase 3: Split run execution from run coordination
 
@@ -114,8 +115,8 @@ Status: node foundation implemented.
 
 Remaining follow-up:
 
-- Add dedicated Storyboard and Generation node handlers. Review and HITL already use explicit lightweight workflow nodes and no longer fall back to Director.
-- Add explicit workflow result types for reply, degraded flag, waiting state, and terminal/cancelled outcome.
+- Add dedicated Storyboard and Generation node handlers if those routes become first-class again. Review and HITL already use explicit lightweight workflow nodes and no longer fall back to Director.
+- Keep workflow result types compact around reply, degraded flag, waiting state, and terminal/cancelled outcome.
 - Continue shrinking Director responsibilities after node-owned tool-group declaration is in place, especially by introducing more task-specific Agent nodes instead of broad Director logic.
 
 ## Guardrails

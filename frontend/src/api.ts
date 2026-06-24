@@ -1151,6 +1151,8 @@ export interface MangaAgentConversation {
   archivedAt?: string | null;
 }
 
+export type MangaWorkflowRoute = 'DIRECTOR' | 'HITL' | 'REVIEW';
+
 export type MangaAgentRunEvent =
   | { type: 'status'; data: { message?: string; requestId?: string; request_id?: string } }
   | { type: 'run_event'; data: AgentRunTimelineEvent }
@@ -1163,12 +1165,14 @@ export type MangaAgentRunEvent =
 export type ArtVerseAgUiEvent = AGUIEvent & {
   protocol?: 'ag-ui';
   runId?: string;
+  route?: MangaWorkflowRoute;
   rawEvent?: AgentRunTimelineEvent | Record<string, unknown>;
   snapshot?: {
     requestId?: string;
     runId?: string;
     status?: string;
     message?: string;
+    route?: MangaWorkflowRoute;
   };
   result?: {
     reply?: string;
@@ -1210,6 +1214,7 @@ export interface AgentRunPersistedEvent {
 export interface MangaAgentRunSnapshot {
   requestId: string;
   request_id?: string;
+  route?: MangaWorkflowRoute;
   status: MangaAgentRunStatus;
   inputMessage?: string;
   finalReply?: string;
@@ -1269,11 +1274,16 @@ export async function getMangaAgentConversationMessages(
   return data.messages || [];
 }
 
-export async function runMangaAgent(chapterId: number, message: string, requestId?: string): Promise<{ reply: string; request_id?: string; requestId?: string }> {
+export async function runMangaAgent(
+  chapterId: number,
+  message: string,
+  requestId?: string,
+  route?: MangaWorkflowRoute,
+): Promise<{ reply: string; request_id?: string; requestId?: string }> {
   const res = await authFetch(`${BASE}/api/chapters/${chapterId}/manga-agent/run`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ message, requestId }),
+    body: JSON.stringify({ message, requestId, route }),
   });
   if (!res.ok) throw new Error(parseApiError(await res.text()));
   return res.json();
@@ -1284,10 +1294,11 @@ export function runMangaAgentStream(
   message: string,
   requestId: string | undefined,
   onEvent: (event: MangaAgentRunEvent) => void,
+  route?: MangaWorkflowRoute,
 ): AbortController {
   return startMangaAgentEventStream(
     `${BASE}/api/chapters/${chapterId}/manga-agent/run-stream`,
-    { message, requestId },
+    { message, requestId, route },
     requestId,
     onEvent,
   );
@@ -1295,8 +1306,9 @@ export function runMangaAgentStream(
 
 class ArtVerseMangaAgentHttpAgent extends HttpAgent {
   private readonly message: string;
-  private readonly answer?: string;
   private readonly requestId?: string;
+  private readonly answer?: string;
+  private readonly route?: MangaWorkflowRoute;
 
   constructor(
     url: string,
@@ -1304,14 +1316,16 @@ class ArtVerseMangaAgentHttpAgent extends HttpAgent {
     requestId: string | undefined,
     abortController: AbortController,
     answer?: string,
+    route?: MangaWorkflowRoute,
   ) {
     super({
       url,
       headers: apiHeaders(true) as Record<string, string>,
     });
     this.message = message;
-    this.answer = answer;
     this.requestId = requestId;
+    this.answer = answer;
+    this.route = route;
     this.abortController = abortController;
   }
 
@@ -1327,6 +1341,7 @@ class ArtVerseMangaAgentHttpAgent extends HttpAgent {
         ? {
           message: this.message,
           requestId: this.requestId || input.runId,
+          route: this.route,
         }
         : {
           answer: this.answer,
@@ -1342,6 +1357,7 @@ export function runMangaAgentAgUiStream(
   requestId: string | undefined,
   onEvent: (event: MangaAgentRunEvent) => void,
   conversationId?: string,
+  route?: MangaWorkflowRoute,
 ): AbortController {
   const controller = new AbortController();
   const agent = new ArtVerseMangaAgentHttpAgent(
@@ -1351,6 +1367,8 @@ export function runMangaAgentAgUiStream(
     message,
     requestId,
     controller,
+    undefined,
+    route,
   );
   const subscription = agent.run({
     threadId: conversationId ? `chapter-${chapterId}-conversation-${conversationId}` : `chapter-${chapterId}`,

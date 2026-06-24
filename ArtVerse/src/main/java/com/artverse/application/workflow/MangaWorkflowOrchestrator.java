@@ -36,7 +36,7 @@ public class MangaWorkflowOrchestrator {
     private final MangaWorkflowNodeRegistry nodeRegistry;
 
     public MangaWorkflowResult runWithToolState(MangaAgentConversation conversation, String message, UUID effectiveRequestId,
-                                                AgentRunToolStatus.RunState toolState) {
+                                                AgentRunToolStatus.RunState toolState, MangaWorkflowRoute route) {
         if (message == null || message.isBlank()) {
             throw new BusinessException(400, "Message cannot be empty");
         }
@@ -49,6 +49,7 @@ public class MangaWorkflowOrchestrator {
         Chapter chapter = conversation.getChapter();
         String deepseekApiKey = requireDeepseekApiKey(user);
         AgentModelSpec modelSpec = agentModelSpecFactory.deepSeek(deepseekApiKey);
+        MangaWorkflowRoute effectiveRoute = route == null ? MangaWorkflowRoute.DIRECTOR : route;
         return generationGuardService.executeMangaAgentRun(
                 user.getId(),
                 chapter.getStory().getId(),
@@ -57,14 +58,21 @@ public class MangaWorkflowOrchestrator {
                 modelSpec.provider(),
                 modelSpec.model(),
                 AgentModelSpecFactory.shortHash(modelSpec.baseUrl()),
-                () -> runWorkflowLeader(conversation, message, effectiveRequestId, deepseekApiKey, modelSpec, toolState)
+                effectiveRoute.name(),
+                () -> runWorkflowLeader(conversation, message, effectiveRequestId, deepseekApiKey, modelSpec, toolState, effectiveRoute)
         );
+    }
+
+    public MangaWorkflowResult runWithToolState(MangaAgentConversation conversation, String message, UUID effectiveRequestId,
+                                                AgentRunToolStatus.RunState toolState) {
+        return runWithToolState(conversation, message, effectiveRequestId, toolState, MangaWorkflowRoute.DIRECTOR);
     }
 
     public MangaWorkflowResult runWorkflowLeader(MangaAgentConversation conversation, String message,
                                                  UUID effectiveRequestId, String deepseekApiKey,
-                                                 AgentModelSpec modelSpec, AgentRunToolStatus.RunState toolState) {
-        MangaWorkflowContextSnapshot workflowContext = mangaWorkflowContextAssembler.assemble(conversation, message);
+                                                 AgentModelSpec modelSpec, AgentRunToolStatus.RunState toolState,
+                                                 MangaWorkflowRoute route) {
+        MangaWorkflowContextSnapshot workflowContext = mangaWorkflowContextAssembler.assemble(conversation, message, route);
         log.info("Workflow route for request {} -> {}", effectiveRequestId, workflowContext.route());
         MangaWorkflowExecutionContext context = executionContext(
                 conversation, message, effectiveRequestId, deepseekApiKey, modelSpec, toolState, workflowContext);
@@ -73,7 +81,7 @@ public class MangaWorkflowOrchestrator {
 
     public void runStreamLeader(MangaAgentConversation conversation, String message, UUID effectiveRequestId,
                                 AgentRunToolStatus.RunState toolState, MangaAgentRunEventPublisher.RunEventSink sink,
-                                AtomicReference<MangaAgentRun> runRef) {
+                                AtomicReference<MangaAgentRun> runRef, MangaWorkflowRoute route) {
         if (message == null || message.isBlank()) {
             throw new BusinessException(400, "Message cannot be empty");
         }
@@ -81,12 +89,13 @@ public class MangaWorkflowOrchestrator {
         User user = conversation.getUser();
         Chapter chapter = conversation.getChapter();
         Long chapterId = chapter.getId();
-        MangaAgentRun run = mangaAgentRunService.startOrReuse(conversation, effectiveRequestId, message);
+        MangaWorkflowRoute effectiveRoute = route == null ? MangaWorkflowRoute.DIRECTOR : route;
+        MangaAgentRun run = mangaAgentRunService.startOrReuse(conversation, effectiveRequestId, message, effectiveRoute);
         runRef.set(run);
         sink.sendStatus(run, "智能体开始处理当前章节", effectiveRequestId);
 
         if (mangaAgentConversationService.findAssistantReply(conversation, effectiveRequestId).isPresent()) {
-            MangaWorkflowResult result = runWithToolState(conversation, message, effectiveRequestId, toolState);
+            MangaWorkflowResult result = runWithToolState(conversation, message, effectiveRequestId, toolState, effectiveRoute);
             mangaAgentRunService.markSucceeded(conversation, effectiveRequestId, result.reply());
             sink.sendDone(run, result.reply(), effectiveRequestId);
             return;
@@ -102,8 +111,9 @@ public class MangaWorkflowOrchestrator {
                 modelSpec.provider(),
                 modelSpec.model(),
                 AgentModelSpecFactory.shortHash(modelSpec.baseUrl()),
+                effectiveRoute.name(),
                 () -> runWorkflowStream(conversation, message, effectiveRequestId, sink, toolState,
-                        deepseekApiKey, modelSpec, run)
+                        deepseekApiKey, modelSpec, run, effectiveRoute)
         );
 
         completeRun(run, sink, chapterId, user, effectiveRequestId, result);
@@ -114,8 +124,9 @@ public class MangaWorkflowOrchestrator {
                                                  MangaAgentRunEventPublisher.RunEventSink sink,
                                                  AgentRunToolStatus.RunState toolState,
                                                  String deepseekApiKey, AgentModelSpec modelSpec,
-                                                 MangaAgentRun run) {
-        MangaWorkflowContextSnapshot workflowContext = mangaWorkflowContextAssembler.assemble(conversation, message);
+                                                 MangaAgentRun run,
+                                                 MangaWorkflowRoute route) {
+        MangaWorkflowContextSnapshot workflowContext = mangaWorkflowContextAssembler.assemble(conversation, message, route);
         MangaWorkflowExecutionContext context = executionContext(
                 conversation, message, effectiveRequestId, deepseekApiKey, modelSpec, toolState, workflowContext);
         sink.sendRunEvent(run, AgentRunEvent.step(

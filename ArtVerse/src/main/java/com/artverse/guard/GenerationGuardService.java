@@ -38,11 +38,12 @@ public class GenerationGuardService {
 
     public MangaWorkflowResult executeMangaAgentRun(Long userId, Long chapterId, String requestId, String message,
                                                     String provider, String model, String baseUrlHash,
+                                                    String route,
                                                     Callable<MangaWorkflowResult> leader) {
         Map<String, Object> payload = idempotencyService.executeHttp(
                 "manga-agent-run",
                 userKey(userId),
-                keyBuilder.mangaAgentRun(userId, chapterId, requestId, message, provider, model, baseUrlHash),
+                keyBuilder.mangaAgentRun(userId, chapterId, requestId, message, provider, model, baseUrlHash, route),
                 () -> leader.call().toPayload()
         );
         return MangaWorkflowResult.fromPayload(payload);

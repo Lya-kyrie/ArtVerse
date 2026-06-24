@@ -50,7 +50,7 @@ For resume, the service requires an existing `WAITING_USER` run, reconstructs a 
 
 `AgentScopeAgentFactory` creates or reuses a per-user/story/chapter/conversation/task/model/workspace agent. `AgentScopeRuntimeContextFactory` passes per-call business values through AgentScope v2 `RuntimeContext` as `MangaAgentRuntimeContext`. For `AgentTaskType.MANGA_DIRECTOR`, `MangaAgentToolkitFactory` registers the Manga tools into AgentScope tool groups, and `AgentScopeHarnessAgentGateway` re-applies the request-scoped active groups before each call so cached agents do not leak tool scope across workflow nodes. Workflow nodes own the declaration of which tool groups may be active for that node; the gateway only reapplies the declared set for the current call.
 
-The frontend consumes AG-UI as the default live protocol. `POST /conversations/{conversationId}/ag-ui/run` and `POST /conversations/{conversationId}/ag-ui/runs/{requestId}/resume` are the preferred endpoints. Legacy chapter-level endpoints auto-resolve the active conversation and remain compatibility paths. Keep the execution panel as the single place that explains what the agent is doing; do not add a second competing progress widget.
+The frontend consumes AG-UI as the default live protocol. `POST /conversations/{conversationId}/ag-ui/run` and `POST /conversations/{conversationId}/ag-ui/runs/{requestId}/resume` are the preferred endpoints. Legacy chapter-level endpoints auto-resolve the active conversation and remain compatibility paths. The Manga Agent page now lets the user choose the workflow route (`DIRECTOR`, `HITL`, or `REVIEW`) before starting a run; the selected route is sent in the request body and echoed back in the run snapshot / AG-UI state. Keep the execution panel as the single place that explains what the agent is doing; do not add a second competing progress widget.
 
 In the main app navigation, `首页` is the Manga Agent conversation surface. `工作区` is the story/project management surface where users create, import, select, and edit stories. Do not point `workspace` back to `home`; that recreates a navigation loop and hides the agent from the first screen.
 
@@ -90,7 +90,7 @@ After a mutating tool succeeds, failures in the final agent response may degrade
 
 ## Change Checklist
 
-- If API payloads, AG-UI mappings, or SSE event names change, update `MangaAgentDtos`, `AgUiEventFactory`, `frontend/src/api.ts`, and the execution panel in `MangaAgentPage.tsx` together.
+- If API payloads, AG-UI mappings, route selection, or SSE event names change, update `MangaAgentDtos`, `AgUiEventFactory`, `frontend/src/api.ts`, and the execution panel in `MangaAgentPage.tsx` together.
 - If tool return shapes change, update frontend timeline handling and tests around `AgentRunToolStatus`.
 - If run status transitions change, update `MangaAgentRunService` tests and open-run restore behavior.
 - If cancellation or stale-run repair changes, update backend status tests, frontend terminal-state rendering, and the flow reference.
