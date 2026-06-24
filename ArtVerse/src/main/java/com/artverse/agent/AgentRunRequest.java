@@ -1,4 +1,4 @@
-package com.artverse.agents;
+package com.artverse.agent;
 
 import java.util.List;
 import java.util.Map;

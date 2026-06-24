@@ -1,6 +1,6 @@
 package com.artverse.application.workflow;
 
-import com.artverse.agents.AgentModelSpec;
+import com.artverse.agent.AgentModelSpec;
 import com.artverse.application.AgentRunToolStatus;
 import com.artverse.domain.Chapter;
 import com.artverse.domain.MangaAgentConversation;

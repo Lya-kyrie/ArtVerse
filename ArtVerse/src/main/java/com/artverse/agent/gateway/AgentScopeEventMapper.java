@@ -1,4 +1,5 @@
-package com.artverse.agents;
+package com.artverse.agent.gateway;
+import com.artverse.agent.AgentRunEvent;
 
 import io.agentscope.core.event.AgentEndEvent;
 import io.agentscope.core.event.AgentEvent;

@@ -1,6 +1,6 @@
 package com.artverse.application;
 
-import com.artverse.agents.MangaAgentRuntimeContext;
+import com.artverse.agent.MangaAgentRuntimeContext;
 import com.artverse.common.BusinessException;
 import com.artverse.domain.Chapter;
 import com.artverse.domain.ColorMode;
@@ -170,7 +170,7 @@ class MangaAgentToolFactoryTest {
         AgentToolAuditService auditService = new AgentToolAuditService(new AgentRunToolStatus());
         Chapter chapter = chapterWithOwner(7L, 1L);
         Object pages = List.of(Map.of("panels", List.of("a", "b", "c", "d")));
-        List<String> scenes = List.of("第1页: [第1格] a [第2格] b [第3格] c [第4格] d");
+        List<String> scenes = List.of("绗?椤? [绗?鏍糫 a [绗?鏍糫 b [绗?鏍糫 c [绗?鏍糫 d");
 
         when(chapterRepository.findByIdForIdempotency(7L)).thenReturn(Optional.of(chapter));
         when(structuredStoryboardService.normalize(pages, 1)).thenReturn(scenes);
@@ -217,16 +217,16 @@ class MangaAgentToolFactoryTest {
             );
 
             assertThatThrownBy(() -> tools.askUser(
-                    "选择数据库？",
+                    "閫夋嫨鏁版嵁搴擄紵",
                     List.of(Map.of("label", "PostgreSQL", "recommended", true), Map.of("label", "MySQL")),
                     true,
-                    "需要持久化方案"
+                    "闇€瑕佹寔涔呭寲鏂规"
             )).isInstanceOf(ToolSuspendException.class);
         }
 
         AgentUserInputRequest waiting = runStatus.waitingInput(1L, 7L, requestId);
         assertThat(waiting).isNotNull();
-        assertThat(waiting.question()).isEqualTo("选择数据库？");
+        assertThat(waiting.question()).isEqualTo("閫夋嫨鏁版嵁搴擄紵");
         assertThat(waiting.options()).extracting(AgentUserInputRequest.Option::label)
                 .containsExactly("PostgreSQL", "MySQL");
         assertThat(waiting.allowFreeText()).isTrue();
@@ -257,14 +257,14 @@ class MangaAgentToolFactoryTest {
             RuntimeContext runtimeContext = RuntimeContext.builder()
                     .sessionId("u-1-story-3-chapter-7-manga-director")
                     .userId("1")
-                    .put(com.artverse.agents.AgentRunContext.class, new com.artverse.agents.AgentRunContext(requestId))
+                    .put(com.artverse.agent.AgentRunContext.class, new com.artverse.agent.AgentRunContext(requestId))
                     .build();
 
             assertThatThrownBy(() -> tools.askUser(
-                    "请选择分镜保存方案",
+                    "璇烽€夋嫨鍒嗛暅淇濆瓨鏂规",
                     List.of(Map.of("label", "PostgreSQL", "recommended", true), Map.of("label", "MySQL")),
                     true,
-                    "需要确认持久化路径",
+                    "闇€瑕佺‘璁ゆ寔涔呭寲璺緞",
                     runtimeContext
             )).isInstanceOf(ToolSuspendException.class);
         }

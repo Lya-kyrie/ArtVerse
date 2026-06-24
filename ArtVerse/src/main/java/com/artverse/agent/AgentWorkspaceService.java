@@ -1,4 +1,4 @@
-package com.artverse.agents;
+package com.artverse.agent;
 
 import com.artverse.common.BusinessException;
 import lombok.RequiredArgsConstructor;

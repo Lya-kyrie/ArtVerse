@@ -1,4 +1,4 @@
-package com.artverse.agents;
+package com.artverse.agent;
 
 public enum AgentTaskType {
     CHAT("chat"),

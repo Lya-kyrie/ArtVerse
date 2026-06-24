@@ -1,4 +1,9 @@
-package com.artverse.agents;
+package com.artverse.agent.gateway;
+import com.artverse.agent.AgentSessionIdFactory;
+import com.artverse.agent.AgentRunContext;
+import com.artverse.agent.AgentTaskType;
+import com.artverse.agent.MangaAgentRuntimeContext;
+import com.artverse.agent.AgentRunRequest;
 
 import com.artverse.common.BusinessException;
 import io.agentscope.core.agent.RuntimeContext;

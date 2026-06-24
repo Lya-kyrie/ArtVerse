@@ -1,9 +1,9 @@
 package com.artverse.application;
 
-import com.artverse.agents.AgentModelSpecFactory;
-import com.artverse.agents.AgentScopeEventMapper;
-import com.artverse.agents.AgentWorkspaceSyncService;
-import com.artverse.agents.HarnessAgentGateway;
+import com.artverse.agent.AgentModelSpecFactory;
+import com.artverse.agent.gateway.AgentScopeEventMapper;
+import com.artverse.agent.AgentWorkspaceSyncService;
+import com.artverse.agent.AgentGateway;
 import com.artverse.application.workflow.MangaWorkflowOrchestrator;
 import com.artverse.common.BusinessException;
 import com.artverse.config.ArtVerseProperties;
@@ -31,7 +31,7 @@ public class MangaAgentService {
 
     private final MangaAgentConversationService mangaAgentConversationService;
     private final MangaAgentConversationRegistry mangaAgentConversationRegistry;
-    private final HarnessAgentGateway harnessAgentGateway;
+    private final AgentGateway harnessAgentGateway;
     private final AgentModelSpecFactory agentModelSpecFactory;
     private final AgentWorkspaceSyncService agentWorkspaceSyncService;
     private final ApiKeyService apiKeyService;

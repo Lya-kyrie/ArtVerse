@@ -1,7 +1,7 @@
 package com.artverse.application.tools;
 
-import com.artverse.agents.AgentRunContext;
-import com.artverse.agents.MangaAgentRuntimeContext;
+import com.artverse.agent.AgentRunContext;
+import com.artverse.agent.MangaAgentRuntimeContext;
 import com.artverse.application.AgentRunToolStatus;
 import com.artverse.application.AgentUserInputRequest;
 import com.artverse.common.BusinessException;

@@ -1,6 +1,6 @@
 package com.artverse.application;
 
-import com.artverse.agents.AgentRunEvent;
+import com.artverse.agent.AgentRunEvent;
 import com.artverse.domain.MangaAgentRun;
 import org.springframework.stereotype.Component;
 

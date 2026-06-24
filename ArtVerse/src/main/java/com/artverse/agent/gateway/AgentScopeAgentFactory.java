@@ -1,4 +1,9 @@
-package com.artverse.agents;
+package com.artverse.agent.gateway;
+import com.artverse.agent.AgentWorkspaceService;
+import com.artverse.agent.MangaAgentPromptProvider;
+import com.artverse.agent.AgentRunRequest;
+import com.artverse.agent.AgentModelSpec;
+import com.artverse.agent.AgentModelSpecFactory;
 
 import com.artverse.config.ArtVerseProperties;
 import io.agentscope.core.model.Model;
@@ -12,6 +17,7 @@ import org.springframework.stereotype.Component;
 import java.nio.file.Path;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
+import com.artverse.agent.AgentTaskType;
 
 @Slf4j
 @Component
@@ -47,7 +53,7 @@ public class AgentScopeAgentFactory {
                 .enablePendingToolRecovery(true)
                 .disableShellTool()
                 .disableFilesystemTools()
-                .hook(new AgentScopeHitlSuspendHook())
+                .middleware(new AgentScopeHitlSuspendMiddleware())
                 .build();
         if (request.taskType() == AgentTaskType.MANGA_DIRECTOR) {
             toolkitFactory.configureMangaDirector(agent.getToolkit());

@@ -1,4 +1,4 @@
-package com.artverse.agents;
+package com.artverse.agent.gateway;
 
 import com.artverse.application.MangaAgentToolFactory;
 import io.agentscope.core.tool.Toolkit;

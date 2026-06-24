@@ -1,8 +1,8 @@
 package com.artverse.application.workflow;
 
-import com.artverse.agents.AgentModelSpec;
-import com.artverse.agents.AgentModelSpecFactory;
-import com.artverse.agents.AgentRunEvent;
+import com.artverse.agent.AgentModelSpec;
+import com.artverse.agent.AgentModelSpecFactory;
+import com.artverse.agent.AgentRunEvent;
 import com.artverse.application.AgentRunToolStatus;
 import com.artverse.application.ApiKeyService;
 import com.artverse.application.MangaAgentConversationService;

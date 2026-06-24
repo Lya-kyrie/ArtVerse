@@ -1,9 +1,9 @@
 package com.artverse.application;
 
-import com.artverse.agents.AgentModelSpecFactory;
-import com.artverse.agents.AgentScopeEventMapper;
-import com.artverse.agents.AgentWorkspaceSyncService;
-import com.artverse.agents.HarnessAgentGateway;
+import com.artverse.agent.AgentModelSpecFactory;
+import com.artverse.agent.gateway.AgentScopeEventMapper;
+import com.artverse.agent.AgentWorkspaceSyncService;
+import com.artverse.agent.AgentGateway;
 import com.artverse.application.workflow.MangaWorkflowOrchestrator;
 import com.artverse.common.BusinessException;
 import com.artverse.config.ArtVerseProperties;
@@ -65,7 +65,7 @@ class MangaAgentServiceTest {
 
     private Fixture fixture() {
         MangaAgentMessageRepository messageRepository = mock(MangaAgentMessageRepository.class);
-        HarnessAgentGateway gateway = mock(HarnessAgentGateway.class);
+        AgentGateway gateway = mock(AgentGateway.class);
         AgentWorkspaceSyncService syncService = mock(AgentWorkspaceSyncService.class);
         ApiKeyService apiKeyService = mock(ApiKeyService.class);
         ChapterAccessService accessService = mock(ChapterAccessService.class);
@@ -144,7 +144,7 @@ class MangaAgentServiceTest {
     }
 
     private record Fixture(MangaAgentService service,
-                           HarnessAgentGateway gateway,
+                           AgentGateway gateway,
                            MangaWorkflowOrchestrator orchestrator,
                            User user) {
     }

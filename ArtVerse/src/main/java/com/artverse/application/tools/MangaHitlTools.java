@@ -1,6 +1,6 @@
 package com.artverse.application.tools;
 
-import com.artverse.agents.MangaAgentRuntimeContext;
+import com.artverse.agent.MangaAgentRuntimeContext;
 import com.artverse.application.AgentToolAuditService;
 import com.artverse.application.AgentUserInputRequest;
 import io.agentscope.core.agent.RuntimeContext;

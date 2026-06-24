@@ -1,6 +1,6 @@
 package com.artverse.application;
 
-import com.artverse.agents.AgentMessage;
+import com.artverse.agent.AgentMessage;
 import com.artverse.domain.Chapter;
 import com.artverse.domain.MangaAgentConversation;
 import com.artverse.domain.MangaAgentMessage;

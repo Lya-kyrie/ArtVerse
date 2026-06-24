@@ -1,6 +1,6 @@
 package com.artverse.application;
 
-import com.artverse.agents.AgentRunContext;
+import com.artverse.agent.AgentRunContext;
 import io.agentscope.core.agent.RuntimeContext;
 import lombok.extern.slf4j.Slf4j;
 import io.agentscope.core.tool.ToolSuspendException;

@@ -1,12 +1,12 @@
 package com.artverse.application.workflow.nodes;
 
-import com.artverse.agents.AgentMessage;
-import com.artverse.agents.AgentRunEvent;
-import com.artverse.agents.AgentRunRequest;
-import com.artverse.agents.AgentScopeEventMapper;
-import com.artverse.agents.AgentTaskType;
-import com.artverse.agents.AgentWorkspaceSyncService;
-import com.artverse.agents.HarnessAgentGateway;
+import com.artverse.agent.AgentMessage;
+import com.artverse.agent.AgentRunEvent;
+import com.artverse.agent.AgentRunRequest;
+import com.artverse.agent.gateway.AgentScopeEventMapper;
+import com.artverse.agent.AgentTaskType;
+import com.artverse.agent.AgentWorkspaceSyncService;
+import com.artverse.agent.AgentGateway;
 import com.artverse.application.AgentUserInputRequest;
 import com.artverse.application.AgentUserInputRequiredException;
 import com.artverse.application.ApiKeyService;
@@ -38,7 +38,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
 public class MangaDirectorAgentNode implements MangaWorkflowNodeHandler {
 
     private final MangaAgentConversationService mangaAgentConversationService;
-    private final HarnessAgentGateway harnessAgentGateway;
+    private final AgentGateway harnessAgentGateway;
     private final AgentWorkspaceSyncService agentWorkspaceSyncService;
     private final ApiKeyService apiKeyService;
     private final ArtVerseProperties properties;

@@ -1,4 +1,10 @@
-package com.artverse.agents;
+package com.artverse.agent.gateway;
+import com.artverse.agent.AgentRunRequest;
+import com.artverse.agent.AgentMessage;
+import com.artverse.agent.AgentModelSpec;
+import com.artverse.agent.AgentSessionIdFactory;
+
+import com.artverse.agent.AgentGateway;
 
 import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.event.AgentEvent;
@@ -14,11 +20,12 @@ import reactor.core.publisher.Mono;
 
 import java.util.ArrayList;
 import java.util.List;
+import com.artverse.agent.MangaAgentPromptProvider;
 
 @Slf4j
 @Component
 @Primary
-public class AgentScopeHarnessAgentGateway implements HarnessAgentGateway {
+public class AgentScopeHarnessAgentGateway implements com.artverse.agent.AgentGateway {
 
     private final AgentScopeAgentFactory agentFactory;
     private final AgentScopeRuntimeContextFactory runtimeContextFactory;

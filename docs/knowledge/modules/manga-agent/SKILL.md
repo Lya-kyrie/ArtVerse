@@ -26,11 +26,13 @@ Image generation is not performed by the Manga Agent. The agent prepares or refi
 - Run state and event snapshots: `ArtVerse/src/main/java/com/artverse/application/MangaAgentRunService.java`.
 - SSE publishing and event persistence: `ArtVerse/src/main/java/com/artverse/application/MangaAgentRunEventPublisher.java`.
 - AG-UI protocol event mapping: `ArtVerse/src/main/java/com/artverse/application/AgUiEventFactory.java`.
-- AgentScope bridge: `ArtVerse/src/main/java/com/artverse/agents/AgentScopeHarnessAgentGateway.java`.
-- AgentScope construction/runtime/toolkit factories: `ArtVerse/src/main/java/com/artverse/agents/AgentScopeAgentFactory.java`, `ArtVerse/src/main/java/com/artverse/agents/AgentScopeRuntimeContextFactory.java`, `ArtVerse/src/main/java/com/artverse/agents/MangaAgentPromptProvider.java`, `ArtVerse/src/main/java/com/artverse/agents/MangaAgentToolkitFactory.java`.
-- Story knowledge sync: `ArtVerse/src/main/java/com/artverse/agents/AgentWorkspaceSyncService.java`.
-- Runtime workspace files: `ArtVerse/src/main/java/com/artverse/agents/AgentWorkspaceService.java`.
-- Agent tools and typed runtime context: `ArtVerse/src/main/java/com/artverse/application/MangaAgentToolFactory.java`, `ArtVerse/src/main/java/com/artverse/application/tools/`, `ArtVerse/src/main/java/com/artverse/agents/MangaAgentRuntimeContext.java`.
+- AgentScope bridge: `ArtVerse/src/main/java/com/artverse/agent/gateway/AgentScopeHarnessAgentGateway.java`.
+- AgentScope construction/runtime/toolkit factories: `ArtVerse/src/main/java/com/artverse/agent/gateway/AgentScopeAgentFactory.java`, `ArtVerse/src/main/java/com/artverse/agent/gateway/AgentScopeRuntimeContextFactory.java`, `ArtVerse/src/main/java/com/artverse/agent/MangaAgentPromptProvider.java`, `ArtVerse/src/main/java/com/artverse/agent/gateway/MangaAgentToolkitFactory.java`.
+- Story knowledge sync: `ArtVerse/src/main/java/com/artverse/agent/AgentWorkspaceSyncService.java`.
+- Runtime workspace files: `ArtVerse/src/main/java/com/artverse/agent/AgentWorkspaceService.java`.
+- Agent tools and typed runtime context: `ArtVerse/src/main/java/com/artverse/application/MangaAgentToolFactory.java`, `ArtVerse/src/main/java/com/artverse/application/tools/`, `ArtVerse/src/main/java/com/artverse/agent/MangaAgentRuntimeContext.java`.
+- AgentScope HITL suspend middleware (replaces deprecated Hook): ArtVerse/src/main/java/com/artverse/agent/gateway/AgentScopeHitlSuspendMiddleware.java.
+- AgentScope event mapping: ArtVerse/src/main/java/com/artverse/agent/gateway/AgentScopeEventMapper.java.
 - AgentScope v2 migration plan: `docs/knowledge/modules/manga-agent/agentscope-v2-refactor-plan.md`.
 - Frontend API and stream parser: `frontend/src/api.ts`.
 - Frontend UI state machine: `frontend/src/components/MangaAgentPage.tsx`.
@@ -50,7 +52,7 @@ For resume, the service requires an existing `WAITING_USER` run, reconstructs a 
 
 The frontend consumes AG-UI as the default live protocol. `POST /conversations/{conversationId}/ag-ui/run` and `POST /conversations/{conversationId}/ag-ui/runs/{requestId}/resume` are the preferred endpoints. Legacy chapter-level endpoints auto-resolve the active conversation and remain compatibility paths. Keep the execution panel as the single place that explains what the agent is doing; do not add a second competing progress widget.
 
-In the main app navigation, `首页` is the Manga Agent conversation surface. `工作区` is the story/project management surface where users create, import, select, and edit stories. Do not point `workspace` back to `home`; that recreates a navigation loop and hides the agent from the first screen.
+In the main app navigation, `濡絾鐗犻妴濉?is the Manga Agent conversation surface. `鐎规悶鍎扮紞鏃堝礌缁?is the story/project management surface where users create, import, select, and edit stories. Do not point `workspace` back to `home`; that recreates a navigation loop and hides the agent from the first screen.
 
 ## Tools
 

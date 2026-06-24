@@ -1,6 +1,6 @@
 package com.artverse.application;
 
-import com.artverse.agents.AgentRunEvent;
+import com.artverse.agent.AgentRunEvent;
 import com.artverse.common.BusinessException;
 import com.artverse.domain.Chapter;
 import com.artverse.domain.MangaAgentConversation;

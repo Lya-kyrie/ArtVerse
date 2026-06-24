@@ -1,6 +1,6 @@
 package com.artverse.application;
 
-import com.artverse.agents.AgentRunContext;
+import com.artverse.agent.AgentRunContext;
 import io.agentscope.core.agent.RuntimeContext;
 import org.junit.jupiter.api.Test;
 
