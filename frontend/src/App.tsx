@@ -1,30 +1,49 @@
 import { useEffect, useState } from 'react';
-import { ChevronLeft, ChevronRight, Plus, BookOpenText, Trash2, Home, MessageSquare, Image, PanelLeftClose, PanelLeftOpen, KeyRound, ExternalLink, X, LogOut } from 'lucide-react';
+import {
+  BookOpenText,
+  ChevronLeft,
+  ChevronRight,
+  ExternalLink,
+  FileText,
+  Globe,
+  Image,
+  KeyRound,
+  LogIn,
+  LogOut,
+  MessageSquare,
+  Paintbrush,
+  PanelLeftClose,
+  PanelLeftOpen,
+  Plus,
+  Sparkles,
+  Trash2,
+  X,
+} from 'lucide-react';
 import ChatPanel from './components/ChatPanel';
 import MangaPanel from './components/MangaPanel';
+import MangaAgentPage from './components/MangaAgentPage';
 import HomePage from './components/HomePage';
 import LoginPage from './components/LoginPage';
+import SquarePage from './components/SquarePage';
+import ImageGenPage from './components/ImageGenPage';
+import MyWorksPage from './components/MyWorksPage';
 import {
   listChapters,
-  listStories,
   createNextChapter,
   deleteChapter,
   getChapter,
-  type Story,
   type Chapter,
   getApiKeySettings,
   saveApiKeySettings,
   clearApiKeySettings,
   saveUserApiKey,
-  API_KEY_CHANGE_EVENT,
   DEEPSEEK_USAGE_URL,
   IMAGE2_CONSOLE_URL,
   isAuthenticated,
   logoutUser,
-  getUser,
 } from './api';
 
-type View = 'home' | 'editor';
+type View = 'home' | 'square' | 'workspace' | 'editor' | 'imagegen' | 'myworks';
 type MobileTab = 'chat' | 'manga';
 
 const LS_STORY_ID = 'lorevista.currentStoryId';
@@ -32,219 +51,113 @@ const LS_CHAPTER_ID = 'lorevista.currentChapterId';
 const LS_CHAPTER_IDX = 'lorevista.currentChapterIdx';
 const MOBILE_BREAKPOINT = 1024;
 
-function chapterHash(chapterNumber: number) {
-  return `chapter-${chapterNumber}`;
-}
-
-function parseChapterNumberHash(): number | null {
-  const raw = window.location.hash.replace(/^#/, '');
-  const match = raw.match(/^chapter-(\d+)$/);
-  return match ? Number(match[1]) : null;
-}
-
-function replaceHash(hash: string) {
-  const next = `${window.location.pathname}${window.location.search}${hash ? `#${hash}` : ''}`;
-  const current = `${window.location.pathname}${window.location.search}${window.location.hash}`;
-  if (next !== current) {
-    window.history.replaceState(null, '', next);
-  }
-}
-
 function useIsMobile() {
   const read = () =>
     navigator.maxTouchPoints > 0 ||
-    window.matchMedia('(any-pointer: coarse)').matches ||
-    window.matchMedia(`(max-width: ${MOBILE_BREAKPOINT}px)`).matches ||
-    window.matchMedia('(pointer: coarse)').matches;
-  const [isMobile, setIsMobile] = useState(read);
-
+    window.matchMedia('(any-pointer:coarse)').matches ||
+    window.matchMedia('(max-width:' + MOBILE_BREAKPOINT + 'px)').matches ||
+    window.matchMedia('(pointer:coarse)').matches;
+  const [m, setM] = useState(read);
   useEffect(() => {
-    const widthMq = window.matchMedia(`(max-width: ${MOBILE_BREAKPOINT}px)`);
-    const touchMq = window.matchMedia('(pointer: coarse)');
-    const anyTouchMq = window.matchMedia('(any-pointer: coarse)');
-    let frame = 0;
-    const sync = () => {
-      window.cancelAnimationFrame(frame);
-      frame = window.requestAnimationFrame(() => setIsMobile(read()));
+    const w = window.matchMedia('(max-width:' + MOBILE_BREAKPOINT + 'px)');
+    const t = window.matchMedia('(pointer:coarse)');
+    const a = window.matchMedia('(any-pointer:coarse)');
+    let f = 0;
+    const s = () => {
+      cancelAnimationFrame(f);
+      f = requestAnimationFrame(() => setM(read()));
     };
-    widthMq.addEventListener('change', sync);
-    touchMq.addEventListener('change', sync);
-    anyTouchMq.addEventListener('change', sync);
-    window.addEventListener('orientationchange', sync);
-    window.addEventListener('resize', sync);
+    w.addEventListener('change', s);
+    t.addEventListener('change', s);
+    a.addEventListener('change', s);
+    window.addEventListener('resize', s);
     return () => {
-      window.cancelAnimationFrame(frame);
-      widthMq.removeEventListener('change', sync);
-      touchMq.removeEventListener('change', sync);
-      anyTouchMq.removeEventListener('change', sync);
-      window.removeEventListener('orientationchange', sync);
-      window.removeEventListener('resize', sync);
+      cancelAnimationFrame(f);
+      w.removeEventListener('change', s);
+      t.removeEventListener('change', s);
+      a.removeEventListener('change', s);
+      window.removeEventListener('resize', s);
     };
   }, []);
-
-  return isMobile;
+  return m;
 }
 
-function useApiKeyConfigured() {
-  const read = () => {
-    const s = getApiKeySettings();
-    return { deepseek: !!s.deepseekApiKey, image: !!s.imageApiKey, coze: !!s.cozeApiKey };
-  };
-  const [state, setState] = useState(read);
-  useEffect(() => {
-    const sync = () => setState(read());
-    window.addEventListener(API_KEY_CHANGE_EVENT, sync);
-    window.addEventListener('storage', sync);
-    return () => {
-      window.removeEventListener(API_KEY_CHANGE_EVENT, sync);
-      window.removeEventListener('storage', sync);
-    };
-  }, []);
-  return state;
+function clearWorkspaceState() {
+  localStorage.removeItem(LS_STORY_ID);
+  localStorage.removeItem(LS_CHAPTER_ID);
+  localStorage.removeItem(LS_CHAPTER_IDX);
 }
 
 function ApiKeySettingsModal({ open, onClose }: { open: boolean; onClose: () => void }) {
-  const [deepseekApiKey, setDeepseekApiKey] = useState('');
-  const [imageApiKey, setImageApiKey] = useState('');
-  const [cozeApiKey, setCozeApiKey] = useState('');
+  const [dk, setDk] = useState('');
+  const [ik, setIk] = useState('');
+  const [ck, setCk] = useState('');
 
   useEffect(() => {
     if (!open) return;
-    const settings = getApiKeySettings();
-    setDeepseekApiKey(settings.deepseekApiKey);
-    setImageApiKey(settings.imageApiKey);
-    setCozeApiKey(settings.cozeApiKey);
+    const s = getApiKeySettings();
+    setDk(s.deepseekApiKey);
+    setIk(s.imageApiKey);
+    setCk(s.cozeApiKey);
   }, [open]);
 
   if (!open) return null;
 
   const handleSave = async () => {
-    saveApiKeySettings({ deepseekApiKey, imageApiKey, cozeApiKey });
-    // Sync to backend DB — each save independent so one failure doesn't block others
-    const sync = async (provider: string, key: string) => {
-      if (!key) return;
-      try { await saveUserApiKey(provider, key); } catch { /* non-critical */ }
+    saveApiKeySettings({ deepseekApiKey: dk, imageApiKey: ik, cozeApiKey: ck });
+    const sync = async (p: string, k: string) => {
+      if (!k) return;
+      try {
+        await saveUserApiKey(p, k);
+      } catch {
+        return;
+      }
     };
-    await Promise.all([
-      sync('deepseek', deepseekApiKey),
-      sync('image2', imageApiKey),
-      sync('coze', cozeApiKey),
-    ]);
+    await Promise.all([sync('deepseek', dk), sync('image2', ik), sync('coze', ck)]);
     onClose();
   };
 
-  const handleClear = () => {
-    if (!window.confirm('确定要清除已保存的所有 API Key 吗？')) return;
-    clearApiKeySettings();
-    setDeepseekApiKey('');
-    setImageApiKey('');
-    setCozeApiKey('');
-  };
-
-  const hasAny = !!(deepseekApiKey || imageApiKey || cozeApiKey);
-
   return (
-    <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/70 p-4" onClick={onClose}>
-      <div
-        className="w-full max-w-lg rounded-xl border border-gray-800 bg-gray-950 shadow-2xl"
-        onClick={(e) => e.stopPropagation()}
-      >
-        <div className="flex items-center justify-between border-b border-gray-800 px-5 py-4">
-          <div className="flex items-center gap-2">
-            <KeyRound size={18} className="text-violet-400" />
-            <h2 className="text-sm font-semibold text-gray-100">API Key 设置</h2>
-          </div>
-          <button onClick={onClose} className="rounded-lg p-1.5 text-gray-500 hover:bg-gray-800 hover:text-white">
-            <X size={16} />
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-md" onClick={onClose}>
+      <div className="m-4 w-full max-w-md space-y-5 rounded-2xl border border-ink-border bg-ink-light p-6 shadow-2xl animate-fade-in" onClick={(e) => e.stopPropagation()}>
+        <div className="flex items-center justify-between">
+          <h2 className="flex items-center gap-2 text-lg font-semibold text-cream">
+            <KeyRound size={18} className="text-amber-accent" />
+            API 密钥
+          </h2>
+          <button onClick={onClose} className="text-warm-gray hover:text-cream transition-colors" aria-label="关闭">
+            <X size={18} />
           </button>
         </div>
-
-        <div className="space-y-5 px-5 py-5">
-          <div className="space-y-2">
-            <div className="flex items-center justify-between gap-3">
-              <label className="text-xs font-medium text-gray-300">DeepSeek API Key</label>
-              <a
-                href={DEEPSEEK_USAGE_URL}
-                target="_blank"
-                rel="noreferrer"
-                className="inline-flex items-center gap-1 text-xs text-violet-300 hover:text-violet-200"
-              >
-                充值 / 用量
-                <ExternalLink size={12} />
-              </a>
-            </div>
-            <input
-              type="password"
-              value={deepseekApiKey}
-              onChange={(e) => setDeepseekApiKey(e.target.value)}
-              placeholder="sk-..."
-              className="w-full rounded-lg border border-gray-800 bg-gray-900 px-3 py-2 text-sm text-gray-100 outline-none focus:border-violet-500"
-            />
-            <p className="text-xs text-gray-500">用于 AI 对话、生成小说正文和生成分镜。</p>
+        <div className="space-y-4">
+          <div>
+            <label className="mb-1 block text-sm text-cream-dim">DeepSeek 密钥</label>
+            <input type="password" value={dk} onChange={(e) => setDk(e.target.value)} placeholder="sk-..." className="w-full rounded-lg border border-ink-border bg-ink px-3 py-2 text-sm text-cream placeholder-ink-muted focus:border-coral focus:outline-none transition-colors" />
+            <a href={DEEPSEEK_USAGE_URL} target="_blank" rel="noopener" className="mt-1 inline-flex items-center gap-1 text-xs text-amber-accent hover:text-amber-accent-light transition-colors">
+              <ExternalLink size={10} />
+              获取密钥
+            </a>
           </div>
-
-          <div className="space-y-2">
-            <div className="flex items-center justify-between gap-3">
-              <label className="text-xs font-medium text-gray-300">Image2 API Key</label>
-              <a
-                href={IMAGE2_CONSOLE_URL}
-                target="_blank"
-                rel="noreferrer"
-                className="inline-flex items-center gap-1 text-xs text-amber-300 hover:text-amber-200"
-              >
-                充值链接
-                <ExternalLink size={12} />
-              </a>
-            </div>
-            <input
-              type="password"
-              value={imageApiKey}
-              onChange={(e) => setImageApiKey(e.target.value)}
-              placeholder="填入图片生成 API Key"
-              className="w-full rounded-lg border border-gray-800 bg-gray-900 px-3 py-2 text-sm text-gray-100 outline-none focus:border-amber-500"
-            />
-            <p className="text-xs text-gray-500">用于生成漫画图片和重新生成单张图片。</p>
+          <div>
+            <label className="mb-1 block text-sm text-cream-dim">绘图密钥</label>
+            <input type="password" value={ik} onChange={(e) => setIk(e.target.value)} placeholder="sk-..." className="w-full rounded-lg border border-ink-border bg-ink px-3 py-2 text-sm text-cream placeholder-ink-muted focus:border-coral focus:outline-none transition-colors" />
+            <a href={IMAGE2_CONSOLE_URL} target="_blank" rel="noopener" className="mt-1 inline-flex items-center gap-1 text-xs text-amber-accent hover:text-amber-accent-light transition-colors">
+              <ExternalLink size={10} />
+              获取密钥
+            </a>
           </div>
-
-          <div className="space-y-2">
-            <div className="flex items-center justify-between gap-3">
-              <label className="text-xs font-medium text-gray-300">Coze API Key</label>
-              <a
-                href="https://www.coze.cn"
-                target="_blank"
-                rel="noreferrer"
-                className="inline-flex items-center gap-1 text-xs text-emerald-300 hover:text-emerald-200"
-              >
-                Coze 控制台
-                <ExternalLink size={12} />
-              </a>
-            </div>
-            <input
-              type="password"
-              value={cozeApiKey}
-              onChange={(e) => setCozeApiKey(e.target.value)}
-              placeholder="填入 Coze API Key"
-              className="w-full rounded-lg border border-gray-800 bg-gray-900 px-3 py-2 text-sm text-gray-100 outline-none focus:border-emerald-500"
-            />
-            <p className="text-xs text-gray-500">用于 AI 生成分镜脚本（Coze 工作流）。</p>
+          <div>
+            <label className="mb-1 block text-sm text-cream-dim">Coze 密钥</label>
+            <input type="password" value={ck} onChange={(e) => setCk(e.target.value)} placeholder="pat-..." className="w-full rounded-lg border border-ink-border bg-ink px-3 py-2 text-sm text-cream placeholder-ink-muted focus:border-coral focus:outline-none transition-colors" />
           </div>
         </div>
-
-        <div className="flex items-center justify-between gap-2 border-t border-gray-800 px-5 py-4">
-          <button
-            onClick={handleClear}
-            disabled={!hasAny}
-            className="rounded-lg px-3 py-2 text-xs text-rose-400 hover:bg-rose-500/10 hover:text-rose-300 disabled:cursor-not-allowed disabled:text-gray-600 disabled:hover:bg-transparent"
-          >
-            清除已保存
+        <div className="flex items-center justify-between pt-2">
+          <button onClick={() => { if (!confirm('确定清空所有密钥吗？')) return; clearApiKeySettings(); setDk(''); setIk(''); setCk(''); }} disabled={!dk && !ik && !ck} className="text-xs text-coral hover:text-coral-light disabled:opacity-30 transition-colors">
+            清空全部
           </button>
           <div className="flex gap-2">
-            <button onClick={onClose} className="rounded-lg px-4 py-2 text-sm text-gray-400 hover:bg-gray-800 hover:text-white">
-              取消
-            </button>
-            <button onClick={handleSave} className="rounded-lg bg-violet-600 px-4 py-2 text-sm font-medium text-white hover:bg-violet-500">
-              保存
-            </button>
+            <button onClick={onClose} className="px-4 py-2 text-sm text-cream-dim hover:text-cream transition-colors">取消</button>
+            <button onClick={handleSave} className="rounded-lg bg-coral px-4 py-2 text-sm font-medium text-white hover:bg-coral-light transition-colors">保存</button>
           </div>
         </div>
       </div>
@@ -252,176 +165,124 @@ function ApiKeySettingsModal({ open, onClose }: { open: boolean; onClose: () => 
   );
 }
 
-function ApiKeyButton({ onClick, compact = false }: { onClick: () => void; compact?: boolean }) {
-  const { deepseek, image } = useApiKeyConfigured();
-  const status: 'ok' | 'partial' | 'none' =
-    deepseek && image ? 'ok' : deepseek || image ? 'partial' : 'none';
-  const dotColor =
-    status === 'ok' ? 'bg-emerald-400' : status === 'partial' ? 'bg-amber-400' : 'bg-rose-500';
-  const tipText =
-    status === 'ok'
-      ? '已配置 DeepSeek + Image2 API Key'
-      : status === 'partial'
-      ? `仅配置了 ${deepseek ? 'DeepSeek' : 'Image2'} API Key`
-      : '未配置 API Key — 点击设置';
-  return (
-    <button
-      onClick={onClick}
-      className="relative inline-flex items-center gap-1.5 rounded-lg border border-gray-800 bg-gray-900 px-3 py-2 text-xs font-medium text-gray-300 hover:border-violet-600 hover:text-white"
-      title={tipText}
-    >
-      <KeyRound size={14} />
-      {!compact && 'API Key'}
-      <span
-        className={`absolute -top-1 -right-1 h-2.5 w-2.5 rounded-full ring-2 ring-gray-950 ${dotColor}`}
-        aria-hidden
-      />
-    </button>
-  );
-}
-
-function App() {
-  const [authenticated, setAuthenticated] = useState(isAuthenticated);
+export default function App() {
   const isMobile = useIsMobile();
+  const [authenticated, setAuthenticated] = useState(false);
+  const [authCheck, setAuthCheck] = useState(false);
   const [view, setView] = useState<View>('home');
-  const [story, setStory] = useState<Story | null>(null);
+  const [sidebarOpen, setSidebarOpen] = useState(!isMobile);
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [loginOpen, setLoginOpen] = useState(false);
+  const [loginMessage, setLoginMessage] = useState('请先登录后使用该功能');
+  const [pendingView, setPendingView] = useState<View | null>(null);
+  const [activeStoryId, setActiveStoryId] = useState<number | null>(null);
+  const [currentIdx, setCurrentIdx] = useState(0);
   const [chapters, setChapters] = useState<Chapter[]>([]);
-  const [currentIdx, _setCurrentIdx] = useState(0);
-  const [mobileTab, setMobileTab] = useState<MobileTab>('chat');
-  const [chapterNavOpen, setChapterNavOpen] = useState(true);
-  const [apiKeyModalOpen, setApiKeyModalOpen] = useState(false);
-
-  const persistSelectedChapter = (chapter: Chapter | null | undefined) => {
-    if (!chapter) return;
-    replaceHash(chapterHash(chapter.chapter_number));
-    localStorage.setItem(LS_CHAPTER_ID, String(chapter.id));
-    localStorage.removeItem(LS_CHAPTER_IDX);
-  };
-
-  const setCurrentIdx = (idx: number | ((prev: number) => number), sourceChapters = chapters) => {
-    _setCurrentIdx((prev) => {
-      if (sourceChapters.length === 0) return 0;
-      const rawNext = typeof idx === 'function' ? idx(prev) : idx;
-      const next = Math.max(0, Math.min(rawNext, sourceChapters.length - 1));
-      persistSelectedChapter(sourceChapters[next]);
-      return next;
-    });
-  };
-
-  const selectChapterNumber = (chapterNumber: number, sourceChapters = chapters) => {
-    const idx = sourceChapters.findIndex((c) => c.chapter_number === chapterNumber);
-    if (idx >= 0) setCurrentIdx(idx, sourceChapters);
-  };
-  const [loading, setLoading] = useState(true);
+  const [currentChapter, setCurrentChapter] = useState<Chapter | null>(null);
   const [creatingChapter, setCreatingChapter] = useState(false);
+  const [mobileTab, setMobileTab] = useState<MobileTab>('chat');
 
-  // ─── Restore session from localStorage on mount ─────────
   useEffect(() => {
-    const onAuthExpired = () => setAuthenticated(false);
-    window.addEventListener('artverse:auth-expired', onAuthExpired);
-    return () => window.removeEventListener('artverse:auth-expired', onAuthExpired);
+    setAuthenticated(isAuthenticated());
+    setAuthCheck(true);
   }, []);
 
   useEffect(() => {
-    const savedStoryId = localStorage.getItem(LS_STORY_ID);
-    if (!savedStoryId) {
-      setLoading(false);
+    const handleExpired = () => {
+      setAuthenticated(false);
+      setLoginMessage('登录状态已过期，请重新登录');
+      setPendingView(view === 'square' ? null : view);
+      setLoginOpen(true);
+      clearWorkspaceState();
+      if (view !== 'square') setView('square');
+    };
+    window.addEventListener('artverse:auth-expired', handleExpired);
+    return () => window.removeEventListener('artverse:auth-expired', handleExpired);
+  }, [view]);
+
+  if (!authCheck) {
+    return <div className="flex h-dvh w-screen items-center justify-center bg-ink"><div className="h-8 w-8 animate-spin rounded-full border-2 border-ink-border border-t-coral" /></div>;
+  }
+
+  const loadChapters = async (storyId: number) => {
+    try {
+      const chs = await listChapters(storyId);
+      setChapters(chs);
+      const savedIdx = Number(localStorage.getItem(LS_CHAPTER_IDX) || '0');
+      const idx = chs.length > 0 ? Math.min(savedIdx, chs.length - 1) : 0;
+      setCurrentIdx(idx);
+      if (chs.length > 0) {
+        const ch = await getChapter(chs[idx].id);
+        setCurrentChapter(ch);
+        localStorage.setItem(LS_CHAPTER_ID, String(chs[idx].id));
+      }
+    } catch {
       return;
     }
-    (async () => {
-      try {
-        const stories = await listStories();
-        const s = stories.find((x) => x.id === Number(savedStoryId));
-        if (!s) {
-          localStorage.removeItem(LS_STORY_ID);
-          localStorage.removeItem(LS_CHAPTER_ID);
-          localStorage.removeItem(LS_CHAPTER_IDX);
-          setLoading(false);
-          return;
-        }
-        const chs = await listChapters(s.id);
-        const hashChapterNumber = parseChapterNumberHash();
-        const savedChapterId = Number(localStorage.getItem(LS_CHAPTER_ID) || '');
-        const preferredIdx = hashChapterNumber
-          ? chs.findIndex((c) => c.chapter_number === hashChapterNumber)
-          : savedChapterId
-            ? chs.findIndex((c) => c.id === savedChapterId)
-          : -1;
-        const idx = preferredIdx >= 0 ? preferredIdx : Math.max(0, chs.length - 1);
-        setStory(s);
-        setChapters(chs);
-        _setCurrentIdx(idx);
-        persistSelectedChapter(chs[idx]);
-        setView('editor');
-      } catch (err) {
-        console.error('Failed to restore session:', err);
-      } finally {
-        setLoading(false);
-      }
-    })();
-  }, []);
-
-  const currentChapter = chapters[currentIdx] ?? null;
-
-  const enterStory = async (s: Story) => {
-    setLoading(true);
-    try {
-      setStory(s);
-      localStorage.setItem(LS_STORY_ID, String(s.id));
-      const chs = await listChapters(s.id);
-      setChapters(chs);
-      setCurrentIdx(Math.max(0, chs.length - 1), chs);
-      setView('editor');
-    } catch (err) {
-      console.error('Failed to load story:', err);
-    } finally {
-      setLoading(false);
-    }
   };
 
-  const goHome = () => {
-    setView('home');
-    setStory(null);
+  const loadEditor = async (storyId: number) => {
+    setActiveStoryId(storyId);
+    localStorage.setItem(LS_STORY_ID, String(storyId));
+    setView('editor');
+    await loadChapters(storyId);
+  };
+
+  const unloadEditor = () => {
+    setActiveStoryId(null);
     setChapters([]);
-    _setCurrentIdx(0);
-    replaceHash('');
-    localStorage.removeItem(LS_STORY_ID);
-    localStorage.removeItem(LS_CHAPTER_ID);
-    localStorage.removeItem(LS_CHAPTER_IDX);
+    setCurrentChapter(null);
+    clearWorkspaceState();
   };
 
   const refreshCurrentChapter = async () => {
-    if (!currentChapter) return;
-    const updated = await getChapter(currentChapter.id);
-    setChapters((prev) => prev.map((c) => (c.id === updated.id ? updated : c)));
+    if (currentChapter) setCurrentChapter(await getChapter(currentChapter.id));
   };
 
-  const refreshChapter = async (chapterId: number) => {
+  const handleChapterRefresh = async (chapterId: number) => {
     try {
-      const updated = await getChapter(chapterId);
-      setChapters((prev) => prev.map((c) => (c.id === updated.id ? updated : c)));
+      const ch = await getChapter(chapterId);
+      setCurrentChapter(ch);
+      if (activeStoryId) {
+        const chs = await listChapters(activeStoryId);
+        setChapters(chs);
+      }
     } catch {
-      // ignore
+      return;
     }
   };
 
-  const handlePrev = () => {
-    if (currentIdx > 0) setCurrentIdx(currentIdx - 1);
+  const setChapterByIndex = async (idx: number) => {
+    if (idx < 0 || idx >= chapters.length || !activeStoryId) return;
+    setCurrentIdx(idx);
+    const ch = await getChapter(chapters[idx].id);
+    setCurrentChapter(ch);
+    localStorage.setItem(LS_CHAPTER_ID, String(chapters[idx].id));
+    localStorage.setItem(LS_CHAPTER_IDX, String(idx));
   };
 
-  const handleNext = async () => {
-    if (creatingChapter) return;
+  const handlePrevChapter = () => {
+    if (currentIdx > 0) setChapterByIndex(currentIdx - 1);
+  };
+
+  const handleNextChapter = async () => {
     if (currentIdx < chapters.length - 1) {
-      setCurrentIdx(currentIdx + 1);
-    } else if (story) {
+      setChapterByIndex(currentIdx + 1);
+      return;
+    }
+    if (activeStoryId) {
       setCreatingChapter(true);
       try {
-        const newCh = await createNextChapter(story.id);
-        const nextChapters = [...chapters, newCh];
-        setChapters(nextChapters);
-        setCurrentIdx(nextChapters.length - 1, nextChapters);
-      } catch (err: any) {
-        alert(`创建下一话失败: ${err.message}`);
+        await createNextChapter(activeStoryId);
+        const chs = await listChapters(activeStoryId);
+        setChapters(chs);
+        const idx = chs.length - 1;
+        setCurrentIdx(idx);
+        setCurrentChapter(await getChapter(chs[idx].id));
+        localStorage.setItem(LS_CHAPTER_ID, String(chs[idx].id));
+        localStorage.setItem(LS_CHAPTER_IDX, String(idx));
+      } catch (e: any) {
+        alert('操作失败：' + e.message);
       } finally {
         setCreatingChapter(false);
       }
@@ -429,288 +290,213 @@ function App() {
   };
 
   const handleDelete = async () => {
-    if (!currentChapter) return;
-    if (!confirm(`确定删除第 ${currentChapter.chapter_number} 话？对话和漫画都将被删除。`)) return;
+    if (!currentChapter || chapters.length <= 1 || !activeStoryId) return;
+    if (!confirm('确定删除本话吗？')) return;
     try {
       await deleteChapter(currentChapter.id);
-      const remaining = chapters.filter((c) => c.id !== currentChapter.id);
-      if (remaining.length === 0 && story) {
-        const newCh = await createNextChapter(story.id);
-        setChapters([newCh]);
-        setCurrentIdx(0, [newCh]);
-      } else {
-        setChapters(remaining);
-        setCurrentIdx(Math.min(currentIdx, remaining.length - 1), remaining);
-      }
-    } catch (err: any) {
-      alert(`删除失败: ${err.message}`);
+      const chs = await listChapters(activeStoryId);
+      setChapters(chs);
+      const idx = Math.min(currentIdx, chs.length - 1);
+      setCurrentIdx(idx);
+      if (chs.length > 0) setCurrentChapter(await getChapter(chs[idx].id));
+    } catch (e: any) {
+      alert('操作失败：' + e.message);
     }
   };
 
-  useEffect(() => {
-    if (view !== 'editor') return;
-    const onHashChange = () => {
-      const chapterNumber = parseChapterNumberHash();
-      if (chapterNumber) selectChapterNumber(chapterNumber);
-    };
-    window.addEventListener('hashchange', onHashChange);
-    return () => window.removeEventListener('hashchange', onHashChange);
-  }, [view, chapters]);
+  const requireLogin = (target?: View) => {
+    setLoginMessage('请先登录后使用该功能');
+    setPendingView(target || null);
+    setLoginOpen(true);
+  };
 
-  const chapterNav = (
-    <aside
-      className={`${
-        chapterNavOpen ? 'w-64' : 'w-0'
-      } hidden md:flex shrink-0 overflow-hidden border-r border-gray-800 bg-gray-950/95 transition-[width] duration-200`}
+  const goView = (target: View) => {
+    if (target !== 'square' && !authenticated) {
+      requireLogin(target);
+      return;
+    }
+    if (view === 'editor') unloadEditor();
+    setView(target);
+  };
+
+  const handleAuthSuccess = () => {
+    setAuthenticated(true);
+    setLoginOpen(false);
+    clearWorkspaceState();
+    if (pendingView) {
+      setView(pendingView);
+      setPendingView(null);
+    }
+  };
+
+  const openSettings = () => {
+    if (!authenticated) {
+      requireLogin();
+      return;
+    }
+    setSettingsOpen(true);
+  };
+
+  const navItem = (icon: React.ReactNode, label: string, target: View) => (
+    <button
+      onClick={() => goView(target)}
+      className={
+        'w-full rounded-lg px-3 py-2.5 text-left text-sm font-medium transition-all duration-200 ' +
+        (view === target
+          ? 'bg-coral/10 text-coral border border-coral/20'
+          : 'text-cream-dim hover:bg-ink-lighter hover:text-cream border border-transparent')
+      }
     >
-      <div className="flex w-64 flex-col">
-        <div className="flex h-11 items-center justify-between border-b border-gray-800 px-3">
-          <span className="text-xs font-semibold uppercase tracking-wide text-gray-500">目录</span>
-          <span className="text-[11px] text-gray-600">{chapters.length} 话</span>
-        </div>
-        <div className="flex-1 overflow-y-auto p-2">
-          {chapters.map((chapter, idx) => {
-            const active = chapter.id === currentChapter?.id;
-            return (
-              <button
-                key={chapter.id}
-                onClick={() => setCurrentIdx(idx)}
-                className={`mb-1 w-full rounded-lg px-3 py-2 text-left transition-colors ${
-                  active
-                    ? 'bg-violet-600/20 text-violet-200 border border-violet-700/50'
-                    : 'text-gray-400 hover:bg-gray-900 hover:text-gray-200 border border-transparent'
-                }`}
-              >
-                <div className="text-xs font-medium">第 {chapter.chapter_number} 话</div>
-                <div className="mt-0.5 truncate text-[11px] text-gray-600">
-                  {chapter.novel_content ? '已有正文' : chapter.messages.length ? '创作中' : '未开始'}
-                </div>
-              </button>
-            );
-          })}
-        </div>
-      </div>
-    </aside>
+      <span className="flex items-center gap-3">{icon}{sidebarOpen && <span>{label}</span>}</span>
+    </button>
   );
 
-  // ─── Auth gate ─────────────────────────────────────────
-  if (!authenticated) {
-    return <LoginPage onAuthSuccess={() => setAuthenticated(true)} />;
-  }
-
-  // ─── Loading ───────────────────────────────────────────
-  if (loading) {
-    return (
-      <div className="h-screen bg-gray-950 flex items-center justify-center text-gray-400">
-        <div className="flex flex-col items-center gap-3">
-          <BookOpenText size={40} className="animate-pulse" />
-          <span className="text-sm">加载中…</span>
-        </div>
-      </div>
-    );
-  }
-
-  // ─── Home page ─────────────────────────────────────────
-  if (view === 'home') {
-    return (
-      <>
-        <div className="fixed top-4 right-4 z-40 flex items-center gap-2">
-          <span className="text-xs text-gray-600">{getUser()?.username ?? ''}</span>
-          <button
-            onClick={async () => { await logoutUser(); setAuthenticated(false); }}
-            className="p-1.5 text-gray-600 hover:text-rose-400 rounded-lg hover:bg-gray-800 transition-colors"
-            title="登出"
-          >
-            <LogOut size={14} />
-          </button>
-          <ApiKeyButton onClick={() => setApiKeyModalOpen(true)} />
-        </div>
-        <HomePage onSelectStory={enterStory} />
-        <ApiKeySettingsModal open={apiKeyModalOpen} onClose={() => setApiKeyModalOpen(false)} />
-      </>
-    );
-  }
-
-  // ─── Editor view ───────────────────────────────────────
   return (
-    <div className="h-screen flex flex-col bg-gray-950 text-gray-100">
-      {/* Top bar */}
-      <header className="h-12 border-b border-gray-800 flex items-center justify-between px-3 md:px-5 shrink-0 bg-gray-950/80 backdrop-blur-sm">
-        <div className="flex items-center gap-2 md:gap-3 min-w-0">
-          <button
-            onClick={goHome}
-            className="flex items-center gap-1 px-2 py-1.5 text-xs text-gray-400 hover:text-white
-                       hover:bg-gray-800 rounded-lg transition-colors shrink-0"
-            title="返回首页"
-          >
-            <Home size={14} />
-            {!isMobile && '首页'}
-          </button>
-          <div className="w-px h-5 bg-gray-800 shrink-0" />
-          <button
-            onClick={() => setChapterNavOpen((open) => !open)}
-            className={`${isMobile ? 'hidden' : 'flex'} items-center justify-center w-8 h-8 text-gray-500 hover:text-white
-                       hover:bg-gray-800 rounded-lg transition-colors shrink-0`}
-            title={chapterNavOpen ? '收起目录' : '展开目录'}
-            aria-label={chapterNavOpen ? '收起目录' : '展开目录'}
-          >
-            {chapterNavOpen ? <PanelLeftClose size={16} /> : <PanelLeftOpen size={16} />}
-          </button>
-          <BookOpenText size={16} className="text-violet-400 shrink-0" />
-          <span className="text-sm font-semibold tracking-wide truncate max-w-[120px] md:max-w-xs">
-            {story?.title ?? '小说漫画生成器'}
-          </span>
-        </div>
-        <div className="flex items-center gap-2 text-xs text-gray-500 shrink-0">
-          <ApiKeyButton onClick={() => setApiKeyModalOpen(true)} compact={isMobile} />
-          <span className="text-gray-600">{getUser()?.username ?? ''}</span>
-          <button
-            onClick={async () => { await logoutUser(); setAuthenticated(false); }}
-            className="p-1.5 text-gray-600 hover:text-rose-400 rounded-lg hover:bg-gray-800 transition-colors"
-            title="登出"
-          >
-            <LogOut size={14} />
-          </button>
-          <span>第 {currentChapter?.chapter_number ?? '–'} 话</span>
-          {!isMobile && <span>·</span>}
-          {!isMobile && <span>共 {chapters.length} 话</span>}
-        </div>
-      </header>
-      <ApiKeySettingsModal open={apiKeyModalOpen} onClose={() => setApiKeyModalOpen(false)} />
-
-      {/* Mobile tab bar */}
-      {isMobile && (
-        <div className="flex border-b border-gray-800 shrink-0">
-          <button
-            onClick={() => setMobileTab('chat')}
-            className={`flex-1 flex items-center justify-center gap-1.5 py-2.5 text-xs font-medium transition-colors
-              ${mobileTab === 'chat'
-                ? 'text-violet-400 border-b-2 border-violet-400 bg-gray-900/50'
-                : 'text-gray-500 hover:text-gray-300'}`}
-          >
-            <MessageSquare size={14} />
-            对话
-          </button>
-          <button
-            onClick={() => setMobileTab('manga')}
-            className={`flex-1 flex items-center justify-center gap-1.5 py-2.5 text-xs font-medium transition-colors
-              ${mobileTab === 'manga'
-                ? 'text-amber-400 border-b-2 border-amber-400 bg-gray-900/50'
-                : 'text-gray-500 hover:text-gray-300'}`}
-          >
-            <Image size={14} />
-            漫画
+    <div className="flex h-dvh w-screen overflow-hidden bg-ink text-cream">
+      <aside className={'flex shrink-0 flex-col border-r border-ink-border bg-ink-light transition-all duration-300 ' + (sidebarOpen ? 'w-52' : 'w-14') + ' ' + (isMobile && view === 'editor' ? 'hidden' : '')}>
+        <div className="flex h-14 items-center justify-between border-b border-ink-border px-3">
+          {sidebarOpen && (
+            <span className="text-sm font-bold tracking-wide text-coral flex items-center gap-1.5">
+              <Sparkles size={14} />
+              ArtVerse
+            </span>
+          )}
+          <button onClick={() => setSidebarOpen(!sidebarOpen)} className="ml-auto text-warm-gray hover:text-cream transition-colors" aria-label="切换侧边栏">
+            {sidebarOpen ? <PanelLeftClose size={16} /> : <PanelLeftOpen size={16} />}
           </button>
         </div>
-      )}
-
-      {isMobile && chapters.length > 0 && (
-        <div className="flex gap-1 overflow-x-auto border-b border-gray-800 bg-gray-950 px-2 py-2 shrink-0">
-          {chapters.map((chapter, idx) => (
-            <button
-              key={chapter.id}
-              onClick={() => setCurrentIdx(idx)}
-              className={`shrink-0 rounded-full border px-3 py-1.5 text-xs transition-colors ${
-                chapter.id === currentChapter?.id
-                  ? 'border-violet-500 bg-violet-600/20 text-violet-200'
-                  : 'border-gray-800 bg-gray-900 text-gray-500 hover:text-gray-300'
-              }`}
-            >
-              第 {chapter.chapter_number} 话
-            </button>
-          ))}
-        </div>
-      )}
-
-      {/* Main content */}
-      {isMobile ? (
-        <main className="flex-1 min-h-0">
-          <div className={`h-full ${mobileTab === 'chat' ? '' : 'hidden'}`}>
-            <ChatPanel
-              chapter={currentChapter}
-              onMessageSent={refreshCurrentChapter}
-              onChapterRefresh={refreshChapter}
-              onGoToManga={() => setMobileTab('manga')}
-            />
-          </div>
-          <div className={`h-full ${mobileTab === 'manga' ? '' : 'hidden'}`}>
-            <MangaPanel chapter={currentChapter} onChapterRefresh={refreshChapter} />
-          </div>
-        </main>
-      ) : (
-        <main className="flex-1 flex min-h-0">
-          {chapterNav}
-          <div className="flex flex-1 min-w-0">
-            <div className="w-1/2 border-r border-gray-800">
-              <ChatPanel chapter={currentChapter} onMessageSent={refreshCurrentChapter} onChapterRefresh={refreshChapter} />
-            </div>
-            <div className="w-1/2">
-              <MangaPanel chapter={currentChapter} onChapterRefresh={refreshChapter} />
-            </div>
-          </div>
-        </main>
-      )}
-
-      {/* Bottom navigation */}
-      <footer className="h-14 border-t border-gray-800 flex items-center justify-center gap-2 md:gap-4 shrink-0 bg-gray-950/80 backdrop-blur-sm px-2">
-        <button
-          onClick={handlePrev}
-          disabled={currentIdx === 0}
-          className="flex items-center gap-1 px-3 md:px-5 py-2 text-sm font-medium rounded-lg
-                     bg-gray-800 hover:bg-gray-700 text-gray-300 disabled:opacity-30
-                     disabled:cursor-not-allowed transition-colors"
-        >
-          <ChevronLeft size={16} />
-          {!isMobile && '上一话'}
-        </button>
-
-        <button
-          onClick={handleDelete}
-          disabled={!currentChapter}
-          className="flex items-center gap-1.5 px-3 py-2 text-sm font-medium rounded-lg
-                     bg-red-900/50 hover:bg-red-800 text-red-300 disabled:opacity-30
-                     disabled:cursor-not-allowed transition-colors"
-          title="删除当前话"
-          aria-label="删除当前话"
-        >
-          <Trash2 size={14} />
-        </button>
-
-        <div className="flex items-center gap-1 text-xs text-gray-600">
-          {chapters.map((chapter, i) => (
-            <button
-              key={chapter.id}
-              onClick={() => setCurrentIdx(i)}
-              aria-label={`跳转到第 ${chapter.chapter_number} 话`}
-              className={`w-2 h-2 rounded-full transition-colors ${
-                i === currentIdx ? 'bg-violet-500' : 'bg-gray-700 hover:bg-gray-600'
-              }`}
-            />
-          ))}
-        </div>
-
-        <button
-          onClick={handleNext}
-          disabled={creatingChapter}
-          className="flex items-center gap-1 px-3 md:px-5 py-2 text-sm font-medium rounded-lg
-                     bg-violet-600 hover:bg-violet-500 text-white disabled:opacity-40
-                     disabled:cursor-not-allowed transition-colors"
-        >
-          {currentIdx === chapters.length - 1 ? (
+        <nav className="flex flex-1 flex-col gap-1 px-2 py-3">
+          {navItem(<Sparkles size={18} />, '首页', 'home')}
+          {navItem(<Globe size={18} />, '广场', 'square')}
+          {navItem(<BookOpenText size={18} />, '工作区', 'workspace')}
+          {navItem(<FileText size={18} />, '作品管理', 'myworks')}
+          {navItem(<Paintbrush size={18} />, '生图', 'imagegen')}
+        </nav>
+        <div className="flex flex-col gap-1 border-t border-ink-border px-2 py-3">
+          {authenticated ? (
             <>
-              <Plus size={16} />
-              {creatingChapter ? '新建…' : (isMobile ? '新建' : '下一话（新建）')}
+              <button onClick={openSettings} className="flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium text-cream-dim hover:bg-ink-lighter hover:text-cream transition-colors">
+                <KeyRound size={18} />
+                {sidebarOpen && <span>设置</span>}
+              </button>
+              <button onClick={() => { logoutUser(); setAuthenticated(false); unloadEditor(); clearWorkspaceState(); setView('home'); }} className="flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium text-cream-dim hover:bg-ink-lighter hover:text-coral transition-colors">
+                <LogOut size={18} />
+                {sidebarOpen && <span>退出</span>}
+              </button>
             </>
           ) : (
-            <>
-              {!isMobile && '下一话'}
-              <ChevronRight size={16} />
-            </>
+            <button onClick={() => requireLogin()} className="flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium text-cream-dim hover:bg-ink-lighter hover:text-cream transition-colors">
+              <LogIn size={18} />
+              {sidebarOpen && <span>登录</span>}
+            </button>
           )}
-        </button>
-      </footer>
+        </div>
+      </aside>
+
+      <div className="flex min-h-0 flex-1 flex-col">
+        {view === 'home' && <MangaAgentPage />}
+        {view === 'square' && <SquarePage />}
+        {view === 'workspace' && <HomePage onSelectStory={(story) => loadEditor(story.id)} />}
+        {view === 'imagegen' && <ImageGenPage />}
+        {view === 'myworks' && <MyWorksPage />}
+
+        {view === 'editor' && activeStoryId && (
+          <div className="flex min-h-0 flex-1 flex-col">
+            <div className="flex h-12 shrink-0 items-center justify-between border-b border-ink-border bg-ink-light/80 px-3 backdrop-blur-md">
+              <button onClick={() => { unloadEditor(); setView('workspace'); }} className="flex items-center gap-1.5 text-sm text-cream-dim hover:text-cream transition-colors">
+                <ChevronLeft size={16} />
+                返回
+              </button>
+              <div className="flex items-center gap-2">
+                {chapters.length > 0 && (
+                  <select
+                    value={currentIdx}
+                    onChange={(e) => setChapterByIndex(Number(e.target.value))}
+                    className="rounded-lg border border-ink-border bg-ink px-2 py-1 text-xs text-cream focus:border-coral focus:outline-none"
+                  >
+                    {chapters.map((ch, i) => (
+                      <option key={ch.id} value={i}>第 {ch.chapter_number} 话</option>
+                    ))}
+                  </select>
+                )}
+              </div>
+            </div>
+
+            {isMobile && chapters.length > 0 && (
+              <div className="shrink-0 overflow-x-auto border-b border-ink-border bg-ink-light px-2 py-2">
+                <div className="flex gap-1">
+                  {chapters.map((ch: Chapter, idx: number) => (
+                    <button key={ch.id} onClick={() => setChapterByIndex(idx)} className={'shrink-0 rounded-full border px-3 py-1.5 text-xs transition-all duration-200 ' + (ch.id === currentChapter?.id ? 'border-coral bg-coral/15 text-coral' : 'border-ink-border bg-ink text-cream-dim hover:text-cream')}>
+                      第 {ch.chapter_number} 话
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {isMobile && (
+              <div className="flex border-b border-ink-border bg-ink-light">
+                <button onClick={() => setMobileTab('chat')} className={'flex flex-1 items-center justify-center gap-1.5 py-2.5 text-xs font-medium transition-colors ' + (mobileTab === 'chat' ? 'border-b-2 border-coral text-coral' : 'text-cream-dim hover:text-cream')}>
+                  <MessageSquare size={14} />
+                  对话
+                </button>
+                <button onClick={() => setMobileTab('manga')} className={'flex flex-1 items-center justify-center gap-1.5 py-2.5 text-xs font-medium transition-colors ' + (mobileTab === 'manga' ? 'border-b-2 border-coral text-coral' : 'text-cream-dim hover:text-cream')}>
+                  <Image size={14} />
+                  漫画
+                </button>
+              </div>
+            )}
+
+            {isMobile ? (
+              <main className="min-h-0 flex-1">
+                <div className={'h-full ' + (mobileTab === 'chat' ? '' : 'hidden')}>
+                  <ChatPanel chapter={currentChapter} onMessageSent={refreshCurrentChapter} onChapterRefresh={handleChapterRefresh} />
+                </div>
+                <div className={'h-full ' + (mobileTab === 'manga' ? '' : 'hidden')}>
+                  <MangaPanel chapter={currentChapter} onChapterRefresh={handleChapterRefresh} />
+                </div>
+              </main>
+            ) : (
+              <main className="flex min-h-0 flex-1">
+                <div className="w-1/2 border-r border-ink-border">
+                  <ChatPanel chapter={currentChapter} onMessageSent={refreshCurrentChapter} onChapterRefresh={handleChapterRefresh} />
+                </div>
+                <div className="w-1/2">
+                  <MangaPanel chapter={currentChapter} onChapterRefresh={handleChapterRefresh} />
+                </div>
+              </main>
+            )}
+
+            <footer className="flex h-14 shrink-0 items-center justify-center gap-2 border-t border-ink-border bg-ink-light/80 px-2 backdrop-blur-md md:gap-4">
+              <button onClick={handlePrevChapter} disabled={currentIdx === 0} className="flex items-center gap-1 rounded-lg border border-ink-border bg-ink px-3 py-2 text-sm font-medium text-cream-dim disabled:cursor-not-allowed disabled:opacity-30 hover:border-ink-muted hover:text-cream transition-colors">
+                <ChevronLeft size={16} />
+                {!isMobile && '上一话'}
+              </button>
+              <button onClick={handleDelete} disabled={!currentChapter || chapters.length <= 1} className="flex items-center gap-1.5 rounded-lg border border-coral-dark/30 bg-coral-dark/10 px-3 py-2 text-sm font-medium text-coral disabled:cursor-not-allowed disabled:opacity-30 hover:bg-coral-dark/20 transition-colors" aria-label="删除本话">
+                <Trash2 size={14} />
+              </button>
+              <div className="flex items-center gap-1 text-xs text-ink-muted">
+                {chapters.map((ch: Chapter, i: number) => (
+                  <button key={ch.id} onClick={() => setChapterByIndex(i)} className={'h-2 w-2 rounded-full transition-colors duration-200 ' + (i === currentIdx ? 'bg-coral' : 'bg-ink-muted hover:bg-cream-dim')} aria-label={`切换到第 ${ch.chapter_number} 话`} />
+                ))}
+              </div>
+              <button onClick={handleNextChapter} disabled={creatingChapter} className="flex items-center gap-1 rounded-lg bg-coral px-3 py-2 text-sm font-medium text-white disabled:cursor-not-allowed disabled:opacity-40 hover:bg-coral-light transition-colors md:px-5">
+                {currentIdx === chapters.length - 1 ? (<><Plus size={16} />{creatingChapter ? '创建中...' : isMobile ? '新建' : '下一话（新建）'}</>) : (<><span>{!isMobile && '下一话'}</span><ChevronRight size={16} /></>)}
+              </button>
+            </footer>
+          </div>
+        )}
+      </div>
+
+      <ApiKeySettingsModal open={settingsOpen} onClose={() => setSettingsOpen(false)} />
+
+      {loginOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-md" onClick={() => setLoginOpen(false)}>
+          <div className="w-full max-w-sm animate-fade-in" onClick={(e) => e.stopPropagation()}>
+            <LoginPage variant="modal" message={loginMessage} onCancel={() => setLoginOpen(false)} onAuthSuccess={handleAuthSuccess} />
+          </div>
+        </div>
+      )}
     </div>
   );
 }
-
-export default App;

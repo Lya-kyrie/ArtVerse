@@ -4,7 +4,8 @@ public enum AgentTaskType {
     CHAT("chat"),
     NOVEL("novel"),
     STORYBOARD("storyboard"),
-    IMAGE("image");
+    IMAGE("image"),
+    MANGA_DIRECTOR("manga-director");
 
     private final String sessionSuffix;
 

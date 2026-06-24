@@ -1,125 +1,92 @@
 package com.artverse.agents;
 
-import com.artverse.config.ArtVerseProperties;
-import io.agentscope.core.agent.EventType;
 import io.agentscope.core.agent.RuntimeContext;
+import io.agentscope.core.event.AgentEvent;
+import io.agentscope.core.event.TextBlockDeltaEvent;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
-import io.agentscope.core.model.Model;
-import io.agentscope.core.model.OpenAIChatModel;
 import io.agentscope.harness.agent.HarnessAgent;
-import io.agentscope.harness.agent.memory.compaction.CompactionConfig;
-import io.github.cdimascio.dotenv.Dotenv;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.context.annotation.Primary;
 import org.springframework.stereotype.Component;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
-import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Map;
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.atomic.AtomicBoolean;
 
 @Slf4j
 @Component
 @Primary
 public class AgentScopeHarnessAgentGateway implements HarnessAgentGateway {
 
-    private final Model model;
-    private final Path workspace;
-    private final CompactionConfig compactionConfig;
-    private final ArtVerseProperties properties;
-    private final Dotenv dotenv;
-    private final Map<String, HarnessAgent> agentCache = new ConcurrentHashMap<>();
+    private final AgentScopeAgentFactory agentFactory;
+    private final AgentScopeRuntimeContextFactory runtimeContextFactory;
+    private final MangaAgentToolkitFactory toolkitFactory;
 
     public AgentScopeHarnessAgentGateway(
-            Model model,
-            @Qualifier("agentScopeWorkspace") Path workspace,
-            CompactionConfig compactionConfig,
-            ArtVerseProperties properties,
-            Dotenv dotenv) {
-        this.model = model;
-        this.workspace = workspace;
-        this.compactionConfig = compactionConfig;
-        this.properties = properties;
-        this.dotenv = dotenv;
+            AgentScopeAgentFactory agentFactory,
+            AgentScopeRuntimeContextFactory runtimeContextFactory,
+            MangaAgentToolkitFactory toolkitFactory) {
+        this.agentFactory = agentFactory;
+        this.runtimeContextFactory = runtimeContextFactory;
+        this.toolkitFactory = toolkitFactory;
     }
 
     @Override
     public Flux<String> streamChat(AgentRunRequest request) {
-        HarnessAgent agent = getOrCreateAgent(request);
-        RuntimeContext ctx = buildRuntimeContext(request);
-        List<Msg> messages = convertMessages(prepareInputMessages(request));
-
-        AtomicBoolean hasEmitted = new AtomicBoolean(false);
-
-        return agent.stream(messages, ctx)
-                .filter(e -> e.getType() != EventType.AGENT_RESULT
-                        && e.getMessage() != null
-                        && e.getMessage().getTextContent() != null)
-                .filter(e -> {
-                    if (e.isLast() && hasEmitted.get()) {
-                        return false;
-                    }
-                    String text = e.getMessage().getTextContent();
-                    if (text != null && !text.isEmpty()) {
-                        hasEmitted.set(true);
-                    }
-                    return true;
-                })
-                .map(e -> e.getMessage().getTextContent());
+        return streamEvents(request)
+                .ofType(TextBlockDeltaEvent.class)
+                .map(TextBlockDeltaEvent::getDelta)
+                .filter(delta -> delta != null && !delta.isEmpty());
     }
 
     @Override
-    public Mono<String> generateText(AgentRunRequest request) {
-        HarnessAgent agent = getOrCreateAgent(request);
-        RuntimeContext ctx = buildRuntimeContext(request);
+    public Flux<AgentEvent> streamEvents(AgentRunRequest request) {
+        HarnessAgent agent = agentFactory.getOrCreate(request);
+        configureToolkitForRequest(agent, request);
+        RuntimeContext ctx = runtimeContextFactory.create(request);
         List<Msg> messages = convertMessages(prepareInputMessages(request));
 
-        return agent.call(messages, ctx)
-                .map(Msg::getTextContent);
+        return agent.streamEvents(messages, ctx);
     }
 
-    private HarnessAgent getOrCreateAgent(AgentRunRequest request) {
-        String keySource = (request.userApiKey() != null && !request.userApiKey().isBlank()) ? "user" : "env";
-        String agentKey = "story-" + request.storyId() + "-" + keySource;
-        return agentCache.computeIfAbsent(agentKey, k -> buildAgent(request));
+    @Override
+    public Mono<Msg> generate(AgentRunRequest request) {
+        HarnessAgent agent = agentFactory.getOrCreate(request);
+        configureToolkitForRequest(agent, request);
+        RuntimeContext ctx = runtimeContextFactory.create(request);
+        List<Msg> messages = convertMessages(prepareInputMessages(request));
+
+        return agent.call(messages, ctx);
     }
 
-    private HarnessAgent buildAgent(AgentRunRequest request) {
-        Model effectiveModel = resolveModel(request.userApiKey());
-        return HarnessAgent.builder()
-                .name("artverse-story-" + request.storyId())
-                .sysPrompt("你是一个帮助用户创作小说和漫画的AI助手。")
-                .model(effectiveModel)
-                .workspace(workspace)
-                .compaction(compactionConfig)
-                .build();
+    static Long parseUserIdForTool(String userId) {
+        return AgentScopeRuntimeContextFactory.parseUserIdForTool(userId);
     }
 
-    private Model resolveModel(String userApiKey) {
-        if (userApiKey != null && !userApiKey.isBlank()) {
-            log.info("Using user-provided DeepSeek API key for model");
-            return OpenAIChatModel.builder()
-                    .apiKey(userApiKey)
-                    .modelName(properties.getDeepseek().getModel())
-                    .baseUrl(properties.getDeepseek().getBaseUrl())
-                    .stream(true)
-                    .build();
+    static String buildAgentCacheKey(AgentRunRequest request, AgentModelSpec fallbackSpec) {
+        return buildAgentCacheKey(request, fallbackSpec, null);
+    }
+
+    static String buildAgentCacheKey(AgentRunRequest request, AgentModelSpec fallbackSpec, java.nio.file.Path workspace) {
+        return AgentScopeAgentFactory.buildAgentCacheKey(
+                request,
+                fallbackSpec,
+                workspace,
+                new MangaAgentPromptProvider().promptVersionFor(request.taskType())
+        );
+    }
+
+    static RuntimeContext buildRuntimeContextForTest(AgentRunRequest request, AgentSessionIdFactory factory) {
+        return new AgentScopeRuntimeContextFactory(factory).create(request);
+    }
+
+    private void configureToolkitForRequest(HarnessAgent agent, AgentRunRequest request) {
+        if (request.taskType() != AgentTaskType.MANGA_DIRECTOR) {
+            return;
         }
-        return model;
-    }
-
-    private RuntimeContext buildRuntimeContext(AgentRunRequest request) {
-        return RuntimeContext.builder()
-                .sessionId("story-" + request.storyId() + "-chapter-" + request.chapterId()
-                        + "-" + request.taskType().name().toLowerCase())
-                .userId(request.userId())
-                .build();
+        toolkitFactory.activateForRequest(agent.getToolkit(), request.activeToolGroups());
     }
 
     static List<AgentMessage> prepareInputMessages(AgentRunRequest request) {

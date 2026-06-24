@@ -1,7 +1,0 @@
-- generic [ref=e2]:
-  - button "API Key" [ref=e4]:
-    - img [ref=e5]
-    - text: API Key
-  - generic [ref=e10]:
-    - img [ref=e11]
-    - generic [ref=e13]: 加载中…

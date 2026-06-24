@@ -3,6 +3,7 @@ package com.artverse.api;
 import com.artverse.config.ArtVerseProperties;
 import com.artverse.domain.Chapter;
 import com.artverse.domain.Story;
+import com.artverse.application.ChapterAccessService;
 import com.artverse.media.MediaStorageService;
 import com.artverse.persistence.ChapterRepository;
 import com.artverse.persistence.StoryAssetGroupRepository;
@@ -46,8 +47,8 @@ class ReferenceImageControllerTest {
 
         ReferenceImageController controller = new ReferenceImageController(
                 storyRepository,
-                chapterRepository,
                 assetGroupRepository,
+                new ChapterAccessService(chapterRepository),
                 new MediaStorageService(properties),
                 storage,
                 properties

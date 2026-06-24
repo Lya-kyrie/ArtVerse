@@ -26,6 +26,10 @@ public class MangaGenerationJob {
 
     public void addSubscriber(SseEmitter emitter) {
         subscribers.add(emitter);
+        emitter.onCompletion(() -> subscribers.remove(emitter));
+        emitter.onTimeout(() -> subscribers.remove(emitter));
+        emitter.onError(error -> subscribers.remove(emitter));
+
         for (String[] event : eventHistory) {
             try {
                 emitter.send(SseEmitter.event().name(event[0]).data(event[1], MediaType.APPLICATION_JSON));
@@ -55,14 +59,26 @@ public class MangaGenerationJob {
         completed = true;
         running = false;
         for (SseEmitter subscriber : subscribers) {
-            subscriber.complete();
+            try {
+                subscriber.complete();
+            } catch (Exception ignored) {
+            } finally {
+                subscribers.remove(subscriber);
+            }
         }
+        subscribers.clear();
     }
 
     public void error(String message) {
         running = false;
         for (SseEmitter subscriber : subscribers) {
-            subscriber.completeWithError(new RuntimeException(message));
+            try {
+                subscriber.completeWithError(new RuntimeException(message));
+            } catch (Exception ignored) {
+            } finally {
+                subscribers.remove(subscriber);
+            }
         }
+        subscribers.clear();
     }
 }

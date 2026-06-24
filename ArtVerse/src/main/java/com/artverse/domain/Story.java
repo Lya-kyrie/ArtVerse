@@ -35,14 +35,21 @@ public class Story {
     @Column(name = "character_profiles", columnDefinition = "TEXT")
     private String characterProfiles;
 
+    @Column(name = "is_published", nullable = false)
+    private Boolean isPublished = false;
+
+    @Column(name = "published_at")
+    private java.time.OffsetDateTime publishedAt;
+
     @Column(name = "manga_style", length = 32, nullable = false)
-    private String mangaStyle = "japanese";
+    private String mangaStyle = "japanese_manga";
 
     @Column(name = "created_at", nullable = false, updatable = false)
     private OffsetDateTime createdAt;
 
     @OneToMany(mappedBy = "story", cascade = CascadeType.ALL, orphanRemoval = true)
     @OrderBy("chapterNumber ASC")
+    @com.fasterxml.jackson.annotation.JsonIgnore
     private List<Chapter> chapters = new ArrayList<>();
 
     @ManyToOne(fetch = FetchType.LAZY)
@@ -51,6 +58,7 @@ public class Story {
     private User user;
 
     @OneToMany(mappedBy = "story", cascade = CascadeType.ALL, orphanRemoval = true)
+    @com.fasterxml.jackson.annotation.JsonIgnore
     private Set<StoryAssetGroup> assetGroups = new LinkedHashSet<>();
 
     @PrePersist

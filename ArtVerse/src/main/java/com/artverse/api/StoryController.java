@@ -1,11 +1,16 @@
 package com.artverse.api;
 
 import com.artverse.application.StoryService;
+import com.artverse.config.ArtVerseProperties;
 import com.artverse.domain.Story;
+import com.artverse.media.MediaStorageService;
+import com.artverse.storage.ObjectStorageService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -16,6 +21,9 @@ import java.util.Set;
 public class StoryController {
 
     private final StoryService storyService;
+    private final MediaStorageService mediaStorageService;
+    private final ObjectStorageService objectStorageService;
+    private final ArtVerseProperties properties;
 
     @GetMapping
     public List<Story> list() {
@@ -44,8 +52,36 @@ public class StoryController {
     }
 
     @PostMapping("/{id}/upload-cover")
-    public Story uploadCover(@PathVariable Long id, @RequestBody Map<String, String> body) {
-        return storyService.updateCoverImage(id, body.get("cover_image"));
+    public Map<String, String> uploadCover(@PathVariable Long id, @RequestBody Map<String, String> body) {
+        String base64 = body.get("cover_image");
+        if (base64 == null || base64.isBlank()) {
+            throw new com.artverse.common.BusinessException(400, "Cover image data cannot be empty");
+        }
+
+        byte[] imageData = mediaStorageService.decodeBase64Image(base64);
+        mediaStorageService.validateImageBytes(imageData, properties.getUpload().getMaxImageBytes());
+
+        String filename = mediaStorageService.generateUniqueFilename("cover", ".png");
+        String objectKey = "stories/" + id + "/cover/" + filename;
+
+        Path temp = null;
+        try {
+            temp = Files.createTempFile("artverse-cover-upload-", ".png");
+            mediaStorageService.savePng(imageData, temp);
+            objectStorageService.putPng(objectKey, temp, "image/png");
+        } catch (Exception e) {
+            throw new RuntimeException("Failed to upload cover image: " + e.getMessage(), e);
+        } finally {
+            if (temp != null) {
+                try {
+                    Files.deleteIfExists(temp);
+                } catch (Exception ignored) {
+                }
+            }
+        }
+
+        storyService.updateCoverImage(id, objectKey);
+        return Map.of("cover_image", objectKey);
     }
 
     @GetMapping("/{id}/manga-style")
@@ -56,14 +92,28 @@ public class StoryController {
     @PutMapping("/{id}/manga-style")
     public Map<String, String> setMangaStyle(@PathVariable Long id, @RequestBody Map<String, String> body) {
         String style = body.get("manga_style");
-        if (style == null || style.isBlank()) {
-            style = "japanese";
-        }
-        Set<String> allowed = Set.of("japanese", "korean", "american", "european", "chinese_ink", "semi_realistic");
-        if (!allowed.contains(style)) {
-            throw new com.artverse.common.BusinessException(400, "Invalid manga style: " + style);
-        }
+        if (style == null || style.isBlank()) style = "japanese_manga";
+        Set<String> allowed = Set.of("japanese_manga", "korean_webtoon", "american_comic", "ligne_claire", "chinese_ink", "semi_realistic", "realistic", "oil_painting", "flat_design", "pixel_art", "watercolor", "cyberpunk");
+        if (!allowed.contains(style)) throw new com.artverse.common.BusinessException(400, "Invalid manga style");
         storyService.setMangaStyle(id, style);
         return Map.of("manga_style", style);
+    }
+
+    @PutMapping("/{id}/publish")
+    public Story publish(@PathVariable Long id, @RequestBody Map<String, Object> body) {
+        Boolean isPublished = (Boolean) body.get("is_published");
+        @SuppressWarnings("unchecked")
+        List<Long> chapterIds = body.get("chapter_ids") != null
+                ? ((List<Number>) body.get("chapter_ids")).stream().map(Number::longValue).toList()
+                : null;
+        return storyService.publish(id, isPublished != null && isPublished, chapterIds);
+    }
+
+    @PutMapping("/{id}/chapter-order")
+    public Map<String, Object> updateChapterOrder(@PathVariable Long id, @RequestBody Map<String, Object> body) {
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> orders = (List<Map<String, Object>>) body.get("orders");
+        storyService.updateChapterOrder(id, orders);
+        return Map.of("success", true);
     }
 }

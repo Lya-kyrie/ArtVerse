@@ -13,7 +13,7 @@ import org.springframework.web.servlet.config.annotation.InterceptorRegistry;
 import org.springframework.web.servlet.config.annotation.WebMvcConfigurer;
 
 /**
- * Sa-Token 主配置（替代原 Spring Security + JWT）
+ * Sa-Token 配置
  *
  * @see <a href="docs/knowledge/modules/auth/SKILL.md">auth 模块 Skill</a>
  * @see <a href="docs/knowledge/modules/auth/references/sa-token-config.md">Sa-Token 配置详情</a>
@@ -27,7 +27,8 @@ public class SaTokenConfig implements WebMvcConfigurer {
         registry.addInterceptor(new SaInterceptor(handle -> {
             // 公开端点不拦截
             String path = SaHolder.getRequest().getRequestPath();
-            if (path.startsWith("/api/auth/")
+            if (path.startsWith("/api/square/") || path.startsWith("/api/auth/")
+                    || path.startsWith("/api/internal/guard/")
                     || path.startsWith("/static/")
                     || path.equals("/actuator/health")) {
                 return;

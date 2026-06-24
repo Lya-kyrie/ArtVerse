@@ -1,9 +1,12 @@
 package com.artverse.api;
 
 import com.artverse.application.CharacterProfileService;
+import com.artverse.domain.CharacterProfile;
 import lombok.RequiredArgsConstructor;
+import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
+import java.util.List;
 import java.util.Map;
 
 @RestController
@@ -13,55 +16,64 @@ public class CharacterController {
 
     private final CharacterProfileService characterProfileService;
 
-    // Backend canonical paths
-    @GetMapping("/chapters/{chapterId}/character-profiles")
-    public Map<String, Object> getEffective(@PathVariable Long chapterId) {
-        return characterProfileService.resolveEffective(chapterId);
-    }
-
-    @PutMapping("/chapters/{chapterId}/character-profiles")
-    public void saveForChapter(@PathVariable Long chapterId, @RequestBody Map<String, String> body) {
-        characterProfileService.saveForChapter(chapterId, body.get("content"));
-    }
-
-    @PutMapping("/stories/{storyId}/character-profiles")
-    public void saveForStory(@PathVariable Long storyId, @RequestBody Map<String, String> body) {
-        characterProfileService.saveForStory(storyId, body.get("content"));
-    }
-
-    @PutMapping("/asset-groups/{groupId}/character-profiles")
-    public void saveForAssetGroup(@PathVariable Long groupId, @RequestBody Map<String, String> body) {
-        characterProfileService.saveForAssetGroup(groupId, body.get("content"));
-    }
-
-    // Frontend compatibility paths (/characters instead of /character-profiles)
-    @GetMapping("/chapters/{chapterId}/characters")
-    public Map<String, Object> getCharacters(@PathVariable Long chapterId) {
-        Map<String, Object> result = characterProfileService.resolveEffective(chapterId);
-        // Frontend expects "characters" field, backend returns "content"
-        return Map.of(
-                "characters", result.getOrDefault("content", ""),
-                "source", result.getOrDefault("source", "none")
-        );
-    }
-
-    @PutMapping("/chapters/{chapterId}/characters")
-    public void saveCharacters(@PathVariable Long chapterId, @RequestBody Map<String, String> body) {
-        characterProfileService.saveForChapter(chapterId, body.get("characters"));
-    }
-
-    @DeleteMapping("/chapters/{chapterId}/characters")
-    public void deleteCharacters(@PathVariable Long chapterId) {
-        characterProfileService.saveForChapter(chapterId, "");
-    }
+    // ===== Individual character profile CRUD =====
 
     @GetMapping("/stories/{storyId}/characters")
-    public Map<String, Object> getStoryCharacters(@PathVariable Long storyId) {
-        return characterProfileService.resolveForStory(storyId);
+    public List<CharacterProfile> listByStory(@PathVariable Long storyId) {
+        return characterProfileService.listByStory(storyId);
     }
 
-    @PutMapping("/stories/{storyId}/characters")
-    public void saveStoryCharacters(@PathVariable Long storyId, @RequestBody Map<String, String> body) {
-        characterProfileService.saveForStory(storyId, body.get("characters"));
+    @PostMapping("/stories/{storyId}/characters")
+    public CharacterProfile create(@PathVariable Long storyId, @RequestBody Map<String, String> body) {
+        return characterProfileService.create(storyId, body.get("name"), body.get("description"));
+    }
+
+    @PutMapping("/stories/{storyId}/characters/{characterId}")
+    public CharacterProfile update(@PathVariable Long storyId, @PathVariable Long characterId,
+                                   @RequestBody Map<String, String> body) {
+        return characterProfileService.update(characterId, body.get("name"), body.get("description"));
+    }
+
+    @DeleteMapping("/stories/{storyId}/characters/{characterId}")
+    public ResponseEntity<Void> delete(@PathVariable Long storyId, @PathVariable Long characterId) {
+        characterProfileService.delete(storyId, characterId);
+        return ResponseEntity.noContent().build();
+    }
+
+    // ===== Character ref images =====
+
+    @GetMapping("/stories/{storyId}/characters/{characterId}/ref-images")
+    public List<Map<String, Object>> listRefImages(@PathVariable Long storyId, @PathVariable Long characterId) {
+        return characterProfileService.listRefImages(storyId, characterId);
+    }
+
+    @PostMapping("/stories/{storyId}/characters/{characterId}/ref-images")
+    public Map<String, Object> addRefImage(@PathVariable Long storyId, @PathVariable Long characterId,
+                                           @RequestBody Map<String, String> body) {
+        return characterProfileService.addRefImage(storyId, characterId, body.get("image"));
+    }
+
+    @DeleteMapping("/stories/{storyId}/characters/{characterId}/ref-images/{filename}")
+    public ResponseEntity<Void> deleteRefImage(@PathVariable Long storyId, @PathVariable Long characterId,
+                                               @PathVariable String filename) {
+        characterProfileService.deleteRefImage(storyId, characterId, filename);
+        return ResponseEntity.noContent().build();
+    }
+
+    // ===== Asset group character association =====
+
+    @GetMapping("/asset-groups/{groupId}/characters")
+    public List<CharacterProfile> listByAssetGroup(@PathVariable Long groupId) {
+        return characterProfileService.listByAssetGroup(groupId);
+    }
+
+    @PutMapping("/asset-groups/{groupId}/characters")
+    public Map<String, Object> setAssetGroupCharacters(@PathVariable Long groupId,
+                                                        @RequestBody Map<String, Object> body) {
+        @SuppressWarnings("unchecked")
+        List<Number> ids = (List<Number>) body.get("character_ids");
+        List<Long> characterIds = ids != null ? ids.stream().map(Number::longValue).toList() : List.of();
+        characterProfileService.setAssetGroupCharacters(groupId, characterIds);
+        return Map.of("success", true);
     }
 }
