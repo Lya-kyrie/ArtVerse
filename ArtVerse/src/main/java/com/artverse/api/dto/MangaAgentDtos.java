@@ -3,6 +3,7 @@ package com.artverse.api.dto;
 import com.artverse.domain.MangaAgentMessage;
 import com.artverse.application.AgentUserInputRequest;
 import com.artverse.application.MangaAgentRunService;
+import com.artverse.application.workflow.MangaWorkflowRoute;
 import com.artverse.domain.MangaAgentConversation;
 
 import java.time.OffsetDateTime;
@@ -14,7 +15,7 @@ public final class MangaAgentDtos {
     private MangaAgentDtos() {
     }
 
-    public record RunRequest(String message, UUID requestId) {
+    public record RunRequest(String message, UUID requestId, MangaWorkflowRoute route) {
     }
 
     public record RunResponse(String reply, UUID requestId) {
@@ -48,6 +49,7 @@ public final class MangaAgentDtos {
     }
 
     public record RunStateResponse(UUID requestId,
+                                   String route,
                                    String status,
                                    String inputMessage,
                                    String finalReply,
@@ -60,6 +62,7 @@ public final class MangaAgentDtos {
         public static RunStateResponse from(MangaAgentRunService.RunSnapshot snapshot) {
             return new RunStateResponse(
                     snapshot.requestId(),
+                    snapshot.route() == null ? null : snapshot.route().name(),
                     snapshot.status().name(),
                     snapshot.inputMessage(),
                     snapshot.finalReply(),

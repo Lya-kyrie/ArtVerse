@@ -48,6 +48,13 @@ Use repository business knowledge before changing complex AI workflow code. Star
 
 When a change touches a documented module, compare the skill with the current code. If the code and knowledge disagree, mention the mismatch and update the relevant knowledge file in the same change when possible.
 
+## AgentScope Rules
+
+- All AgentScope-related development must follow the official AgentScope Java v2 documentation and the configured AgentScope docs MCP first.
+- Do not guess undocumented AgentScope behavior. Verify against v2 docs or the local `2.0.0-RC4` dependency reality before implementing.
+- Do not reinvent AgentScope primitives that already exist in v2, such as `RuntimeContext`, `Toolkit`, `ToolGroup`, middleware, permissions, AG-UI integration points, or built-in Harness capabilities.
+- Keep workflow orchestration, AgentScope adapter concerns, and business tools separate. Prefer official v2 extension points over custom wrappers.
+
 ## Testing Guidelines
 
 Run at least `mvn -q -DskipTests compile` after backend changes and `npm run build` after frontend changes. Add focused tests for shared service behavior, persistence queries, idempotency/rate-limit logic, and API contract changes. Name backend tests after the unit under test, e.g. `IdempotencyServiceTest`.

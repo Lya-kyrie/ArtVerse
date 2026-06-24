@@ -1,24 +1,12 @@
 package com.artverse.application.workflow.nodes;
 
-import com.artverse.agent.AgentMessage;
-import com.artverse.agent.AgentRunEvent;
-import com.artverse.agent.AgentRunRequest;
-import io.agentscope.core.event.AgentEndEvent;
-import io.agentscope.core.event.AgentEvent;
-import io.agentscope.core.event.AgentResultEvent;
-import io.agentscope.core.event.AgentStartEvent;
-import io.agentscope.core.event.ModelCallEndEvent;
-import io.agentscope.core.event.ModelCallStartEvent;
-import io.agentscope.core.event.TextBlockDeltaEvent;
-import io.agentscope.core.event.ThinkingBlockDeltaEvent;
-import io.agentscope.core.event.ThinkingBlockStartEvent;
-import io.agentscope.core.event.ToolCallEndEvent;
-import io.agentscope.core.event.ToolCallStartEvent;
-import io.agentscope.core.event.ToolResultEndEvent;
-import io.agentscope.core.event.ToolResultStartEvent;
-import com.artverse.agent.AgentTaskType;
-import com.artverse.agent.AgentWorkspaceSyncService;
-import com.artverse.agent.gateway.AgentScopeHarnessAgentGateway;
+import com.artverse.agents.AgentMessage;
+import com.artverse.agents.AgentRunEvent;
+import com.artverse.agents.AgentRunRequest;
+import com.artverse.agents.AgentScopeEventMapper;
+import com.artverse.agents.AgentTaskType;
+import com.artverse.agents.AgentWorkspaceSyncService;
+import com.artverse.agents.HarnessAgentGateway;
 import com.artverse.application.AgentUserInputRequest;
 import com.artverse.application.AgentUserInputRequiredException;
 import com.artverse.application.ApiKeyService;
@@ -27,6 +15,7 @@ import com.artverse.application.MangaAgentRunService;
 import com.artverse.application.workflow.MangaWorkflowExecutionContext;
 import com.artverse.application.workflow.MangaWorkflowNode;
 import com.artverse.application.workflow.MangaWorkflowNodeHandler;
+import com.artverse.application.workflow.MangaWorkflowResult;
 import com.artverse.application.workflow.MangaWorkflowRoute;
 import com.artverse.application.workflow.MangaWorkflowStreamContext;
 import com.artverse.common.BusinessException;
@@ -35,15 +24,15 @@ import com.artverse.domain.Chapter;
 import com.artverse.domain.MangaAgentMessage;
 import com.artverse.domain.MessageRole;
 import com.artverse.domain.User;
+import io.agentscope.core.message.GenerateReason;
+import io.agentscope.core.message.Msg;
 import io.agentscope.core.tool.ToolSuspendException;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
 
 import java.time.Duration;
-import java.time.OffsetDateTime;
 import java.util.List;
 import java.util.Map;
-import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.atomic.AtomicBoolean;
 
@@ -52,10 +41,11 @@ import java.util.concurrent.atomic.AtomicBoolean;
 public class MangaDirectorAgentNode implements MangaWorkflowNodeHandler {
 
     private final MangaAgentConversationService mangaAgentConversationService;
-    private final AgentScopeHarnessAgentGateway harnessAgentGateway;
+    private final HarnessAgentGateway harnessAgentGateway;
     private final AgentWorkspaceSyncService agentWorkspaceSyncService;
     private final ApiKeyService apiKeyService;
     private final ArtVerseProperties properties;
+    private final AgentScopeEventMapper agentScopeEventMapper;
     private final MangaAgentRunService mangaAgentRunService;
 
     @Override
@@ -64,13 +54,23 @@ public class MangaDirectorAgentNode implements MangaWorkflowNodeHandler {
     }
 
     @Override
-    public Map<String, Object> run(MangaWorkflowExecutionContext context) {
+    public List<String> activeToolGroups() {
+        return List.of(
+                com.artverse.agents.MangaAgentToolkitFactory.CONTEXT_TOOLS,
+                com.artverse.agents.MangaAgentToolkitFactory.STORYBOARD_TOOLS,
+                com.artverse.agents.MangaAgentToolkitFactory.HITL_TOOLS
+        );
+    }
+
+    @Override
+    public MangaWorkflowResult run(MangaWorkflowExecutionContext context) {
         List<AgentMessage> messages = prepareAgentMessages(context);
         syncWorkspace(context);
         AgentRunRequest request = buildRunRequest(context, messages);
         try {
-            String reply = harnessAgentGateway.generateText(request).block(agentRunTimeout());
-            throwIfWaitingForUser(context);
+            Msg result = harnessAgentGateway.generate(request).block(agentRunTimeout());
+            throwIfWaitingForUser(context, result);
+            String reply = result == null ? null : result.getTextContent();
             if (reply == null || reply.isBlank()) {
                 throw new BusinessException(502, "Agent returned empty response");
             }
@@ -80,11 +80,11 @@ public class MangaDirectorAgentNode implements MangaWorkflowNodeHandler {
                     reply,
                     context.requestId()
             );
-            return Map.of("reply", reply);
+            return MangaWorkflowResult.success(reply);
         } catch (AgentUserInputRequiredException e) {
             throw e;
         } catch (ToolSuspendException e) {
-            throwIfWaitingForUser(context);
+            throwIfWaitingForUser(context, null);
             throw new BusinessException(502, "Agent tool suspended without user input");
         } catch (BusinessException e) {
             if (context.toolState().hasSuccessfulMutatingTool()) {
@@ -105,7 +105,7 @@ public class MangaDirectorAgentNode implements MangaWorkflowNodeHandler {
     }
 
     @Override
-    public Map<String, Object> stream(MangaWorkflowExecutionContext context, MangaWorkflowStreamContext streamContext) {
+    public MangaWorkflowResult stream(MangaWorkflowExecutionContext context, MangaWorkflowStreamContext streamContext) {
         List<AgentMessage> messages = prepareAgentMessages(context);
         streamContext.sink().sendRunEvent(streamContext.run(), AgentRunEvent.step(
                 MangaWorkflowNode.GENERATING.name(),
@@ -118,36 +118,39 @@ public class MangaDirectorAgentNode implements MangaWorkflowNodeHandler {
         return executeStreamedRequest(context, streamContext, request);
     }
 
-    private Map<String, Object> executeStreamedRequest(MangaWorkflowExecutionContext context,
+    private MangaWorkflowResult executeStreamedRequest(MangaWorkflowExecutionContext context,
                                                        MangaWorkflowStreamContext streamContext,
                                                        AgentRunRequest request) {
         StringBuilder reply = new StringBuilder();
         AtomicBoolean finished = new AtomicBoolean(false);
         try {
             harnessAgentGateway.streamEvents(request)
-                    .doOnNext(event -> mapAgentScopeEvent(event).ifPresent(mapped -> {
-                        if (mangaAgentRunService.isTerminal(
-                                context.requestId(), context.user().getId(), context.chapter().getId())) {
-                            throw new AgentRunTerminatedException();
-                        }
-                        if ("text_delta".equals(mapped.type()) && mapped.text() != null) {
-                            reply.append(mapped.text());
-                        }
-                        streamContext.sink().sendRunEvent(streamContext.run(), mapped);
-                    }))
+                    .doOnNext(event -> {
+                        captureWaitingState(context, event);
+                        agentScopeEventMapper.map(event).ifPresent(mapped -> {
+                            if (mangaAgentRunService.isTerminal(
+                                    context.requestId(), context.user().getId(), context.chapter().getId())) {
+                                throw new AgentRunTerminatedException();
+                            }
+                            if ("text_delta".equals(mapped.type()) && mapped.text() != null) {
+                                reply.append(mapped.text());
+                            }
+                            streamContext.sink().sendRunEvent(streamContext.run(), mapped);
+                        });
+                    })
                     .blockLast(agentRunTimeout());
             finished.set(true);
-            throwIfWaitingForUser(context);
+            throwIfWaitingForUser(context, null);
         } catch (AgentRunTerminatedException e) {
-            return Map.of("reply", "");
+            return MangaWorkflowResult.success("");
         } catch (AgentUserInputRequiredException e) {
             throw e;
         } catch (ToolSuspendException e) {
-            throwIfWaitingForUser(context);
+            throwIfWaitingForUser(context, null);
             throw new BusinessException(502, "Agent tool suspended without user input");
         } catch (Exception e) {
             if (mangaAgentRunService.isTerminal(context.requestId(), context.user().getId(), context.chapter().getId())) {
-                return Map.of("reply", "");
+                return MangaWorkflowResult.success("");
             }
             String error = e.getMessage() == null ? "unknown error" : e.getMessage();
             if (context.toolState().hasSuccessfulMutatingTool()) {
@@ -160,7 +163,7 @@ public class MangaDirectorAgentNode implements MangaWorkflowNodeHandler {
 
         String finalReply = reply.toString().trim();
         if (mangaAgentRunService.isTerminal(context.requestId(), context.user().getId(), context.chapter().getId())) {
-            return Map.of("reply", "");
+            return MangaWorkflowResult.success("");
         }
         if (!finished.get() || finalReply.isBlank()) {
             if (context.toolState().hasSuccessfulMutatingTool()) {
@@ -180,7 +183,7 @@ public class MangaDirectorAgentNode implements MangaWorkflowNodeHandler {
                 finalReply,
                 context.requestId()
         );
-        return Map.of("reply", finalReply);
+        return MangaWorkflowResult.success(finalReply);
     }
 
     private List<AgentMessage> prepareAgentMessages(MangaWorkflowExecutionContext context) {
@@ -213,7 +216,8 @@ public class MangaDirectorAgentNode implements MangaWorkflowNodeHandler {
                 context.modelSpec(),
                 context.deepseekApiKey(),
                 context.requestId(),
-                context.conversation().getConversationUuid()
+                context.conversation().getConversationUuid(),
+                activeToolGroups()
         );
     }
 
@@ -224,7 +228,16 @@ public class MangaDirectorAgentNode implements MangaWorkflowNodeHandler {
         );
     }
 
-    private void throwIfWaitingForUser(MangaWorkflowExecutionContext context) {
+    private void captureWaitingState(MangaWorkflowExecutionContext context, io.agentscope.core.event.AgentEvent event) {
+        if (event instanceof io.agentscope.core.event.AgentResultEvent resultEvent) {
+            throwIfWaitingForUser(context, resultEvent.getResult());
+        }
+    }
+
+    private void throwIfWaitingForUser(MangaWorkflowExecutionContext context, Msg result) {
+        if (result != null && result.getGenerateReason() != GenerateReason.TOOL_SUSPENDED) {
+            return;
+        }
         AgentUserInputRequest waiting = context.toolState().userInputRequest();
         if (waiting != null) {
             throw new AgentUserInputRequiredException(waiting);
@@ -237,89 +250,6 @@ public class MangaDirectorAgentNode implements MangaWorkflowNodeHandler {
 
     private String nullToBlank(String value) {
         return value == null ? "" : value;
-    }
-
-
-    private Optional<AgentRunEvent> mapAgentScopeEvent(AgentEvent event) {
-        if (event instanceof AgentStartEvent start) {
-            return Optional.of(new AgentRunEvent(
-                    "run_started", "started", "智能体已启动",
-                    null, "running", null,
-                    Map.of("agent", start.getName()),
-                    OffsetDateTime.now()
-            ));
-        }
-        if (event instanceof ModelCallStartEvent) {
-            return Optional.of(AgentRunEvent.of("model_started", "thinking", "模型正在分析当前章节"));
-        }
-        if (event instanceof ModelCallEndEvent) {
-            return Optional.of(AgentRunEvent.of("model_finished", "thinking", "模型分析完成"));
-        }
-        if (event instanceof ThinkingBlockStartEvent) {
-            return Optional.of(AgentRunEvent.of("thinking_started", "thinking", "智能体正在推理"));
-        }
-        if (event instanceof ThinkingBlockDeltaEvent) {
-            return Optional.empty();
-        }
-        if (event instanceof ToolCallStartEvent tool) {
-            return Optional.of(AgentRunEvent.tool(
-                    "tool_call_started",
-                    labelForTool(tool.getToolCallName(), "准备调用"),
-                    tool.getToolCallName(),
-                    "running",
-                    Map.of("toolCallId", tool.getToolCallId())
-            ));
-        }
-        if (event instanceof ToolCallEndEvent tool) {
-            return Optional.of(AgentRunEvent.tool(
-                    "tool_call_ready",
-                    labelForTool(tool.getToolCallName(), "工具参数已准备"),
-                    tool.getToolCallName(),
-                    "running",
-                    Map.of("toolCallId", tool.getToolCallId())
-            ));
-        }
-        if (event instanceof ToolResultStartEvent tool) {
-            return Optional.of(AgentRunEvent.tool(
-                    "tool_started",
-                    labelForTool(tool.getToolCallName(), "正在执行"),
-                    tool.getToolCallName(),
-                    "running",
-                    Map.of("toolCallId", tool.getToolCallId())
-            ));
-        }
-        if (event instanceof ToolResultEndEvent tool) {
-            String status = tool.getState() == null ? "finished" : tool.getState().name().toLowerCase();
-            return Optional.of(AgentRunEvent.tool(
-                    "tool_finished",
-                    labelForTool(tool.getToolCallName(), "工具执行完成"),
-                    tool.getToolCallName(),
-                    status,
-                    Map.of("toolCallId", tool.getToolCallId())
-            ));
-        }
-        if (event instanceof TextBlockDeltaEvent text) {
-            String delta = text.getDelta();
-            return delta == null || delta.isBlank() ? Optional.empty() : Optional.of(AgentRunEvent.text(delta));
-        }
-        if (event instanceof AgentResultEvent) {
-            return Optional.of(AgentRunEvent.of("reply_ready", "replying", "最终回复已生成"));
-        }
-        if (event instanceof AgentEndEvent) {
-            return Optional.of(AgentRunEvent.of("run_finished", "finished", "智能体运行结束"));
-        }
-        return Optional.empty();
-    }
-
-    private String labelForTool(String toolName, String prefix) {
-        return prefix + "：" + switch (toolName == null ? "" : toolName) {
-            case "get_chapter_context" -> "读取章节上下文";
-            case "generate_storyboard" -> "生成分镜";
-            case "save_storyboard" -> "保存分镜";
-            case "save_structured_storyboard" -> "保存结构化分镜";
-            case "ask_user" -> "询问用户";
-            default -> toolName == null || toolName.isBlank() ? "工具" : toolName;
-        };
     }
 
     private static class AgentRunTerminatedException extends RuntimeException {

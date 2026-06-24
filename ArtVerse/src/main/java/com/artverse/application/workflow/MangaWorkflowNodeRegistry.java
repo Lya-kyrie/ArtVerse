@@ -24,10 +24,6 @@ public class MangaWorkflowNodeRegistry {
         if (handler != null) {
             return handler;
         }
-        MangaWorkflowNodeHandler director = handlers.get(MangaWorkflowRoute.DIRECTOR);
-        if (director != null) {
-            return director;
-        }
         throw new IllegalStateException("No Manga workflow node handler for route: " + route);
     }
 }

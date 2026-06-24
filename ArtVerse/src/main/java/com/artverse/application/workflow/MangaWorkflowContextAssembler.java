@@ -26,7 +26,7 @@ public class MangaWorkflowContextAssembler {
     private final CharacterProfileService characterProfileService;
     private final MangaAgentConversationService conversationService;
 
-    public MangaWorkflowContextSnapshot assemble(MangaAgentConversation conversation, String userMessage) {
+    public MangaWorkflowContextSnapshot assemble(MangaAgentConversation conversation, String userMessage, MangaWorkflowRoute route) {
         Chapter chapter = conversation.getChapter();
         Story story = chapter.getStory();
         List<MangaImage> images = mangaImageRepository.findByChapterIdOrderByImageNumberAsc(chapter.getId());
@@ -44,45 +44,9 @@ public class MangaWorkflowContextAssembler {
                 excerpt(chapter.novelContentOrJoinedMessages(), EXCERPT_LIMIT),
                 excerpt(String.valueOf(characterProfile.getOrDefault("content", "")), EXCERPT_LIMIT),
                 summarizeConversation(history, userMessage),
-                routeFor(userMessage, chapter),
+                route == null ? MangaWorkflowRoute.DIRECTOR : route,
                 warningsFor(chapter, images)
         );
-    }
-
-    private MangaWorkflowRoute routeFor(String userMessage, Chapter chapter) {
-        String text = userMessage == null ? "" : userMessage.toLowerCase();
-        if (isDirectorIntent(text)) {
-            return MangaWorkflowRoute.DIRECTOR;
-        }
-        if (isHitlIntent(text)) {
-            return MangaWorkflowRoute.HITL;
-        }
-        if (isReviewIntent(text, chapter)) {
-            return MangaWorkflowRoute.REVIEW;
-        }
-        return MangaWorkflowRoute.DIRECTOR;
-    }
-
-    private boolean isDirectorIntent(String text) {
-        return containsAny(text, "重写", "分镜", "重新生成", "重做", "生成分镜");
-    }
-
-    private boolean isHitlIntent(String text) {
-        return containsAny(text, "选择", "决定", "怎么做", "怎么选", "要不要", "如何处理");
-    }
-
-    private boolean isReviewIntent(String text, Chapter chapter) {
-        boolean hasStoryboard = chapter.getScenesText() != null && !chapter.getScenesText().isBlank();
-        return hasStoryboard && containsAny(text, "审查", "检查", "评估", "复查", "看看", "review");
-    }
-
-    private boolean containsAny(String text, String... keywords) {
-        for (String keyword : keywords) {
-            if (text.contains(keyword)) {
-                return true;
-            }
-        }
-        return false;
     }
 
     private List<String> warningsFor(Chapter chapter, List<MangaImage> images) {

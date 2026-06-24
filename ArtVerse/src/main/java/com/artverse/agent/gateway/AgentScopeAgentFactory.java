@@ -1,10 +1,4 @@
-package com.artverse.agent.gateway;
-import com.artverse.agent.AgentWorkspaceService;
-import com.artverse.agent.MangaAgentPromptProvider;
-import com.artverse.agent.AgentRunRequest;
-import com.artverse.agent.AgentModelSpec;
-import com.artverse.agent.AgentModelSpecFactory;
-import com.artverse.agent.AgentModelSpecFactory;
+package com.artverse.agents;
 
 import com.artverse.config.ArtVerseProperties;
 import io.agentscope.core.model.Model;
@@ -18,7 +12,6 @@ import org.springframework.stereotype.Component;
 import java.nio.file.Path;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
-import com.artverse.agent.AgentTaskType;
 
 @Slf4j
 @Component
@@ -27,7 +20,6 @@ public class AgentScopeAgentFactory {
 
     private final Model model;
     private final CompactionConfig compactionConfig;
-    private final AgentModelSpecFactory agentModelSpecFactory;
     private final ArtVerseProperties properties;
     private final AgentWorkspaceService agentWorkspaceService;
     private final MangaAgentPromptProvider promptProvider;
@@ -55,10 +47,9 @@ public class AgentScopeAgentFactory {
                 .enablePendingToolRecovery(true)
                 .disableShellTool()
                 .disableFilesystemTools()
-                .middleware(new AgentScopeHitlSuspendMiddleware())
                 .build();
         if (request.taskType() == AgentTaskType.MANGA_DIRECTOR) {
-            toolkitFactory.configureMangaDirector(agent.getToolkit());
+            toolkitFactory.configureMangaDirector(agent.getToolkit(), toolkitFactory.activeGroupsForDirector());
         }
         return agent;
     }
@@ -78,9 +69,19 @@ public class AgentScopeAgentFactory {
 
     private AgentModelSpec defaultModelSpec(String userApiKey) {
         if (userApiKey != null && !userApiKey.isBlank()) {
-            return agentModelSpecFactory.deepSeek(userApiKey);
+            return new AgentModelSpec(
+                    "deepseek",
+                    properties.getDeepseek().getBaseUrl(),
+                    properties.getDeepseek().getModel(),
+                    AgentModelSpecFactory.shortHash(userApiKey)
+            );
         }
-        return agentModelSpecFactory.deepSeek(null);
+        return new AgentModelSpec(
+                "deepseek",
+                properties.getDeepseek().getBaseUrl(),
+                properties.getDeepseek().getModel(),
+                "env"
+        );
     }
 
     static String buildAgentCacheKey(AgentRunRequest request, AgentModelSpec fallbackSpec, Path workspace,

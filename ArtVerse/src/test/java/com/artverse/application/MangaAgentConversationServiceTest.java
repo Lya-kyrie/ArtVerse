@@ -1,15 +1,12 @@
 package com.artverse.application;
 
-import com.artverse.agent.AgentMessage;
+import com.artverse.agents.AgentMessage;
 import com.artverse.domain.Chapter;
 import com.artverse.domain.ColorMode;
-import com.artverse.domain.MangaAgentConversation;
-import com.artverse.domain.MangaAgentConversationStatus;
 import com.artverse.domain.MangaAgentMessage;
 import com.artverse.domain.MessageRole;
 import com.artverse.domain.Story;
 import com.artverse.domain.User;
-import com.artverse.persistence.MangaAgentConversationRepository;
 import com.artverse.persistence.MangaAgentMessageRepository;
 import org.junit.jupiter.api.Test;
 
@@ -53,7 +50,7 @@ class MangaAgentConversationServiceTest {
         Fixture fixture = fixture();
         UUID requestId = UUID.randomUUID();
         AgentRunToolStatus toolStatus = new AgentRunToolStatus();
-        when(fixture.messageRepository.findByConversationIdAndRequestIdAndRole(any(), any(UUID.class), any(MessageRole.class)))
+        when(fixture.messageRepository.findByUserIdAndChapterIdAndRequestIdAndRole(eq(1L), eq(7L), any(UUID.class), any(MessageRole.class)))
                 .thenReturn(Optional.empty());
 
         try (AgentRunToolStatus.RunScope scope = toolStatus.start(1L, 7L, requestId)) {
@@ -66,14 +63,14 @@ class MangaAgentConversationServiceTest {
                     Map.of("scenes_count", 12)
             );
 
-            Map<String, Object> result = fixture.service.fallbackAfterToolSuccess(
-                    fixture.conversation, requestId, scope.state(), "boom");
+            var result = fixture.service.fallbackAfterToolSuccess(
+                    fixture.user, fixture.chapter, requestId, scope.state(), "boom");
 
-            assertThat(result.get("agent_final_response_degraded")).isEqualTo(true);
+            assertThat(result.degraded()).isTrue();
             assertThat(fixture.saved).extracting(MangaAgentMessage::getRole)
                     .contains(MessageRole.ASSISTANT, MessageRole.SYSTEM);
-            assertThat(fixture.saved.get(0).getContent()).contains("Storyboard rewritten and saved");
-            assertThat(fixture.saved.get(1).getContent()).contains("agent encountered an error");
+            assertThat(fixture.saved.get(0).getContent()).contains("\u5206\u955c\u5df2\u7ecf\u91cd\u5199\u5e76\u4fdd\u5b58");
+            assertThat(fixture.saved.get(1).getContent()).contains("agent_run_degraded_after_tool_success");
         }
     }
 
@@ -81,43 +78,38 @@ class MangaAgentConversationServiceTest {
     void resumeMessageFormatsWaitingQuestionAndSelection() {
         Fixture fixture = fixture();
         AgentUserInputRequest waiting = new AgentUserInputRequest(
-                "Please choose database",
+                "\u8bf7\u9009\u62e9\u6570\u636e\u5e93",
                 List.of(
                         new AgentUserInputRequest.Option("mysql", "MySQL", "MySQL", true),
                         new AgentUserInputRequest.Option("postgres", "PostgreSQL", "PostgreSQL", false)
                 ),
                 true,
-                "User decision needed"
+                "\u9700\u8981\u7528\u6237\u51b3\u7b56"
         );
 
-        String message = fixture.service.resumeMessage("Continue task", waiting, "PostgreSQL");
+        String message = fixture.service.resumeMessage("\u7ee7\u7eed\u4efb\u52a1", waiting, "PostgreSQL");
 
-        assertThat(message).contains("Continue from the previously suspended", "Continue task", "Please choose database", "PostgreSQL");
+        assertThat(message).contains("\u7ee7\u7eed\u4e4b\u524d\u6682\u505c\u7684\u6f2b\u753b\u667a\u80fd\u4f53\u4efb\u52a1", "\u7ee7\u7eed\u4efb\u52a1", "\u8bf7\u9009\u62e9\u6570\u636e\u5e93", "PostgreSQL");
     }
 
     private Fixture fixture() {
-        MangaAgentConversationRepository conversationRepository = mock(MangaAgentConversationRepository.class);
         MangaAgentMessageRepository messageRepository = mock(MangaAgentMessageRepository.class);
         ChapterAccessService accessService = mock(ChapterAccessService.class);
-        MangaAgentConversationService service = new MangaAgentConversationService(
-                conversationRepository, messageRepository, accessService);
+        MangaAgentConversationService service = new MangaAgentConversationService(messageRepository, accessService);
         User user = user(1L);
         Chapter chapter = chapter(user);
-        MangaAgentConversation conversation = conversation(user, chapter);
         List<MangaAgentMessage> saved = new ArrayList<>();
         when(accessService.requireVisible(7L, 1L)).thenReturn(chapter);
         when(messageRepository.findByUserIdAndChapterIdOrderByCreatedAtAsc(1L, 7L))
                 .thenAnswer(invocation -> List.copyOf(saved));
         when(messageRepository.findByUserIdAndChapterIdAndRequestIdAndRole(eq(1L), eq(7L), any(UUID.class), any(MessageRole.class)))
                 .thenReturn(Optional.empty());
-        when(messageRepository.findByConversationIdAndRequestIdAndRole(any(), any(UUID.class), any(MessageRole.class)))
-                .thenReturn(Optional.empty());
         when(messageRepository.save(any(MangaAgentMessage.class))).thenAnswer(invocation -> {
             MangaAgentMessage message = invocation.getArgument(0);
             saved.add(message);
             return message;
         });
-        return new Fixture(service, messageRepository, accessService, user, chapter, conversation, saved);
+        return new Fixture(service, messageRepository, accessService, user, chapter, saved);
     }
 
     private static User user(Long id) {
@@ -129,7 +121,7 @@ class MangaAgentConversationServiceTest {
     private static Chapter chapter(User user) {
         Story story = new Story();
         story.setId(3L);
-        story.setTitle("Story");
+        story.setTitle("\u6545\u4e8b");
         story.setUser(user);
         Chapter chapter = new Chapter();
         chapter.setId(7L);
@@ -138,18 +130,6 @@ class MangaAgentConversationServiceTest {
         chapter.setColorMode(ColorMode.BW);
         chapter.setImageCount(10);
         return chapter;
-    }
-
-    private static MangaAgentConversation conversation(User user, Chapter chapter) {
-        MangaAgentConversation conversation = new MangaAgentConversation();
-        conversation.setId(99L);
-        conversation.setConversationUuid(UUID.fromString("11111111-1111-1111-1111-111111111111"));
-        conversation.setUser(user);
-        conversation.setStory(chapter.getStory());
-        conversation.setChapter(chapter);
-        conversation.setTitle("Test Conversation");
-        conversation.setStatus(MangaAgentConversationStatus.ACTIVE);
-        return conversation;
     }
 
     private static MangaAgentMessage message(User user, Chapter chapter, MessageRole role, String content, UUID requestId) {
@@ -168,7 +148,6 @@ class MangaAgentConversationServiceTest {
                            ChapterAccessService accessService,
                            User user,
                            Chapter chapter,
-                           MangaAgentConversation conversation,
                            List<MangaAgentMessage> saved) {
     }
 }

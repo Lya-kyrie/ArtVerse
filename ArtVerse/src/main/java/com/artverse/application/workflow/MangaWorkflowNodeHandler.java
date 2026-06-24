@@ -1,12 +1,16 @@
 package com.artverse.application.workflow;
 
-import java.util.Map;
+import java.util.List;
 
 public interface MangaWorkflowNodeHandler {
 
     MangaWorkflowRoute route();
 
-    Map<String, Object> run(MangaWorkflowExecutionContext context);
+    default List<String> activeToolGroups() {
+        return List.of();
+    }
 
-    Map<String, Object> stream(MangaWorkflowExecutionContext context, MangaWorkflowStreamContext streamContext);
+    MangaWorkflowResult run(MangaWorkflowExecutionContext context);
+
+    MangaWorkflowResult stream(MangaWorkflowExecutionContext context, MangaWorkflowStreamContext streamContext);
 }

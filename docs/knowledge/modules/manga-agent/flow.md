@@ -39,11 +39,11 @@ Frontend types and stream parsing live in `frontend/src/api.ts`. The frontend de
 5. `MangaAgentRunService.startOrReuse` creates or resumes a conversation-scoped `MangaAgentRun` with status `RUNNING`.
 6. A `status` SSE event announces context loading.
 7. `GenerationGuardService.executeMangaAgentRun` protects the run with idempotency/rate-limit logic.
-8. `MangaWorkflowContextAssembler` builds route/context metadata. `MangaWorkflowNodeRegistry` selects the matching workflow node. Routes without a dedicated handler currently fall back to the Director node.
-9. `MangaDirectorAgentNode` saves the user message to the selected conversation and builds history-limited agent messages from that conversation only.
+8. `MangaWorkflowContextAssembler` builds route/context metadata. `MangaWorkflowNodeRegistry` selects the matching workflow node. `DIRECTOR`, `HITL`, and `REVIEW` are explicit routes and must each have a dedicated handler. The selected route is persisted on `manga_agent_runs` and is echoed back through both run snapshots and AG-UI state snapshots so the frontend can restore the correct execution mode after reconnect.
+9. `MangaDirectorAgentNode` saves the user message to the selected conversation and builds history-limited agent messages from that conversation only. `MangaReviewNode` returns a review-oriented response when the chapter already has storyboard content, and `MangaHitlNode` returns a blocking choice-oriented response when the user is asking for a decision.
 10. `AgentWorkspaceSyncService.syncMangaDirectorKnowledge` writes `KNOWLEDGE.md` for the user/story workspace.
-11. `MangaDirectorAgentNode` creates an `AgentRunRequest` with user, story, chapter, conversation id, task type, model, user API key, and request id.
-12. `AgentScopeHarnessAgentGateway.streamEvents` obtains the cached `HarnessAgent` from `AgentScopeAgentFactory`, builds per-call context through `AgentScopeRuntimeContextFactory`, and sends messages to AgentScope.
+11. `MangaWorkflowNodeHandler.activeToolGroups()` declares the AgentScope tool groups allowed by the current workflow node. `MangaDirectorAgentNode` uses that declaration when it creates an `AgentRunRequest` with user, story, chapter, conversation id, task type, model, user API key, request id, and the node-scoped active tool groups.
+12. `AgentScopeHarnessAgentGateway.streamEvents` obtains the cached `HarnessAgent` from `AgentScopeAgentFactory`, reapplies the request-scoped active tool groups through `MangaAgentToolkitFactory`, builds per-call context through `AgentScopeRuntimeContextFactory`, and sends messages to AgentScope.
 13. `AgentScopeEventMapper` maps AgentScope events into `AgentRunEvent`; text deltas append to the final reply.
 14. `MangaAgentRunEventPublisher` sends SSE events and persists non-text run events. It also maps the run lifecycle into formal AG-UI events through `AgUiEventFactory` and emits them as default SSE `message` frames.
 15. On success, `MangaAgentRunService.markSucceeded` stores the final reply and `done` is emitted.
@@ -53,9 +53,9 @@ Frontend types and stream parsing live in `frontend/src/api.ts`. The frontend de
 
 `AgentScopeRuntimeContextFactory` adds `MangaAgentRuntimeContext` to AgentScope v2 `RuntimeContext` for Manga Director runs. Tools read user id, chapter id, conversation id, request id, and Coze API key from that typed context instead of relying on factory-captured fields.
 
-`MangaAgentToolkitFactory` registers Manga Director tools into `context-tools`, `storyboard-tools`, and `hitl-tools`. `MangaHitlTools.ask_user` stores the current `AgentUserInputRequest` in `AgentRunToolStatus` using `AgentRunContext.requestId`, then throws `ToolSuspendException`.
+`MangaAgentToolkitFactory` registers Manga Director tools into `context-tools`, `storyboard-tools`, and `hitl-tools`. Workflow nodes declare which of these groups are active for a request, and the gateway reapplies that node-owned scope before each AgentScope call. `MangaHitlTools.ask_user` stores the current `AgentUserInputRequest` in `AgentRunToolStatus` using `AgentRunContext.requestId`, then suspends the AgentScope run with `ToolSuspendException`. The frontend can explicitly pick `DIRECTOR`, `HITL`, or `REVIEW` before sending a run, and that route is preserved in the persisted run snapshot.
 
-`MangaDirectorAgentNode` detects the tool-suspended waiting state and raises `AgentUserInputRequiredException`. `MangaAgentService` catches it, marks the run `WAITING_USER`, emits `user_input_requested`, and completes the stream. The frontend displays the options and can call resume.
+`MangaDirectorAgentNode` detects the waiting state from the AgentScope v2 result reason `GenerateReason.TOOL_SUSPENDED` together with `AgentRunToolStatus`, then raises `AgentUserInputRequiredException`. `MangaAgentService` catches it, marks the run `WAITING_USER`, emits `user_input_requested`, and completes the stream. The frontend can recover the same waiting state from either the legacy event or the AG-UI `RUN_FINISHED` interrupt outcome. `MangaHitlNode` is the explicit route for user-decision prompts; it does not start a ToolSuspend flow by itself.
 
 Resume requires the same `conversationId` and `requestId`. `MangaAgentRunService.requireWaitingRun` verifies status inside the selected conversation. `MangaAgentConversationService.resumeMessage` combines original input, the stored question, and the user's answer into a continuation prompt. The run is marked `RUNNING` and the normal stream flow continues.
 

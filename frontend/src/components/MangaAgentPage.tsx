@@ -27,6 +27,7 @@ import {
   listStories,
   resumeMangaAgentAgUiStream,
   runMangaAgentAgUiStream,
+  type MangaWorkflowRoute,
   type Chapter,
   type MangaAgentMessage,
   type MangaAgentRunEvent,
@@ -46,6 +47,12 @@ const STARTER_PROMPTS = [
   'Check the progress of this chapter and tell me the next step.',
   'Based on the current content, generate the storyboard for this chapter first.',
   'Review whether the storyboard still needs refinement.',
+];
+
+const ROUTE_OPTIONS: Array<{ value: MangaWorkflowRoute; label: string; description: string }> = [
+  { value: 'DIRECTOR', label: '导演', description: '主流程，适合常规章节推进与分镜生成。' },
+  { value: 'HITL', label: '人工确认', description: '需要用户先做选择或确认时使用。' },
+  { value: 'REVIEW', label: '复审', description: '用于检查已有分镜内容是否需要调整。' },
 ];
 
 function requestIdOf(value: { requestId?: string; request_id?: string } | null | undefined) {
@@ -241,6 +248,7 @@ export default function MangaAgentPage() {
   const [storyId, setStoryId] = useState('');
   const [chapterId, setChapterId] = useState('');
   const [conversationId, setConversationId] = useState('');
+  const [route, setRoute] = useState<MangaWorkflowRoute>('DIRECTOR');
   const [input, setInput] = useState('');
   const [messages, setMessages] = useState<Message[]>([]);
   const [loading, setLoading] = useState(false);
@@ -268,6 +276,7 @@ export default function MangaAgentPage() {
 
   const activeStory = useMemo(() => stories.find((story) => String(story.id) === storyId) ?? null, [stories, storyId]);
   const activeChapter = useMemo(() => chapters.find((chapter) => String(chapter.id) === chapterId) ?? null, [chapters, chapterId]);
+  const activeRoute = useMemo(() => ROUTE_OPTIONS.find((item) => item.value === route) ?? ROUTE_OPTIONS[0], [route]);
   const emptyState = messages.length === 0 && !historyLoading;
 
   useEffect(() => { chapterIdRef.current = chapterId; }, [chapterId]);
@@ -335,6 +344,7 @@ export default function MangaAgentPage() {
       setUserInputRequest(null);
       setCustomAnswer('');
       setConversationId('');
+      setRoute('DIRECTOR');
       activeRequestIdRef.current = null;
       if (runPollTimerRef.current !== undefined) {
         window.clearTimeout(runPollTimerRef.current);
@@ -371,6 +381,7 @@ export default function MangaAgentPage() {
   function restoreRunSnapshot(snapshot: MangaAgentRunSnapshot) {
     activeRequestIdRef.current = snapshot.requestId ?? snapshot.request_id ?? null;
     setRunStatus(snapshot.status);
+    if (snapshot.route) setRoute(snapshot.route);
     setUserInputRequest(snapshot.userInputRequest ?? null);
     setRunEvents((snapshot.events || []).map((event) => (event.data as AgentRunTimelineEvent) || {
       type: String((event as any).eventName || 'event'),
@@ -432,6 +443,9 @@ export default function MangaAgentPage() {
     if (event.type === 'ag_ui_event') {
       const agEvent = event.data;
       const rawEvent = agEvent.rawEvent as AgentRunTimelineEvent | undefined;
+      if (agEvent.route) {
+        setRoute(agEvent.route);
+      }
       if (rawEvent) {
         setRunEvents((prev) => appendRunEvent(prev, rawEvent));
         if (rawEvent.label) setRunStatus(rawEvent.label);
@@ -439,9 +453,24 @@ export default function MangaAgentPage() {
       if (agEvent.type === 'STATE_SNAPSHOT') {
         const message = agEvent.snapshot?.message;
         if (message) setRunStatus(message);
+        if (agEvent.snapshot?.route) setRoute(agEvent.snapshot.route);
       }
       if (agEvent.type === 'RUN_STARTED') {
         setRunStatus('智能体已启动');
+      }
+      if (agEvent.type === 'RUN_FINISHED' && agEvent.outcome?.type === 'interrupt') {
+        const interrupt = agEvent.outcome.interrupts?.[0];
+        const metadata = interrupt?.metadata;
+        const request = {
+          requestId: agEvent.runId || activeRequestIdRef.current || undefined,
+          question: String(metadata?.question || interrupt?.message || '需要你做出选择'),
+          options: Array.isArray(metadata?.options) ? metadata.options : [],
+          allowFreeText: Boolean(metadata?.allowFreeText),
+          reason: interrupt?.reason || '',
+        };
+        setUserInputRequest(request);
+        setRunStatus(request.question);
+        return null;
       }
       if (agEvent.type === 'STEP_STARTED') {
         setRunStatus(String((agEvent as any).stepName || '模型推理中'));
@@ -500,7 +529,7 @@ export default function MangaAgentPage() {
         if (result && 'reply' in result && result.reply) {
           setMessages((prev) => [...prev, { role: 'assistant', content: result.reply || '', requestId }]);
         }
-      }, resolvedConversationId);
+      }, resolvedConversationId, route);
       setMessages((prev) => [...prev, { role: 'user', content: text, requestId }]);
       setInput('');
       clearRunPoll();
@@ -631,6 +660,28 @@ export default function MangaAgentPage() {
               </div>
             </div>
 
+            <div>
+              <p className="mb-2 text-xs uppercase tracking-[0.22em] text-gray-500">Route</p>
+              <div className="grid gap-2">
+                {ROUTE_OPTIONS.map((item) => {
+                  const active = item.value === route;
+                  return (
+                    <button
+                      key={item.value}
+                      onClick={() => setRoute(item.value)}
+                      className={`rounded-2xl border px-3 py-3 text-left transition ${active ? 'border-amber-300/40 bg-amber-300/10' : 'border-white/10 bg-white/[0.04] hover:border-white/20 hover:bg-white/[0.06]'}`}
+                    >
+                      <div className="flex items-center justify-between gap-3">
+                        <div className="text-sm font-medium text-white">{item.label}</div>
+                        <div className="text-[11px] uppercase tracking-[0.18em] text-gray-500">{item.value}</div>
+                      </div>
+                      <div className="mt-1 text-xs leading-5 text-gray-400">{item.description}</div>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
             <div className="rounded-3xl border border-amber-300/10 bg-amber-300/[0.06] p-4">
               <p className="text-xs uppercase tracking-[0.22em] text-amber-200/70">当前工作区</p>
               <div className="mt-3 space-y-2">
@@ -641,6 +692,10 @@ export default function MangaAgentPage() {
                 <div>
                   <div className="text-xs text-gray-500">Chapter</div>
                   <div className="text-sm text-gray-100">{activeChapter ? `Chapter ${activeChapter.chapter_number}` : '未选择章节'}</div>
+                </div>
+                <div>
+                  <div className="text-xs text-gray-500">Route</div>
+                  <div className="text-sm text-gray-100">{activeRoute.label}</div>
                 </div>
               </div>
               <button

@@ -1,7 +1,4 @@
-package com.artverse.agent.gateway;
-import com.artverse.agent.AgentRunRequest;
-import com.artverse.agent.AgentMessage;
-import com.artverse.agent.AgentModelSpec;
+package com.artverse.agents;
 
 import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.event.AgentEvent;
@@ -21,18 +18,22 @@ import java.util.List;
 @Slf4j
 @Component
 @Primary
-public class AgentScopeHarnessAgentGateway {
+public class AgentScopeHarnessAgentGateway implements HarnessAgentGateway {
 
     private final AgentScopeAgentFactory agentFactory;
     private final AgentScopeRuntimeContextFactory runtimeContextFactory;
+    private final MangaAgentToolkitFactory toolkitFactory;
 
     public AgentScopeHarnessAgentGateway(
             AgentScopeAgentFactory agentFactory,
-            AgentScopeRuntimeContextFactory runtimeContextFactory) {
+            AgentScopeRuntimeContextFactory runtimeContextFactory,
+            MangaAgentToolkitFactory toolkitFactory) {
         this.agentFactory = agentFactory;
         this.runtimeContextFactory = runtimeContextFactory;
+        this.toolkitFactory = toolkitFactory;
     }
 
+    @Override
     public Flux<String> streamChat(AgentRunRequest request) {
         return streamEvents(request)
                 .ofType(TextBlockDeltaEvent.class)
@@ -40,22 +41,54 @@ public class AgentScopeHarnessAgentGateway {
                 .filter(delta -> delta != null && !delta.isEmpty());
     }
 
+    @Override
     public Flux<AgentEvent> streamEvents(AgentRunRequest request) {
         HarnessAgent agent = agentFactory.getOrCreate(request);
+        configureToolkitForRequest(agent, request);
         RuntimeContext ctx = runtimeContextFactory.create(request);
         List<Msg> messages = convertMessages(prepareInputMessages(request));
 
         return agent.streamEvents(messages, ctx);
     }
 
-    public Mono<String> generateText(AgentRunRequest request) {
+    @Override
+    public Mono<Msg> generate(AgentRunRequest request) {
         HarnessAgent agent = agentFactory.getOrCreate(request);
+        configureToolkitForRequest(agent, request);
         RuntimeContext ctx = runtimeContextFactory.create(request);
         List<Msg> messages = convertMessages(prepareInputMessages(request));
 
-        return agent.call(messages, ctx)
-                .map(Msg::getTextContent);
+        return agent.call(messages, ctx);
     }
+
+    static Long parseUserIdForTool(String userId) {
+        return AgentScopeRuntimeContextFactory.parseUserIdForTool(userId);
+    }
+
+    static String buildAgentCacheKey(AgentRunRequest request, AgentModelSpec fallbackSpec) {
+        return buildAgentCacheKey(request, fallbackSpec, null);
+    }
+
+    static String buildAgentCacheKey(AgentRunRequest request, AgentModelSpec fallbackSpec, java.nio.file.Path workspace) {
+        return AgentScopeAgentFactory.buildAgentCacheKey(
+                request,
+                fallbackSpec,
+                workspace,
+                new MangaAgentPromptProvider().promptVersionFor(request.taskType())
+        );
+    }
+
+    static RuntimeContext buildRuntimeContextForTest(AgentRunRequest request, AgentSessionIdFactory factory) {
+        return new AgentScopeRuntimeContextFactory(factory).create(request);
+    }
+
+    private void configureToolkitForRequest(HarnessAgent agent, AgentRunRequest request) {
+        if (request.taskType() != AgentTaskType.MANGA_DIRECTOR) {
+            return;
+        }
+        toolkitFactory.activateForRequest(agent.getToolkit(), request.activeToolGroups());
+    }
+
     static List<AgentMessage> prepareInputMessages(AgentRunRequest request) {
         List<String> systemMessages = new ArrayList<>();
         List<AgentMessage> inputMessages = new ArrayList<>();

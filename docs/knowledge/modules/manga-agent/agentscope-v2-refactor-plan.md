@@ -2,7 +2,7 @@
 
 ## Background
 
-The Manga Agent already depends on `io.agentscope:agentscope-harness:2.0.0-RC3`, but part of the application code still follows an older orchestration style. The current implementation wraps AgentScope with a business-heavy gateway and passes per-run tool data through factory-captured fields instead of the v2 `RuntimeContext` model.
+The Manga Agent already depends on `io.agentscope:agentscope-harness:2.0.0-RC4`, but part of the application code still follows an older orchestration style. The current implementation wraps AgentScope with a business-heavy gateway and passes per-run tool data through factory-captured fields instead of the v2 `RuntimeContext` model.
 
 The target architecture should align with AgentScope Java v2:
 
@@ -17,7 +17,7 @@ The target architecture should align with AgentScope Java v2:
 - `AgentScopeHarnessAgentGateway` previously mixed model resolution, cache-key construction, workspace selection, prompt selection, tool registration, message conversion, and `RuntimeContext` construction. The first split moved Agent construction, prompt selection, toolkit setup, and runtime context creation into dedicated factories.
 - `MangaAgentService` owns conversation state, idempotency, run persistence, SSE publishing, AgentScope execution, HITL resume, cancellation checks, and degraded fallback handling.
 - The compatibility path in `MangaAgentToolFactory` can still capture `cozeApiKey`, `chapterId`, and `userId` for direct tests and older callers. AgentScope registration now uses stateless tool objects with per-call values supplied through `RuntimeContext`.
-- HITL currently uses `ask_user` plus `ToolSuspendException` and business-side state lookup. This is compatible with the existing frontend, but it is not yet modeled around v2 permission/external-execution events.
+- HITL now keeps the business-facing `ask_user` tool and uses AgentScope v2 native suspended-run signaling (`GenerateReason.TOOL_SUSPENDED`) instead of the deprecated custom Hook path. It is still a business-input pause flow, not a permission-approval flow.
 - Several visible Chinese strings in the Manga Agent path are mojibake. Treat these as correctness defects.
 
 ## Target Boundaries
@@ -98,8 +98,9 @@ Status: foundation implemented.
 
 Remaining follow-up:
 
-- Use workflow node identity to choose allowed tool groups per Agent node.
-- Revisit AgentScope tool group scope when upgrading from `2.0.0-RC3`; this local version uses the available `createToolGroup(name, description, active)` API.
+- Use workflow node declarations to choose allowed tool groups per Agent node. The gateway now reapplies request-scoped active groups before each AgentScope call so cached agents can safely serve different node scopes.
+- Revisit AgentScope tool group scope when upgrading past `2.0.0-RC4`; this local version uses the available `createToolGroup(name, description, active)` API.
+- Keep the frontend route selector and AG-UI route echo aligned with the persisted run route so reconnects restore the same execution mode.
 
 ### Phase 3: Split run execution from run coordination
 
@@ -114,16 +115,21 @@ Status: node foundation implemented.
 
 Remaining follow-up:
 
-- Add dedicated Storyboard, Review, HITL, and Generation node handlers. Routes without a concrete handler currently fall back to Director to preserve behavior.
-- Add explicit workflow result types for reply, degraded flag, waiting state, and terminal/cancelled outcome.
-- Move node-specific tool group selection into workflow node configuration.
+- Add dedicated Storyboard and Generation node handlers if those routes become first-class again. Review and HITL already use explicit lightweight workflow nodes and no longer fall back to Director.
+- Keep workflow result types compact around reply, degraded flag, waiting state, and terminal/cancelled outcome.
+- Continue shrinking Director responsibilities after node-owned tool-group declaration is in place, especially by introducing more task-specific Agent nodes instead of broad Director logic.
+
+## Guardrails
+
+- AgentScope-related implementation must use official Java v2 concepts first and verify behavior against docs or local `2.0.0-RC4` reality.
+- Do not recreate v2 primitives in business code when `Toolkit`, `ToolGroup`, `RuntimeContext`, middleware, permissions, or AG-UI already provide the capability.
 
 ### Phase 4: HITL v2 alignment
 
 - Keep `ask_user` as the business-facing tool name unless the frontend contract changes.
-- Evaluate replacing manual `ToolSuspendException` flow with AgentScope v2 external execution or permission events.
-- Model user input request and resume payloads as explicit AgentScope events where possible.
-- Update AG-UI mapping to reflect native pause/resume events.
+- Keep the current multi-option business-input flow on `ToolSuspendException` plus `GenerateReason.TOOL_SUSPENDED`; do not replace it with `Permission ASK` unless the product explicitly wants yes/no approval semantics.
+- Model user input request and resume payloads as explicit AgentScope events only if a later frontend contract wants to consume native pause metadata directly.
+- AG-UI mapping now restores waiting-user state from the native interrupt outcome on `RUN_FINISHED`; future work should continue moving frontend state restoration toward AG-UI-first handling.
 
 ### Phase 5: Production state and workspace hardening
 

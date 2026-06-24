@@ -61,7 +61,8 @@ public class NovelService {
 
         String novelContent;
         try {
-            novelContent = harnessAgentGateway.generateText(request).block();
+            var result = harnessAgentGateway.generate(request).block();
+            novelContent = result == null ? null : result.getTextContent();
         } catch (Exception e) {
             throw new BusinessException(502, "AI 服务不可用: " + e.getMessage());
         }
