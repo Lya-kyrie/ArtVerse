@@ -1,6 +1,6 @@
 package com.artverse.agent.gateway;
+
 import com.artverse.agent.AgentSessionIdFactory;
-import com.artverse.agent.AgentRunContext;
 import com.artverse.agent.AgentTaskType;
 import com.artverse.agent.MangaAgentRuntimeContext;
 import com.artverse.agent.AgentRunRequest;
@@ -20,9 +20,6 @@ public class AgentScopeRuntimeContextFactory {
         RuntimeContext.Builder builder = RuntimeContext.builder()
                 .sessionId(agentSessionIdFactory.create(request))
                 .userId(request.userId());
-        if (request.requestId() != null) {
-            builder.put(AgentRunContext.class, new AgentRunContext(request.requestId()));
-        }
         if (request.taskType() == AgentTaskType.MANGA_DIRECTOR) {
             builder.put(MangaAgentRuntimeContext.class, new MangaAgentRuntimeContext(
                     parseUserIdForTool(request.userId()),

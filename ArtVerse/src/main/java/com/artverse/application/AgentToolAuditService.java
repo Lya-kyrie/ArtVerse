@@ -1,6 +1,6 @@
 package com.artverse.application;
 
-import com.artverse.agent.AgentRunContext;
+import com.artverse.agent.MangaAgentRuntimeContext;
 import io.agentscope.core.agent.RuntimeContext;
 import lombok.extern.slf4j.Slf4j;
 import io.agentscope.core.tool.ToolSuspendException;
@@ -81,7 +81,7 @@ public class AgentToolAuditService {
         if (runtimeContext == null) {
             return null;
         }
-        AgentRunContext context = runtimeContext.get(AgentRunContext.class);
+        MangaAgentRuntimeContext context = runtimeContext.get(MangaAgentRuntimeContext.class);
         return context == null ? null : context.requestId();
     }
 

@@ -1,6 +1,6 @@
 package com.artverse.application;
 
-import com.artverse.agent.AgentRunContext;
+import com.artverse.agent.MangaAgentRuntimeContext;
 import io.agentscope.core.agent.RuntimeContext;
 import org.junit.jupiter.api.Test;
 
@@ -22,7 +22,8 @@ class AgentToolAuditServiceTest {
             RuntimeContext runtimeContext = RuntimeContext.builder()
                     .sessionId("u-1-story-2-chapter-7-manga-director")
                     .userId("1")
-                    .put(AgentRunContext.class, new AgentRunContext(requestId))
+                    .put(MangaAgentRuntimeContext.class, new MangaAgentRuntimeContext(
+                            1L, 2L, 7L, UUID.randomUUID(), requestId, ""))
                     .build();
 
             Callable<Map<String, Object>> action = () -> Map.of("saved", true);

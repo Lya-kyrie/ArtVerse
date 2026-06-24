@@ -32,7 +32,7 @@ public class MangaHitlTools {
         MangaAgentRuntimeContext context = support.resolveContext(runtimeContext);
         return agentToolAuditService.around("ask_user", context.userId(), context.chapterId(), runtimeContext, () -> {
             AgentUserInputRequest request = buildUserInputRequest(question, options, allowFreeText, reason);
-            support.requestUserInput(context.userId(), context.chapterId(), runtimeContext, request);
+            support.requestUserInput(context, request);
             throw new ToolSuspendException("Waiting for user input");
         });
     }

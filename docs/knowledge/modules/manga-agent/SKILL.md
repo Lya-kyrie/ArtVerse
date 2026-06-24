@@ -1,4 +1,4 @@
----
+﻿---
 name: manga-agent
 description: Use when changing or reviewing ArtVerse Manga Agent behavior, including chat messages, AgentScope execution, run-stream/resume-stream SSE, human-in-the-loop questions, MangaAgentRun persistence, tool audit events, storyboard tool calls, and the frontend MangaAgentPage/API contract.
 ---
@@ -30,7 +30,7 @@ Image generation is not performed by the Manga Agent. The agent prepares or refi
 - AgentScope construction/runtime/toolkit factories: `ArtVerse/src/main/java/com/artverse/agent/gateway/AgentScopeAgentFactory.java`, `ArtVerse/src/main/java/com/artverse/agent/gateway/AgentScopeRuntimeContextFactory.java`, `ArtVerse/src/main/java/com/artverse/agent/MangaAgentPromptProvider.java`, `ArtVerse/src/main/java/com/artverse/agent/gateway/MangaAgentToolkitFactory.java`.
 - Story knowledge sync: `ArtVerse/src/main/java/com/artverse/agent/AgentWorkspaceSyncService.java`.
 - Runtime workspace files: `ArtVerse/src/main/java/com/artverse/agent/AgentWorkspaceService.java`.
-- Agent tools and typed runtime context: `ArtVerse/src/main/java/com/artverse/application/MangaAgentToolFactory.java`, `ArtVerse/src/main/java/com/artverse/application/tools/`, `ArtVerse/src/main/java/com/artverse/agent/MangaAgentRuntimeContext.java`.
+- Agent tools and typed runtime context: `ArtVerse/src/main/java/com/artverse/agent/gateway/MangaAgentToolkitFactory.java`, `ArtVerse/src/main/java/com/artverse/application/tools/`, `ArtVerse/src/main/java/com/artverse/agent/MangaAgentRuntimeContext.java`.
 - AgentScope HITL suspend middleware (replaces deprecated Hook): ArtVerse/src/main/java/com/artverse/agent/gateway/AgentScopeHitlSuspendMiddleware.java.
 - AgentScope event mapping: ArtVerse/src/main/java/com/artverse/agent/gateway/AgentScopeEventMapper.java.
 - AgentScope v2 migration plan: `docs/knowledge/modules/manga-agent/agentscope-v2-refactor-plan.md`.
@@ -95,7 +95,7 @@ After a mutating tool succeeds, failures in the final agent response may degrade
 - If cancellation or stale-run repair changes, update backend status tests, frontend terminal-state rendering, and the flow reference.
 - If prompt or workspace knowledge changes, check both `MangaAgentConversationService.buildSystemPrompt` and `AgentWorkspaceSyncService.buildKnowledge`.
 - If AgentScope session/cache key inputs change, update `AgentScopeHarnessAgentGatewayTest`, `MangaAgentToolkitFactoryTest`, and `AgentSessionIdFactoryTest`.
-- If `MangaAgentRuntimeContext` changes, update `AgentScopeHarnessAgentGatewayTest`, `MangaAgentToolFactoryTest`, and the v2 refactor plan.
+- If `MangaAgentRuntimeContext` changes, update `AgentScopeHarnessAgentGatewayTest` and the v2 refactor plan.
 - If conversation isolation changes, update `MangaAgentConversationRegistry`, message/run repositories, frontend conversation API helpers, and this skill.
 - If this skill disagrees with code, trust code first and update this skill or `flow.md`.
 

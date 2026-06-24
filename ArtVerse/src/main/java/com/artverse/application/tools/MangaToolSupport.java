@@ -1,6 +1,5 @@
 package com.artverse.application.tools;
 
-import com.artverse.agent.AgentRunContext;
 import com.artverse.agent.MangaAgentRuntimeContext;
 import com.artverse.application.AgentRunToolStatus;
 import com.artverse.application.AgentUserInputRequest;
@@ -29,13 +28,11 @@ public class MangaToolSupport {
         return context;
     }
 
-    public void requestUserInput(Long userId, Long chapterId, RuntimeContext runtimeContext,
+    public void requestUserInput(MangaAgentRuntimeContext context,
                                  AgentUserInputRequest request) {
-        AgentRunContext context = runtimeContext.get(AgentRunContext.class);
         if (context != null && context.requestId() != null) {
-            agentRunToolStatus.requestUserInput(userId, chapterId, context.requestId(), request);
-        } else {
-            agentRunToolStatus.requestUserInputForActiveRun(userId, chapterId, request);
+            agentRunToolStatus.requestUserInput(
+                    context.userId(), context.chapterId(), context.requestId(), request);
         }
     }
 

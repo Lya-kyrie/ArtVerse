@@ -1,6 +1,16 @@
 package com.artverse.agent.gateway;
 
-import com.artverse.application.MangaAgentToolFactory;
+import com.artverse.application.tools.MangaContextTools;
+import com.artverse.application.tools.MangaHitlTools;
+import com.artverse.application.tools.MangaStoryboardTools;
+import com.artverse.application.tools.MangaToolSupport;
+import com.artverse.application.AgentRunToolStatus;
+import com.artverse.application.AgentToolAuditService;
+import com.artverse.application.ChapterAccessService;
+import com.artverse.application.SceneService;
+import com.artverse.application.StructuredStoryboardService;
+import com.artverse.guard.GenerationGuardService;
+import com.artverse.persistence.MangaImageRepository;
 import io.agentscope.core.tool.Toolkit;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
@@ -15,14 +25,29 @@ public class MangaAgentToolkitFactory {
     public static final String STORYBOARD_TOOLS = "storyboard-tools";
     public static final String HITL_TOOLS = "hitl-tools";
 
-    private final MangaAgentToolFactory mangaAgentToolFactory;
+    private final MangaImageRepository mangaImageRepository;
+    private final SceneService sceneService;
+    private final StructuredStoryboardService structuredStoryboardService;
+    private final ChapterAccessService chapterAccessService;
+    private final GenerationGuardService generationGuardService;
+    private final AgentToolAuditService agentToolAuditService;
+    private final AgentRunToolStatus agentRunToolStatus;
 
     public void configureMangaDirector(Toolkit toolkit) {
-        MangaAgentToolFactory.Tools tools = mangaAgentToolFactory.create();
+        MangaToolSupport support = new MangaToolSupport(agentRunToolStatus);
+
+        MangaContextTools contextTools = new MangaContextTools(
+                mangaImageRepository, sceneService, chapterAccessService,
+                agentToolAuditService, support);
+        MangaStoryboardTools storyboardTools = new MangaStoryboardTools(
+                sceneService, structuredStoryboardService, chapterAccessService,
+                generationGuardService, agentToolAuditService, support);
+        MangaHitlTools hitlTools = new MangaHitlTools(agentToolAuditService, support);
+
         createGroups(toolkit);
-        toolkit.registration().tool(tools.contextTools()).group(CONTEXT_TOOLS).apply();
-        toolkit.registration().tool(tools.storyboardTools()).group(STORYBOARD_TOOLS).apply();
-        toolkit.registration().tool(tools.hitlTools()).group(HITL_TOOLS).apply();
+        toolkit.registration().tool(contextTools).group(CONTEXT_TOOLS).apply();
+        toolkit.registration().tool(storyboardTools).group(STORYBOARD_TOOLS).apply();
+        toolkit.registration().tool(hitlTools).group(HITL_TOOLS).apply();
         toolkit.setActiveGroups(List.of(CONTEXT_TOOLS, STORYBOARD_TOOLS, HITL_TOOLS));
         toolkit.registerMetaTool();
     }
