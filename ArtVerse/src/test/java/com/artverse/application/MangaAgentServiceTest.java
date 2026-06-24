@@ -5,6 +5,7 @@ import com.artverse.agents.AgentScopeEventMapper;
 import com.artverse.agents.AgentWorkspaceSyncService;
 import com.artverse.agents.HarnessAgentGateway;
 import com.artverse.application.workflow.MangaWorkflowOrchestrator;
+import com.artverse.application.workflow.MangaWorkflowResult;
 import com.artverse.common.BusinessException;
 import com.artverse.config.ArtVerseProperties;
 import com.artverse.domain.Chapter;
@@ -38,11 +39,11 @@ class MangaAgentServiceTest {
         Fixture fixture = fixture();
         UUID requestId = UUID.randomUUID();
         when(fixture.orchestrator.runWithToolState(any(), any(), any(), any()))
-                .thenReturn(Map.of("reply", "完成"));
+                .thenReturn(MangaWorkflowResult.success("瀹屾垚"));
 
         MangaAgentService.RunResult result = fixture.service.run(7L, "continue", requestId, fixture.user);
 
-        assertThat(result.reply()).isEqualTo("完成");
+        assertThat(result.reply()).isEqualTo("瀹屾垚");
     }
 
     @Test
@@ -120,7 +121,7 @@ class MangaAgentServiceTest {
     private static Chapter chapter(User user) {
         Story story = new Story();
         story.setId(3L);
-        story.setTitle("故事");
+        story.setTitle("鏁呬簨");
         story.setUser(user);
         Chapter chapter = new Chapter();
         chapter.setId(7L);
@@ -138,7 +139,7 @@ class MangaAgentServiceTest {
         conversation.setUser(user);
         conversation.setStory(chapter.getStory());
         conversation.setChapter(chapter);
-        conversation.setTitle("测试对话");
+        conversation.setTitle("娴嬭瘯瀵硅瘽");
         conversation.setStatus(MangaAgentConversationStatus.ACTIVE);
         return conversation;
     }

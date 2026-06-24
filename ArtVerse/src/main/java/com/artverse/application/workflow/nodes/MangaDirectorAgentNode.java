@@ -15,6 +15,7 @@ import com.artverse.application.MangaAgentRunService;
 import com.artverse.application.workflow.MangaWorkflowExecutionContext;
 import com.artverse.application.workflow.MangaWorkflowNode;
 import com.artverse.application.workflow.MangaWorkflowNodeHandler;
+import com.artverse.application.workflow.MangaWorkflowResult;
 import com.artverse.application.workflow.MangaWorkflowRoute;
 import com.artverse.application.workflow.MangaWorkflowStreamContext;
 import com.artverse.common.BusinessException;
@@ -53,7 +54,16 @@ public class MangaDirectorAgentNode implements MangaWorkflowNodeHandler {
     }
 
     @Override
-    public Map<String, Object> run(MangaWorkflowExecutionContext context) {
+    public List<String> activeToolGroups() {
+        return List.of(
+                com.artverse.agents.MangaAgentToolkitFactory.CONTEXT_TOOLS,
+                com.artverse.agents.MangaAgentToolkitFactory.STORYBOARD_TOOLS,
+                com.artverse.agents.MangaAgentToolkitFactory.HITL_TOOLS
+        );
+    }
+
+    @Override
+    public MangaWorkflowResult run(MangaWorkflowExecutionContext context) {
         List<AgentMessage> messages = prepareAgentMessages(context);
         syncWorkspace(context);
         AgentRunRequest request = buildRunRequest(context, messages);
@@ -70,7 +80,7 @@ public class MangaDirectorAgentNode implements MangaWorkflowNodeHandler {
                     reply,
                     context.requestId()
             );
-            return Map.of("reply", reply);
+            return MangaWorkflowResult.success(reply);
         } catch (AgentUserInputRequiredException e) {
             throw e;
         } catch (ToolSuspendException e) {
@@ -95,7 +105,7 @@ public class MangaDirectorAgentNode implements MangaWorkflowNodeHandler {
     }
 
     @Override
-    public Map<String, Object> stream(MangaWorkflowExecutionContext context, MangaWorkflowStreamContext streamContext) {
+    public MangaWorkflowResult stream(MangaWorkflowExecutionContext context, MangaWorkflowStreamContext streamContext) {
         List<AgentMessage> messages = prepareAgentMessages(context);
         streamContext.sink().sendRunEvent(streamContext.run(), AgentRunEvent.step(
                 MangaWorkflowNode.GENERATING.name(),
@@ -108,7 +118,7 @@ public class MangaDirectorAgentNode implements MangaWorkflowNodeHandler {
         return executeStreamedRequest(context, streamContext, request);
     }
 
-    private Map<String, Object> executeStreamedRequest(MangaWorkflowExecutionContext context,
+    private MangaWorkflowResult executeStreamedRequest(MangaWorkflowExecutionContext context,
                                                        MangaWorkflowStreamContext streamContext,
                                                        AgentRunRequest request) {
         StringBuilder reply = new StringBuilder();
@@ -132,7 +142,7 @@ public class MangaDirectorAgentNode implements MangaWorkflowNodeHandler {
             finished.set(true);
             throwIfWaitingForUser(context, null);
         } catch (AgentRunTerminatedException e) {
-            return Map.of("reply", "");
+            return MangaWorkflowResult.success("");
         } catch (AgentUserInputRequiredException e) {
             throw e;
         } catch (ToolSuspendException e) {
@@ -140,7 +150,7 @@ public class MangaDirectorAgentNode implements MangaWorkflowNodeHandler {
             throw new BusinessException(502, "Agent tool suspended without user input");
         } catch (Exception e) {
             if (mangaAgentRunService.isTerminal(context.requestId(), context.user().getId(), context.chapter().getId())) {
-                return Map.of("reply", "");
+                return MangaWorkflowResult.success("");
             }
             String error = e.getMessage() == null ? "unknown error" : e.getMessage();
             if (context.toolState().hasSuccessfulMutatingTool()) {
@@ -153,7 +163,7 @@ public class MangaDirectorAgentNode implements MangaWorkflowNodeHandler {
 
         String finalReply = reply.toString().trim();
         if (mangaAgentRunService.isTerminal(context.requestId(), context.user().getId(), context.chapter().getId())) {
-            return Map.of("reply", "");
+            return MangaWorkflowResult.success("");
         }
         if (!finished.get() || finalReply.isBlank()) {
             if (context.toolState().hasSuccessfulMutatingTool()) {
@@ -173,7 +183,7 @@ public class MangaDirectorAgentNode implements MangaWorkflowNodeHandler {
                 finalReply,
                 context.requestId()
         );
-        return Map.of("reply", finalReply);
+        return MangaWorkflowResult.success(finalReply);
     }
 
     private List<AgentMessage> prepareAgentMessages(MangaWorkflowExecutionContext context) {
@@ -207,15 +217,7 @@ public class MangaDirectorAgentNode implements MangaWorkflowNodeHandler {
                 context.deepseekApiKey(),
                 context.requestId(),
                 context.conversation().getConversationUuid(),
-                harnessToolGroups()
-        );
-    }
-
-    private java.util.List<String> harnessToolGroups() {
-        return java.util.List.of(
-                com.artverse.agents.MangaAgentToolkitFactory.CONTEXT_TOOLS,
-                com.artverse.agents.MangaAgentToolkitFactory.STORYBOARD_TOOLS,
-                com.artverse.agents.MangaAgentToolkitFactory.HITL_TOOLS
+                activeToolGroups()
         );
     }
 

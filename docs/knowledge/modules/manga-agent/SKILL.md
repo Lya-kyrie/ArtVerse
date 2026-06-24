@@ -7,6 +7,8 @@ description: Use when changing or reviewing ArtVerse Manga Agent behavior, inclu
 
 Use this skill for changes under the Manga Agent workflow. Read `flow.md` when you need event ordering, run status transitions, API contract details, or tool behavior beyond the summary below.
 
+AgentScope-related changes in this module must be based on the official AgentScope Java v2 documentation and the configured docs MCP. Do not guess framework behavior and do not recreate v2 capabilities that already exist in AgentScope.
+
 ## Domain Model
 
 The Manga Agent is a chapter-scoped assistant with conversation-level isolation. A chapter can have multiple Manga Agent conversations; each conversation owns its messages, runs, AgentScope session, and conversation workspace.
@@ -46,7 +48,7 @@ For a new run, `MangaAgentService` resolves the active `MangaAgentConversation` 
 
 For resume, the service requires an existing `WAITING_USER` run, reconstructs a continuation message from the stored user-input request and the user's answer, clears waiting state, and continues the same request id.
 
-`AgentScopeAgentFactory` creates or reuses a per-user/story/chapter/conversation/task/model/workspace agent. `AgentScopeRuntimeContextFactory` passes per-call business values through AgentScope v2 `RuntimeContext` as `MangaAgentRuntimeContext`. For `AgentTaskType.MANGA_DIRECTOR`, `MangaAgentToolkitFactory` registers the Manga tools into AgentScope tool groups, and `AgentScopeHarnessAgentGateway` re-applies the request-scoped active groups before each call so cached agents do not leak tool scope across workflow nodes.
+`AgentScopeAgentFactory` creates or reuses a per-user/story/chapter/conversation/task/model/workspace agent. `AgentScopeRuntimeContextFactory` passes per-call business values through AgentScope v2 `RuntimeContext` as `MangaAgentRuntimeContext`. For `AgentTaskType.MANGA_DIRECTOR`, `MangaAgentToolkitFactory` registers the Manga tools into AgentScope tool groups, and `AgentScopeHarnessAgentGateway` re-applies the request-scoped active groups before each call so cached agents do not leak tool scope across workflow nodes. Workflow nodes own the declaration of which tool groups may be active for that node; the gateway only reapplies the declared set for the current call.
 
 The frontend consumes AG-UI as the default live protocol. `POST /conversations/{conversationId}/ag-ui/run` and `POST /conversations/{conversationId}/ag-ui/runs/{requestId}/resume` are the preferred endpoints. Legacy chapter-level endpoints auto-resolve the active conversation and remain compatibility paths. Keep the execution panel as the single place that explains what the agent is doing; do not add a second competing progress widget.
 
@@ -59,7 +61,7 @@ Manga Director tools are grouped through AgentScope `Toolkit`:
 - `context-tools`: read-only chapter/story/storyboard/image context.
 - `storyboard-tools`: storyboard generation and storyboard persistence.
 - `hitl-tools`: user question/confirmation flow.
-- Active groups are request-scoped. The current Director node enables `context-tools`, `storyboard-tools`, and `hitl-tools`; future Agent nodes should declare their own narrower group set instead of inheriting a global default.
+- Active groups are request-scoped. `MangaWorkflowNodeHandler.activeToolGroups()` is the declaration point for node-level tool scope. The current Director node enables `context-tools`, `storyboard-tools`, and `hitl-tools`; future Agent nodes should declare their own narrower group set instead of inheriting a global default.
 
 - `get_chapter_context`: read-only; returns story, chapter, source excerpt, storyboard scenes, and generated image status.
 - `generate_storyboard`: mutating; generates scenes through `SceneService.generateScenes` and saves them through the existing scene flow.

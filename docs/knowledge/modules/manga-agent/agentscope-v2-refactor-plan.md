@@ -98,7 +98,7 @@ Status: foundation implemented.
 
 Remaining follow-up:
 
-- Use workflow node identity to choose allowed tool groups per Agent node. The gateway now reapplies request-scoped active groups before each AgentScope call so cached agents can safely serve different node scopes.
+- Use workflow node declarations to choose allowed tool groups per Agent node. The gateway now reapplies request-scoped active groups before each AgentScope call so cached agents can safely serve different node scopes.
 - Revisit AgentScope tool group scope when upgrading past `2.0.0-RC4`; this local version uses the available `createToolGroup(name, description, active)` API.
 
 ### Phase 3: Split run execution from run coordination
@@ -116,7 +116,12 @@ Remaining follow-up:
 
 - Add dedicated Storyboard and Generation node handlers. Review and HITL already use explicit lightweight workflow nodes and no longer fall back to Director.
 - Add explicit workflow result types for reply, degraded flag, waiting state, and terminal/cancelled outcome.
-- Move node-specific tool group selection into workflow node configuration.
+- Continue shrinking Director responsibilities after node-owned tool-group declaration is in place, especially by introducing more task-specific Agent nodes instead of broad Director logic.
+
+## Guardrails
+
+- AgentScope-related implementation must use official Java v2 concepts first and verify behavior against docs or local `2.0.0-RC4` reality.
+- Do not recreate v2 primitives in business code when `Toolkit`, `ToolGroup`, `RuntimeContext`, middleware, permissions, or AG-UI already provide the capability.
 
 ### Phase 4: HITL v2 alignment
 

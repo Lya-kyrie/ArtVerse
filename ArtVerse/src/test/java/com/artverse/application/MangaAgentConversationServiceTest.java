@@ -63,10 +63,10 @@ class MangaAgentConversationServiceTest {
                     Map.of("scenes_count", 12)
             );
 
-            Map<String, Object> result = fixture.service.fallbackAfterToolSuccess(
+            var result = fixture.service.fallbackAfterToolSuccess(
                     fixture.user, fixture.chapter, requestId, scope.state(), "boom");
 
-            assertThat(result.get("agent_final_response_degraded")).isEqualTo(true);
+            assertThat(result.degraded()).isTrue();
             assertThat(fixture.saved).extracting(MangaAgentMessage::getRole)
                     .contains(MessageRole.ASSISTANT, MessageRole.SYSTEM);
             assertThat(fixture.saved.get(0).getContent()).contains("\u5206\u955c\u5df2\u7ecf\u91cd\u5199\u5e76\u4fdd\u5b58");

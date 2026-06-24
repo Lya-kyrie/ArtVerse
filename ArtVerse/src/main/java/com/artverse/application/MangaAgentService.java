@@ -5,6 +5,7 @@ import com.artverse.agents.AgentScopeEventMapper;
 import com.artverse.agents.AgentWorkspaceSyncService;
 import com.artverse.agents.HarnessAgentGateway;
 import com.artverse.application.workflow.MangaWorkflowOrchestrator;
+import com.artverse.application.workflow.MangaWorkflowResult;
 import com.artverse.common.BusinessException;
 import com.artverse.config.ArtVerseProperties;
 import com.artverse.domain.MangaAgentConversation;
@@ -84,9 +85,10 @@ public class MangaAgentService {
                 conversation.getChapter().getId(),
                 effectiveRequestId
         )) {
+            MangaWorkflowResult result = mangaWorkflowOrchestrator.runWithToolState(
+                    conversation, message, effectiveRequestId, scope.state());
             return new RunResult(
-                    String.valueOf(mangaWorkflowOrchestrator.runWithToolState(conversation, message, effectiveRequestId, scope.state())
-                            .getOrDefault("reply", "")),
+                    String.valueOf(result.reply()),
                     effectiveRequestId
             );
         }

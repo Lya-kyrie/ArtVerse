@@ -1,6 +1,7 @@
 package com.artverse.application;
 
 import com.artverse.agents.AgentMessage;
+import com.artverse.application.workflow.MangaWorkflowResult;
 import com.artverse.domain.Chapter;
 import com.artverse.domain.MangaAgentConversation;
 import com.artverse.domain.MangaAgentMessage;
@@ -126,26 +127,20 @@ public class MangaAgentConversationService {
         ).trim();
     }
 
-    public Map<String, Object> fallbackAfterToolSuccess(User user, Chapter chapter, UUID requestId,
+    public MangaWorkflowResult fallbackAfterToolSuccess(User user, Chapter chapter, UUID requestId,
                                                         AgentRunToolStatus.RunState toolState, String error) {
         String reply = fallbackReply(chapter, toolState);
         saveMessage(user, chapter, MessageRole.ASSISTANT, reply, requestId);
         saveMessage(user, chapter, MessageRole.SYSTEM, fallbackFailureContent(error, toolState), requestId);
-        return Map.of(
-                "reply", reply,
-                "agent_final_response_degraded", true
-        );
+        return MangaWorkflowResult.degraded(reply);
     }
 
-    public Map<String, Object> fallbackAfterToolSuccess(MangaAgentConversation conversation, UUID requestId,
+    public MangaWorkflowResult fallbackAfterToolSuccess(MangaAgentConversation conversation, UUID requestId,
                                                         AgentRunToolStatus.RunState toolState, String error) {
         String reply = fallbackReply(conversation.getChapter(), toolState);
         saveMessage(conversation, MessageRole.ASSISTANT, reply, requestId);
         saveMessage(conversation, MessageRole.SYSTEM, fallbackFailureContent(error, toolState), requestId);
-        return Map.of(
-                "reply", reply,
-                "agent_final_response_degraded", true
-        );
+        return MangaWorkflowResult.degraded(reply);
     }
 
     private String failureContent(String error) {
