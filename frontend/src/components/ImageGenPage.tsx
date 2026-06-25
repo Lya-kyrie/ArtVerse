@@ -112,6 +112,11 @@ function saveGenConfig(config: GenConfig) {
   localStorage.setItem(LS_GEN_CONFIG_KEY, JSON.stringify(config));
 }
 
+function fmtRes(v: string | null | undefined): string {
+  if (!v) return '';
+  return v.split('x').join('×');
+}
+
 function AspectRatioLabel({ aspectRatio }: { aspectRatio: string }) {
   const found = ASPECT_RATIOS.find((a) => a.value === aspectRatio);
   if (!found) return <span className="text-cream-dim">{aspectRatio}</span>;
@@ -190,14 +195,21 @@ function ConfigPopover({
                   key={ar.value}
                   onClick={() => handleAspectRatioSelect(ar.value)}
                   className={
-                    'flex flex-col items-center rounded-xl border px-3 py-2 text-xs transition-all duration-150 min-w-[60px] ' +
+                    'flex flex-col items-center gap-1 rounded-xl border px-3 py-2 text-xs transition-all duration-150 min-w-[64px] ' +
                     (config.aspectRatio === ar.value
                       ? 'border-coral/40 bg-coral/10 text-coral'
                       : 'border-ink-border text-cream-dim hover:border-ink-muted hover:text-cream bg-ink')
                   }
                 >
-                  <span className="font-medium">{ar.label}</span>
-                  <span className="text-[10px] opacity-60">{ar.sub}</span>
+                  <svg viewBox="0 0 20 20" className="w-[18px] h-[18px] fill-none stroke-current stroke-[1.5] opacity-70">
+                    <rect x={0} y={0} width={20} height={20} rx={1.5} className={ar.value === '1:1' ? '' : 'hidden'} />
+                    <rect x={0} y={2.5} width={20} height={15} rx={1.5} className={ar.value === '4:3' ? '' : 'hidden'} />
+                    <rect x={2.5} y={0} width={15} height={20} rx={1.5} className={ar.value === '3:4' ? '' : 'hidden'} />
+                    <rect x={0} y={4} width={20} height={12} rx={1.5} className={ar.value === '16:9' ? '' : 'hidden'} />
+                    <rect x={4} y={0} width={12} height={20} rx={1.5} className={ar.value === '9:16' ? '' : 'hidden'} />
+                  </svg>
+                  <span className="font-medium leading-tight">{ar.label}</span>
+                  <span className="text-[10px] opacity-60 leading-tight">{ar.sub}</span>
                 </button>
               ))}
             </div>
@@ -205,7 +217,7 @@ function ConfigPopover({
 
           {/* Current config summary */}
           <div className="rounded-xl border border-ink-border bg-ink px-3 py-2 text-xs text-cream-dim">
-            当前配置：{config.resolution.replace('x', '×')} · <AspectRatioLabel aspectRatio={config.aspectRatio} />
+            当前配置：{fmtRes(config.resolution)} · <AspectRatioLabel aspectRatio={config.aspectRatio} />
           </div>
         </div>
       </div>
@@ -296,7 +308,7 @@ function Composer({
               title="图片配置"
             >
               <Settings2 size={15} />
-              <span className="text-sm hidden sm:inline">{config.resolution.replace('x', '×')}</span>
+              <span className="text-sm hidden sm:inline">{fmtRes(config.resolution)}</span>
             </button>
             {configOpen && (
               <ConfigPopover
@@ -867,7 +879,7 @@ export default function ImageGenPage() {
                         <div className="flex items-center justify-between text-xs text-cream-dim">
                           <div className="flex items-center gap-2">
                             <span className="font-medium text-cream">{record.model || 'gpt-image-2'}</span>
-                            <span>{record.size || '生成图片'}</span>
+                            <span>{record.size ? fmtRes(record.size) : '生成图片'}</span>
                           </div>
                           <span>{new Date(record.created_at).toLocaleString()}</span>
                         </div>
