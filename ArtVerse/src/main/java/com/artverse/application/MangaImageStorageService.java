@@ -37,6 +37,13 @@ public class MangaImageStorageService {
         return new ReferenceImages(materialized, tempRefs);
     }
 
+    public List<String> previewReferenceImageKeys(Long storyId, Long chapterId, String chapterRefImage,
+                                                  Long assetGroupId, String storyRefImage) {
+        return computeEffectiveRefImages(storyId, chapterId, chapterRefImage, assetGroupId, storyRefImage).stream()
+                .map(path -> path.toString().replace('\\', '/'))
+                .toList();
+    }
+
     public Optional<MangaImage> findPanel(Long chapterId, int imageNumber) {
         return mangaImageRepository.findByChapterIdAndImageNumber(chapterId, imageNumber);
     }

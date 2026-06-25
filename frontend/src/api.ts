@@ -898,6 +898,7 @@ export interface MangaProgress {
 
 export function generateMangaStream(
   chapterId: number,
+  assetGroupId: number | null | undefined,
   onEvent: (event: MangaProgress) => void,
 ): AbortController {
   const controller = new AbortController();
@@ -926,6 +927,8 @@ export function generateMangaStream(
   const connect = () => {
     authFetch(`${BASE}/api/chapters/${chapterId}/generate-manga-stream`, {
       method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ assetGroupId: assetGroupId ?? null }),
       signal: controller.signal,
     })
       .then(async (res) => {

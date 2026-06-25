@@ -588,7 +588,7 @@ export default function MangaPanel({ chapter, onChapterRefresh }: Props) {
     setStatusMsg('正在生成漫画…');
     genStore.start(targetId, targetTotal);
 
-    const controller = generateMangaStream(targetId, (event: MangaProgress) => {
+    const controller = generateMangaStream(targetId, selectedAssetGroupId, (event: MangaProgress) => {
       switch (event.type) {
         case 'status':
           genStore.patch(targetId, { statusMsg: event.data.message });

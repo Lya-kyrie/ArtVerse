@@ -7,6 +7,7 @@ import com.artverse.common.BusinessException;
 import com.artverse.config.ArtVerseProperties;
 import com.artverse.domain.*;
 import com.artverse.persistence.ChapterRepository;
+import com.artverse.persistence.StoryAssetGroupRepository;
 import com.artverse.prompt.MangaPromptPolicy;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -36,6 +37,7 @@ public class MangaGenerationService {
     @Qualifier("mangaGenerationExecutor")
     private final ExecutorService executor;
     private final CharacterProfileService characterProfileService;
+    private final StoryAssetGroupRepository storyAssetGroupRepository;
     private final ArtVerseProperties properties;
     private final ObjectMapper objectMapper;
 
@@ -43,14 +45,25 @@ public class MangaGenerationService {
 
     @Transactional
     public SseEmitter generateMangaStream(Long chapterId, String imageApiKey, String deepseekApiKey) {
-        return generateMangaStream(chapterId, imageApiKey, deepseekApiKey, () -> {}, error -> {});
+        return generateMangaStream(chapterId, null, null, imageApiKey, deepseekApiKey, () -> {}, error -> {});
     }
 
     @Transactional
-    public SseEmitter generateMangaStream(Long chapterId, String imageApiKey, String deepseekApiKey,
+    public SseEmitter generateMangaStream(Long chapterId, Long assetGroupId, Long userId,
+                                          String imageApiKey, String deepseekApiKey,
                                           Runnable onComplete, Consumer<String> onError) {
         Chapter chapter = chapterRepository.findByIdForIdempotency(chapterId)
                 .orElseThrow(() -> new BusinessException(404, "Chapter not found"));
+
+        if (assetGroupId != null) {
+            StoryAssetGroup assetGroup = storyAssetGroupRepository.findByIdAndUserId(assetGroupId, userId)
+                    .orElseThrow(() -> new BusinessException(404, "Asset group not found"));
+            if (!assetGroup.getStory().getId().equals(chapter.getStory().getId())) {
+                throw new BusinessException(400, "Asset group does not belong to this chapter's story");
+            }
+            chapter.setAssetGroup(assetGroup);
+            chapterRepository.save(chapter);
+        }
 
         // Check if already running
         MangaGenerationJob existingJob = activeJobs.get(chapterId);
@@ -70,7 +83,7 @@ public class MangaGenerationService {
         Long storyId = chapter.getStory().getId();
         String mangaStyle = chapter.getStory().getMangaStyle();
         String storyRefImage = chapter.getStory().getRefImage();
-        Long assetGroupId = chapter.getAssetGroup() != null ? chapter.getAssetGroup().getId() : null;
+        Long effectiveAssetGroupId = chapter.getAssetGroup() != null ? chapter.getAssetGroup().getId() : null;
 
         MangaGenerationJob job = new MangaGenerationJob(chapterId, scenes);
         activeJobs.put(chapterId, job);
@@ -79,7 +92,7 @@ public class MangaGenerationService {
         job.addSubscriber(emitter);
 
         try {
-            executor.submit(() -> runGenerationJob(job, chapter, storyId, mangaStyle, storyRefImage, assetGroupId,
+            executor.submit(() -> runGenerationJob(job, chapter, storyId, mangaStyle, storyRefImage, effectiveAssetGroupId,
                     imageApiKey, deepseekApiKey, onComplete, onError));
         } catch (RuntimeException e) {
             activeJobs.remove(chapterId);
@@ -96,8 +109,7 @@ public class MangaGenerationService {
             // Send scenes event
             job.broadcastEvent("scenes", objectMapper.writeValueAsString(Map.of("scenes", job.getScenes())));
 
-            Map<String, Object> profileResult = characterProfileService.resolveEffective(chapter.getId());
-            String profiles = (String) profileResult.get("content");
+            String profiles = resolveGenerationProfiles(chapter);
             if (mangaStyle == null || mangaStyle.isBlank()) mangaStyle = "japanese_manga";
             String colorMode = chapter.getColorMode().name().toLowerCase();
 
@@ -249,8 +261,7 @@ public class MangaGenerationService {
             chapterRepository.save(chapter);
         }
 
-        Map<String, Object> profileResult = characterProfileService.resolveEffective(chapterId);
-        String profiles = (String) profileResult.get("content");
+        String profiles = resolveGenerationProfiles(chapter);
         String mangaStyle = chapter.getStory().getMangaStyle();
         if (mangaStyle == null || mangaStyle.isBlank()) mangaStyle = "japanese_manga";
         String colorMode = chapter.getColorMode().name().toLowerCase();
@@ -287,6 +298,95 @@ public class MangaGenerationService {
         } finally {
             mangaImageStorageService.cleanupTempFile(generated.localFile());
         }
+    }
+
+    @Transactional(readOnly = true)
+    public Map<String, Object> previewImageRequest(Long chapterId, Long assetGroupId, Long userId, int imageNumber) {
+        Chapter chapter = chapterRepository.findByIdForIdempotency(chapterId)
+                .orElseThrow(() -> new BusinessException(404, "Chapter not found"));
+        StoryAssetGroup selectedAssetGroup = resolveRequestedAssetGroup(chapter, assetGroupId, userId);
+
+        List<String> scenes = resolveScenesForImageGeneration(chapter);
+        if (imageNumber < 1 || imageNumber > scenes.size()) {
+            throw new BusinessException(400, "Image number must be between 1 and " + scenes.size());
+        }
+
+        Long effectiveAssetGroupId = selectedAssetGroup != null ? selectedAssetGroup.getId() :
+                chapter.getAssetGroup() != null ? chapter.getAssetGroup().getId() : null;
+        String mangaStyle = chapter.getStory().getMangaStyle();
+        if (mangaStyle == null || mangaStyle.isBlank()) mangaStyle = "japanese_manga";
+        String colorMode = chapter.getColorMode().name().toLowerCase();
+        String profiles = buildGenerationProfiles(chapter, selectedAssetGroup);
+        List<String> referenceImageKeys = mangaImageStorageService.previewReferenceImageKeys(
+                chapter.getStory().getId(), chapter.getId(), chapter.getRefImage(),
+                effectiveAssetGroupId, chapter.getStory().getRefImage());
+        String prompt = MangaPromptPolicy.buildImagePrompt(
+                scenes.get(imageNumber - 1), profiles, mangaStyle, colorMode,
+                !referenceImageKeys.isEmpty(), scenes, imageNumber);
+
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("chapter_id", chapter.getId());
+        result.put("image_number", imageNumber);
+        result.put("asset_group_id", effectiveAssetGroupId);
+        result.put("asset_group_name", selectedAssetGroup != null ? selectedAssetGroup.getName() :
+                chapter.getAssetGroup() != null ? chapter.getAssetGroup().getName() : null);
+        result.put("model", properties.getImage().getModel());
+        result.put("size", properties.getImage().getSize());
+        result.put("color_mode", colorMode);
+        result.put("scene", scenes.get(imageNumber - 1));
+        result.put("character_profiles", profiles);
+        result.put("reference_images", referenceImageKeys);
+        result.put("prompt", prompt);
+        return result;
+    }
+
+    private StoryAssetGroup resolveRequestedAssetGroup(Chapter chapter, Long assetGroupId, Long userId) {
+        if (assetGroupId == null) {
+            return null;
+        }
+        StoryAssetGroup assetGroup = storyAssetGroupRepository.findByIdAndUserId(assetGroupId, userId)
+                .orElseThrow(() -> new BusinessException(404, "Asset group not found"));
+        if (!assetGroup.getStory().getId().equals(chapter.getStory().getId())) {
+            throw new BusinessException(400, "Asset group does not belong to this chapter's story");
+        }
+        return assetGroup;
+    }
+
+    private String resolveGenerationProfiles(Chapter chapter) {
+        return buildGenerationProfiles(chapter, null);
+    }
+
+    private String buildGenerationProfiles(Chapter chapter, StoryAssetGroup selectedAssetGroup) {
+        StoryAssetGroup assetGroup = selectedAssetGroup != null ? selectedAssetGroup : chapter.getAssetGroup();
+        if (assetGroup != null) {
+            StringBuilder builder = new StringBuilder();
+            if (assetGroup.getName() != null && !assetGroup.getName().isBlank()) {
+                builder.append("Asset group: ").append(assetGroup.getName()).append("\n");
+            }
+            if (assetGroup.getDescription() != null && !assetGroup.getDescription().isBlank()) {
+                builder.append("Asset group description: ").append(assetGroup.getDescription()).append("\n\n");
+            }
+            if (assetGroup.getCharacterProfiles() != null && !assetGroup.getCharacterProfiles().isBlank()) {
+                builder.append(assetGroup.getCharacterProfiles()).append("\n\n");
+            }
+            Set<CharacterProfile> characters = assetGroup.getCharacters();
+            if (characters != null && !characters.isEmpty()) {
+                for (CharacterProfile character : characters) {
+                    builder.append("Character: ").append(character.getName() == null ? "" : character.getName()).append("\n");
+                    if (character.getDescription() != null && !character.getDescription().isBlank()) {
+                        builder.append("Description: ").append(character.getDescription()).append("\n");
+                    }
+                    builder.append("\n");
+                }
+            }
+            String content = builder.toString().trim();
+            if (!content.isBlank()) {
+                return content;
+            }
+        }
+
+        Map<String, Object> profileResult = characterProfileService.resolveEffective(chapter.getId());
+        return String.valueOf(profileResult.getOrDefault("content", ""));
     }
 
     private String optimizePrompt(String prompt, String deepseekApiKey) {
