@@ -31,6 +31,7 @@ import {
   type MangaAgentMessage,
   type MangaAgentRunEvent,
   type MangaAgentRunSnapshot,
+  type MangaWorkflowRoute,
   type Story,
 } from '../api';
 
@@ -47,6 +48,16 @@ const STARTER_PROMPTS = [
   'Based on the current content, generate the storyboard for this chapter first.',
   'Review whether the storyboard still needs refinement.',
 ];
+
+const WORKFLOW_ROUTES: Array<{ value: MangaWorkflowRoute; label: string; description: string }> = [
+  { value: 'DIRECTOR', label: '导演', description: '规划章节、生成或修订分镜' },
+  { value: 'REVIEW', label: '质检', description: '检查现有分镜和下一步风险' },
+  { value: 'HITL', label: '决策', description: '收束需要用户确认的选择' },
+];
+
+function routeLabel(route: MangaWorkflowRoute | string | undefined): string {
+  return WORKFLOW_ROUTES.find((item) => item.value === route)?.label || '导演';
+}
 
 function requestIdOf(value: { requestId?: string; request_id?: string } | null | undefined) {
   return value?.requestId ?? value?.request_id ?? '';
@@ -252,6 +263,7 @@ export default function MangaAgentPage() {
   const [runEvents, setRunEvents] = useState<AgentRunTimelineEvent[]>([]);
   const [draftReply, setDraftReply] = useState('');
   const [userInputRequest, setUserInputRequest] = useState<AgentUserInputRequest | null>(null);
+  const [workflowRoute, setWorkflowRoute] = useState<MangaWorkflowRoute>('DIRECTOR');
   const [customAnswer, setCustomAnswer] = useState('');
   const chapterIdRef = useRef('');
   const conversationIdRef = useRef('');
@@ -372,6 +384,7 @@ export default function MangaAgentPage() {
     activeRequestIdRef.current = snapshot.requestId ?? snapshot.request_id ?? null;
     setRunStatus(snapshot.status);
     setUserInputRequest(snapshot.userInputRequest ?? null);
+    if (snapshot.route) setWorkflowRoute(snapshot.route);
     setRunEvents((snapshot.events || []).map((event) => (event.data as AgentRunTimelineEvent) || {
       type: String((event as any).eventName || 'event'),
       data: (event as any).data || {},
@@ -439,6 +452,7 @@ export default function MangaAgentPage() {
       if (agEvent.type === 'STATE_SNAPSHOT') {
         const message = agEvent.snapshot?.message;
         if (message) setRunStatus(message);
+        if (agEvent.snapshot?.route) setWorkflowRoute(agEvent.snapshot.route as MangaWorkflowRoute);
       }
       if (agEvent.type === 'RUN_STARTED') {
         setRunStatus('智能体已启动');
@@ -500,7 +514,7 @@ export default function MangaAgentPage() {
         if (result && 'reply' in result && result.reply) {
           setMessages((prev) => [...prev, { role: 'assistant', content: result.reply || '', requestId }]);
         }
-      }, resolvedConversationId);
+      }, resolvedConversationId, workflowRoute);
       setMessages((prev) => [...prev, { role: 'user', content: text, requestId }]);
       setInput('');
       clearRunPoll();
@@ -654,6 +668,30 @@ export default function MangaAgentPage() {
             </div>
 
             <div>
+              <p className="mb-2 text-xs uppercase tracking-[0.22em] text-gray-500">智能体模式</p>
+              <div className="grid grid-cols-3 gap-2">
+                {WORKFLOW_ROUTES.map((route) => {
+                  const selected = workflowRoute === route.value;
+                  return (
+                    <button
+                      key={route.value}
+                      type="button"
+                      onClick={() => setWorkflowRoute(route.value)}
+                      disabled={loading || !!userInputRequest}
+                      title={route.description}
+                      className={`rounded-2xl border px-3 py-2 text-sm transition disabled:cursor-not-allowed disabled:opacity-50 ${selected ? 'border-amber-300/60 bg-amber-300 text-gray-950' : 'border-white/10 bg-white/[0.04] text-gray-300 hover:border-amber-300/30 hover:bg-white/[0.08] hover:text-white'}`}
+                    >
+                      {route.label}
+                    </button>
+                  );
+                })}
+              </div>
+              <div className="mt-2 text-xs leading-5 text-gray-500">
+                {WORKFLOW_ROUTES.find((route) => route.value === workflowRoute)?.description}
+              </div>
+            </div>
+
+            <div>
               <p className="mb-2 text-xs uppercase tracking-[0.22em] text-gray-500">快捷提示</p>
               <div className="space-y-2">
                 {STARTER_PROMPTS.map((prompt) => (
@@ -712,6 +750,7 @@ export default function MangaAgentPage() {
                           {executionIcon(userInputRequest ? 'waiting' : latestRunSummary?.tone || (loading ? 'thinking' : 'neutral'), userInputRequest ? 'question' : latestRunSummary?.icon || (loading ? 'sparkles' : 'clock'))}
                           {userInputRequest ? '等待你的决策' : loading ? '运行中' : '最近运行记录'}
                         </span>
+                        <span className="inline-flex items-center rounded-full border border-white/10 bg-black/20 px-3 py-1 text-xs text-gray-300">模式 {routeLabel(workflowRoute)}</span>
                         {visibleRequestId && <span className="inline-flex items-center rounded-full border border-white/10 bg-black/20 px-3 py-1 text-xs text-gray-300">requestId {formatRequestId(visibleRequestId)}</span>}
                         {latestRunEvent?.createdAt && <span className="text-xs text-gray-500">{formatTimestamp(latestRunEvent.createdAt)}</span>}
                         {visibleRequestId && (loading || userInputRequest) && (

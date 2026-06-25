@@ -5,18 +5,26 @@ import com.artverse.agent.AgentModelSpecFactory;
 import com.artverse.agent.AgentRunEvent;
 import com.artverse.application.AgentRunToolStatus;
 import com.artverse.application.ApiKeyService;
+import com.artverse.application.CharacterProfileService;
 import com.artverse.application.MangaAgentConversationService;
 import com.artverse.application.MangaAgentRunEventPublisher;
 import com.artverse.application.MangaAgentRunService;
 import com.artverse.domain.Chapter;
 import com.artverse.domain.MangaAgentConversation;
+import com.artverse.domain.MangaAgentMessage;
+import com.artverse.domain.MangaImage;
 import com.artverse.domain.MangaAgentRun;
+import com.artverse.domain.MessageRole;
+import com.artverse.domain.Story;
 import com.artverse.domain.User;
 import com.artverse.guard.GenerationGuardService;
+import com.artverse.persistence.MangaImageRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.atomic.AtomicReference;
@@ -26,15 +34,24 @@ import java.util.concurrent.atomic.AtomicReference;
 @RequiredArgsConstructor
 public class MangaWorkflowOrchestrator {
 
+    private static final int EXCERPT_LIMIT = 1800;
+
     private final MangaAgentConversationService mangaAgentConversationService;
     private final AgentModelSpecFactory agentModelSpecFactory;
     private final ApiKeyService apiKeyService;
     private final GenerationGuardService generationGuardService;
     private final MangaAgentRunService mangaAgentRunService;
-    private final MangaWorkflowContextAssembler mangaWorkflowContextAssembler;
+    private final MangaImageRepository mangaImageRepository;
+    private final CharacterProfileService characterProfileService;
     private final MangaWorkflowNodeRegistry nodeRegistry;
 
     public Map<String, Object> runWithToolState(MangaAgentConversation conversation, String message, UUID effectiveRequestId,
+                                                AgentRunToolStatus.RunState toolState) {
+        return runWithToolState(conversation, message, effectiveRequestId, MangaWorkflowRoute.DIRECTOR, toolState);
+    }
+
+    public Map<String, Object> runWithToolState(MangaAgentConversation conversation, String message,
+                                                UUID effectiveRequestId, MangaWorkflowRoute route,
                                                 AgentRunToolStatus.RunState toolState) {
         if (message == null || message.isBlank()) {
             throw new com.artverse.common.BusinessException(400, "Message cannot be empty");
@@ -56,22 +73,31 @@ public class MangaWorkflowOrchestrator {
                 modelSpec.provider(),
                 modelSpec.model(),
                 AgentModelSpecFactory.shortHash(modelSpec.baseUrl()),
-                () -> runWorkflowLeader(conversation, message, effectiveRequestId, deepseekApiKey, modelSpec, toolState)
+                () -> runWorkflowLeader(conversation, message, effectiveRequestId, route, deepseekApiKey, modelSpec, toolState)
         );
         return result;
     }
 
     public Map<String, Object> runWorkflowLeader(MangaAgentConversation conversation, String message,
-                                                 UUID effectiveRequestId, String deepseekApiKey,
+                                                 UUID effectiveRequestId, MangaWorkflowRoute route,
+                                                 String deepseekApiKey,
                                                  AgentModelSpec modelSpec, AgentRunToolStatus.RunState toolState) {
-        MangaWorkflowContextSnapshot workflowContext = mangaWorkflowContextAssembler.assemble(conversation, message);
+        MangaWorkflowContextSnapshot workflowContext = assembleContext(conversation, message, route);
         log.info("Workflow route for request {} -> {}", effectiveRequestId, workflowContext.route());
         MangaWorkflowExecutionContext context = executionContext(
                 conversation, message, effectiveRequestId, deepseekApiKey, modelSpec, toolState, workflowContext);
         return nodeRegistry.handlerFor(workflowContext.route()).run(context);
     }
 
+    public Map<String, Object> runWorkflowLeader(MangaAgentConversation conversation, String message,
+                                                 UUID effectiveRequestId, String deepseekApiKey,
+                                                 AgentModelSpec modelSpec, AgentRunToolStatus.RunState toolState) {
+        return runWorkflowLeader(conversation, message, effectiveRequestId, MangaWorkflowRoute.DIRECTOR,
+                deepseekApiKey, modelSpec, toolState);
+    }
+
     public void runStreamLeader(MangaAgentConversation conversation, String message, UUID effectiveRequestId,
+                                MangaWorkflowRoute route,
                                 AgentRunToolStatus.RunState toolState, MangaAgentRunEventPublisher.RunEventSink sink,
                                 AtomicReference<MangaAgentRun> runRef) {
         if (message == null || message.isBlank()) {
@@ -81,7 +107,8 @@ public class MangaWorkflowOrchestrator {
         User user = conversation.getUser();
         Chapter chapter = conversation.getChapter();
         Long chapterId = chapter.getId();
-        MangaAgentRun run = mangaAgentRunService.startOrReuse(conversation, effectiveRequestId, message);
+        MangaWorkflowRoute effectiveRoute = route == null ? MangaWorkflowRoute.DIRECTOR : route;
+        MangaAgentRun run = mangaAgentRunService.startOrReuse(conversation, effectiveRequestId, message, effectiveRoute);
         runRef.set(run);
         sink.sendStatus(run, "智能体开始处理当前章节", effectiveRequestId);
 
@@ -103,10 +130,16 @@ public class MangaWorkflowOrchestrator {
                 modelSpec.model(),
                 AgentModelSpecFactory.shortHash(modelSpec.baseUrl()),
                 () -> runWorkflowStream(conversation, message, effectiveRequestId, sink, toolState,
-                        deepseekApiKey, modelSpec, run)
+                        deepseekApiKey, modelSpec, effectiveRoute, run)
         );
 
         completeRun(run, sink, chapterId, user, effectiveRequestId, result);
+    }
+
+    public void runStreamLeader(MangaAgentConversation conversation, String message, UUID effectiveRequestId,
+                                AgentRunToolStatus.RunState toolState, MangaAgentRunEventPublisher.RunEventSink sink,
+                                AtomicReference<MangaAgentRun> runRef) {
+        runStreamLeader(conversation, message, effectiveRequestId, MangaWorkflowRoute.DIRECTOR, toolState, sink, runRef);
     }
 
     public Map<String, Object> runWorkflowStream(MangaAgentConversation conversation, String message,
@@ -114,8 +147,9 @@ public class MangaWorkflowOrchestrator {
                                                  MangaAgentRunEventPublisher.RunEventSink sink,
                                                  AgentRunToolStatus.RunState toolState,
                                                  String deepseekApiKey, AgentModelSpec modelSpec,
+                                                 MangaWorkflowRoute route,
                                                  MangaAgentRun run) {
-        MangaWorkflowContextSnapshot workflowContext = mangaWorkflowContextAssembler.assemble(conversation, message);
+        MangaWorkflowContextSnapshot workflowContext = assembleContext(conversation, message, route);
         MangaWorkflowExecutionContext context = executionContext(
                 conversation, message, effectiveRequestId, deepseekApiKey, modelSpec, toolState, workflowContext);
         sink.sendRunEvent(run, AgentRunEvent.step(
@@ -145,6 +179,16 @@ public class MangaWorkflowOrchestrator {
                 Map.of("degraded", Boolean.TRUE.equals(response.get("agent_final_response_degraded")))
         ));
         return response;
+    }
+
+    public Map<String, Object> runWorkflowStream(MangaAgentConversation conversation, String message,
+                                                 UUID effectiveRequestId,
+                                                 MangaAgentRunEventPublisher.RunEventSink sink,
+                                                 AgentRunToolStatus.RunState toolState,
+                                                 String deepseekApiKey, AgentModelSpec modelSpec,
+                                                 MangaAgentRun run) {
+        return runWorkflowStream(conversation, message, effectiveRequestId, sink, toolState,
+                deepseekApiKey, modelSpec, MangaWorkflowRoute.DIRECTOR, run);
     }
 
     public void completeRun(MangaAgentRun run, MangaAgentRunEventPublisher.RunEventSink sink, Long chapterId, User user,
@@ -187,5 +231,82 @@ public class MangaWorkflowOrchestrator {
                 conversation.getChapter(),
                 workflowContext
         );
+    }
+
+    private MangaWorkflowContextSnapshot assembleContext(MangaAgentConversation conversation, String userMessage,
+                                                         MangaWorkflowRoute route) {
+        Chapter chapter = conversation.getChapter();
+        Story story = chapter.getStory();
+        List<MangaImage> images = mangaImageRepository.findByChapterIdOrderByImageNumberAsc(chapter.getId());
+        Map<String, Object> characterProfile = characterProfileService.resolveEffective(chapter.getId());
+        List<MangaAgentMessage> history = mangaAgentConversationService.listMessages(conversation);
+
+        return new MangaWorkflowContextSnapshot(
+                story.getId(),
+                chapter.getId(),
+                story.getTitle(),
+                chapterDisplayName(chapter),
+                story.getMangaStyle(),
+                countScenes(chapter.getScenesText()),
+                images == null ? 0 : images.size(),
+                excerpt(chapter.novelContentOrJoinedMessages(), EXCERPT_LIMIT),
+                excerpt(String.valueOf(characterProfile.getOrDefault("content", "")), EXCERPT_LIMIT),
+                summarizeConversation(history, userMessage),
+                route == null ? MangaWorkflowRoute.DIRECTOR : route,
+                warningsFor(chapter, images)
+        );
+    }
+
+    private List<String> warningsFor(Chapter chapter, List<MangaImage> images) {
+        ArrayList<String> warnings = new ArrayList<>();
+        if (chapter.novelContentOrJoinedMessages() == null || chapter.novelContentOrJoinedMessages().isBlank()) {
+            warnings.add("chapter_source_missing");
+        }
+        if (images == null || images.isEmpty()) {
+            warnings.add("no_generated_images");
+        }
+        return List.copyOf(warnings);
+    }
+
+    private String summarizeConversation(List<MangaAgentMessage> history, String userMessage) {
+        StringBuilder sb = new StringBuilder();
+        long startIndex = Math.max(0, history.size() - 8L);
+        history.stream()
+                .filter(item -> item.getRole() == MessageRole.USER || item.getRole() == MessageRole.ASSISTANT)
+                .skip(startIndex)
+                .forEach(item -> sb.append(item.getRole().name().toLowerCase()).append(": ")
+                        .append(excerpt(item.getContent(), 220)).append("\n"));
+        if (userMessage != null && !userMessage.isBlank()) {
+            sb.append("user: ").append(excerpt(userMessage, 220)).append("\n");
+        }
+        return sb.toString().trim();
+    }
+
+    private String chapterDisplayName(Chapter chapter) {
+        if (chapter.getDisplayTitle() != null && !chapter.getDisplayTitle().isBlank()) {
+            return chapter.getDisplayTitle();
+        }
+        return "第" + chapter.getChapterNumber() + "话";
+    }
+
+    private String excerpt(String text, int limit) {
+        if (text == null || text.isBlank()) {
+            return "";
+        }
+        String normalized = text.replaceAll("\\s+", " ").trim();
+        return normalized.length() <= limit ? normalized : normalized.substring(0, limit) + "...";
+    }
+
+    private int countScenes(String scenesText) {
+        if (scenesText == null || scenesText.isBlank()) {
+            return 0;
+        }
+        int count = 0;
+        for (int i = 0; i < scenesText.length(); i++) {
+            if (scenesText.charAt(i) == '"') {
+                count++;
+            }
+        }
+        return Math.max(1, count / 2);
     }
 }

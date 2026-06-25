@@ -689,7 +689,7 @@ export default function HomePage({ onSelectStory }: Props) {
 
         {/* Story cards grid */}
         {stories.length > 0 && (
-          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-4">
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-3">
             {stories.map((s) => (
               <div
                 key={s.id}
@@ -720,7 +720,7 @@ export default function HomePage({ onSelectStory }: Props) {
                 </div>
 
                 {/* Info */}
-                <div className="p-4">
+                <div className="p-3">
                   {editingId === s.id ? (
                     <div className="space-y-2">
                       <input

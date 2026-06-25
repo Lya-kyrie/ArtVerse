@@ -1,4 +1,4 @@
-﻿import { HttpAgent, type AGUIEvent, type RunAgentInput } from '@ag-ui/client';
+import { EventType, HttpAgent, type AGUIEvent, type RunAgentInput } from '@ag-ui/client';
 
 const BASE = '';
 export const DEEPSEEK_USAGE_URL = 'https://platform.deepseek.com/usage';
@@ -502,14 +502,7 @@ export async function importNovel(chapterId: number, content: string): Promise<C
 
 export async function generateScenes(chapterId: number, signal?: AbortSignal): Promise<string[]> {
   const res = await authFetch(`${BASE}/api/chapters/${chapterId}/generate-scenes`, { method: 'POST', signal });
-  if (!res.ok) {
-    const text = await res.text();
-    try {
-      const err = JSON.parse(text);
-      if (err.code === 4028) throw new Error('Coze余额不足，请等待配额刷新或升级付费版本');
-    } catch { /* not JSON, use raw text */ }
-    throw new Error(text);
-  }
+  if (!res.ok) throw new Error(await res.text());
   const data = await res.json();
   return data.scenes;
 }
@@ -1276,6 +1269,30 @@ export async function getMangaAgentConversationMessages(
   return data.messages || [];
 }
 
+export async function runMangaAgent(chapterId: number, message: string, requestId?: string): Promise<{ reply: string; request_id?: string; requestId?: string }> {
+  const res = await authFetch(`${BASE}/api/chapters/${chapterId}/manga-agent/run`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ message, requestId }),
+  });
+  if (!res.ok) throw new Error(parseApiError(await res.text()));
+  return res.json();
+}
+
+export function runMangaAgentStream(
+  chapterId: number,
+  message: string,
+  requestId: string | undefined,
+  onEvent: (event: MangaAgentRunEvent) => void,
+): AbortController {
+  return startMangaAgentEventStream(
+    `${BASE}/api/chapters/${chapterId}/manga-agent/run-stream`,
+    { message, requestId },
+    requestId,
+    onEvent,
+  );
+}
+
 class ArtVerseMangaAgentHttpAgent extends HttpAgent {
   private readonly message: string;
   private readonly answer?: string;
@@ -1392,6 +1409,89 @@ export function resumeMangaAgentAgUiStream(
   return controller;
 }
 
+function startMangaAgentEventStream(
+  url: string,
+  body: Record<string, unknown>,
+  requestId: string | undefined,
+  onEvent: (event: MangaAgentRunEvent) => void,
+): AbortController {
+  const controller = new AbortController();
+
+  authFetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+    signal: controller.signal,
+  })
+    .then(async (res) => {
+      if (!res.ok) {
+        onEvent({ type: 'error', data: { detail: parseApiError(await res.text()), requestId } });
+        return;
+      }
+      const reader = res.body?.getReader();
+      if (!reader) {
+        onEvent({ type: 'error', data: { detail: '智能体连接不可用', requestId } });
+        return;
+      }
+      const decoder = new TextDecoder();
+      let buffer = '';
+      let currentEvent = 'message';
+      const handleLine = (line: string) => {
+        const trimmed = line.trim();
+        if (!trimmed || trimmed.startsWith(':')) return;
+        if (trimmed.startsWith('event:')) {
+          currentEvent = trimmed.slice(6).trim();
+          return;
+        }
+        if (!trimmed.startsWith('data:')) return;
+
+        const dataStr = trimmed.slice(5).trim();
+        try {
+          const data = JSON.parse(dataStr);
+          if (isAgUiEventPayload(data) && (currentEvent === 'message' || currentEvent === 'ag_ui_event')) {
+            onEvent({ type: 'ag_ui_event', data });
+          } else if (currentEvent === 'status'
+            || currentEvent === 'run_event'
+            || currentEvent === 'tool'
+            || currentEvent === 'user_input_requested'
+            || currentEvent === 'done'
+            || currentEvent === 'error') {
+            onEvent({ type: currentEvent, data } as MangaAgentRunEvent);
+          }
+        } catch {
+          // Ignore malformed stream chunks.
+        } finally {
+          currentEvent = 'message';
+        }
+      };
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split('\n');
+        buffer = lines.pop() || '';
+        for (const line of lines) {
+          handleLine(line);
+        }
+      }
+      if (buffer.trim()) handleLine(buffer);
+    })
+    .catch((err) => {
+      if (err.name !== 'AbortError') {
+        onEvent({ type: 'error', data: { detail: err.message || '智能体连接中断', requestId } });
+      }
+    });
+
+  return controller;
+}
+
+function isAgUiEventPayload(value: unknown): value is ArtVerseAgUiEvent {
+  if (!value || typeof value !== 'object') return false;
+  const type = (value as { type?: unknown }).type;
+  return typeof type === 'string' && Object.values(EventType).includes(type as EventType);
+}
+
 function createClientRequestId(): string {
   if (typeof crypto !== 'undefined' && 'randomUUID' in crypto) {
     return crypto.randomUUID();
@@ -1452,3 +1552,30 @@ export async function cancelMangaAgentConversationRun(
   return res.json();
 }
 
+export async function resumeMangaAgentRun(
+  chapterId: number,
+  requestId: string,
+  answer: string,
+): Promise<{ reply: string; request_id?: string; requestId?: string }> {
+  const res = await authFetch(`${BASE}/api/chapters/${chapterId}/manga-agent/runs/${requestId}/resume`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ answer }),
+  });
+  if (!res.ok) throw new Error(parseApiError(await res.text()));
+  return res.json();
+}
+
+export function resumeMangaAgentRunStream(
+  chapterId: number,
+  requestId: string,
+  answer: string,
+  onEvent: (event: MangaAgentRunEvent) => void,
+): AbortController {
+  return startMangaAgentEventStream(
+    `${BASE}/api/chapters/${chapterId}/manga-agent/runs/${requestId}/resume-stream`,
+    { answer },
+    requestId,
+    onEvent,
+  );
+}
