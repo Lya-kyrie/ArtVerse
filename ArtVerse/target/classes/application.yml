@@ -91,7 +91,7 @@ artverse:
 sa-token:
   # === Token 基础配置 ===
   token-name: satoken
-  timeout: 3600            # Token 硬过期（秒），60min
+  timeout: 43200           # Token 硬过期（秒），12h
   active-timeout: 1800       # 活跃续期阈值（秒），30min 内有请求则自动续期
   is-concurrent: true      # 允许多端登录
   is-share: false          # 多端不共享 token
