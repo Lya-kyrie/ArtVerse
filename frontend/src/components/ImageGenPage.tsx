@@ -1,8 +1,9 @@
 import type { ChangeEvent } from 'react';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Copy,
   Download,
+  Edit3,
   ImagePlus,
   Loader2,
   Plus,
@@ -48,6 +49,7 @@ interface GenConfig {
 const LS_THEMES_KEY = 'artverse.genThemes';
 const LS_ACTIVE_THEME_KEY = 'artverse.activeGenTheme';
 const LS_GEN_CONFIG_KEY = 'artverse.genConfig';
+const LS_CANVAS_OPEN_KEY = 'artverse.genCanvasOpen';
 
 const RESOLUTIONS = [
   { label: '1024×1024', value: '1024x1024', ratio: '1:1' },
@@ -237,6 +239,7 @@ function Composer({
   onRemoveRef,
   onSend,
   onConfigChange,
+  onPasteImage,
 }: {
   compact?: boolean;
   refFiles: RefFile[];
@@ -249,15 +252,38 @@ function Composer({
   onRemoveRef: (idx: number) => void;
   onSend: () => void;
   onConfigChange: (config: GenConfig) => void;
+  onPasteImage?: (file: File) => void;
 }) {
   const [configOpen, setConfigOpen] = useState(false);
+  const [pasteToast, setPasteToast] = useState(false);
+
+  const handlePaste = (e: React.ClipboardEvent<HTMLTextAreaElement>) => {
+    const items = e.clipboardData.items;
+    let pastedImage: File | null = null;
+    for (let i = 0; i < items.length; i++) {
+      const item = items[i];
+      if (item.type.startsWith('image/')) {
+        const file = item.getAsFile();
+        if (file && file.size <= 10 * 1024 * 1024) {
+          pastedImage = file;
+          break;
+        }
+      }
+    }
+    if (pastedImage && onPasteImage) {
+      e.preventDefault();
+      onPasteImage(pastedImage);
+      setPasteToast(true);
+      setTimeout(() => setPasteToast(false), 2000);
+    }
+  };
 
   return (
     <div className={compact ? 'w-full' : 'w-full max-w-5xl mx-auto'}>
       {/* Split the card: text section has overflow-hidden, footer does not */}
       <div className="rounded-2xl border border-ink-border shadow-2xl shadow-coral/5">
         <div className="overflow-hidden rounded-t-2xl bg-ink-light/85">
-          <div className="p-4 sm:p-5">
+          <div className="relative p-4 sm:p-5">
             {refFiles.length > 0 && (
               <div className="mb-3 flex flex-wrap gap-2">
                 {refFiles.map((rf, i) => (
@@ -284,11 +310,17 @@ function Composer({
                   onSend();
                 }
               }}
-              placeholder="描述你想生成的画面、风格、主体和细节"
+              onPaste={handlePaste}
+              placeholder="描述你想生成的画面、风格、主体和细节（支持粘贴图片作为参考图）"
               disabled={generating}
               rows={compact ? 4 : 5}
               className="w-full resize-none bg-transparent text-[17px] leading-7 text-cream outline-none placeholder:text-cream-dim"
             />
+            {pasteToast && (
+              <div className="absolute right-4 top-4 z-10 animate-fade-in rounded-lg bg-coral/90 px-3 py-1.5 text-xs text-white shadow-lg">
+                已添加参考图
+              </div>
+            )}
           </div>
         </div>
 
@@ -475,6 +507,14 @@ export default function ImageGenPage() {
   const [config, setConfig] = useState<GenConfig>(DEFAULT_CONFIG);
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [copiedId, setCopiedId] = useState<number | null>(null);
+  const [canvasOpen, setCanvasOpen] = useState(() => {
+    try {
+      return localStorage.getItem(LS_CANVAS_OPEN_KEY) === 'true';
+    } catch {
+      return false;
+    }
+  });
+  const [excalidrawKey, setExcalidrawKey] = useState(0);
   const scrollRef = useRef<HTMLDivElement>(null);
 
   function copyImageToClipboard(imageUrl: string, recordId: number) {
@@ -583,6 +623,11 @@ export default function ImageGenPage() {
     saveGenConfig(config);
   }, [config, loaded]);
 
+  // Persist canvas open state
+  useEffect(() => {
+    localStorage.setItem(LS_CANVAS_OPEN_KEY, String(canvasOpen));
+  }, [canvasOpen]);
+
   // Derived states
   const isGenerating = useMemo(
     () => Object.values(generatingThemes).some(Boolean),
@@ -653,23 +698,33 @@ export default function ImageGenPage() {
     setRefFiles([]);
   };
 
+  const addRefFiles = useCallback((filesToAdd: File[]) => {
+    setRefFiles((prev) => {
+      const remaining = 3 - prev.length;
+      const toAdd = Math.min(filesToAdd.length, remaining);
+      const newRefs: RefFile[] = [];
+      for (let i = 0; i < toAdd; i++) {
+        const f = filesToAdd[i];
+        if (f.size > 10 * 1024 * 1024) {
+          alert(`${f.name} 超过 10MB，请压缩后再上传`);
+          continue;
+        }
+        newRefs.push({ file: f, preview: URL.createObjectURL(f) });
+      }
+      return [...prev, ...newRefs].slice(0, 3);
+    });
+  }, []);
+
   const handleAddRef = (e: ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files;
     if (!files) return;
-    const remaining = 3 - refFiles.length;
-    const toAdd = Math.min(files.length, remaining);
-    const newRefs: RefFile[] = [];
-    for (let i = 0; i < toAdd; i++) {
-      const f = files[i];
-      if (f.size > 10 * 1024 * 1024) {
-        alert(`${f.name} 超过 10MB，请压缩后再上传`);
-        continue;
-      }
-      newRefs.push({ file: f, preview: URL.createObjectURL(f) });
-    }
-    setRefFiles((prev) => [...prev, ...newRefs].slice(0, 3));
+    addRefFiles(Array.from(files));
     e.target.value = '';
   };
+
+  const handlePasteImage = useCallback((file: File) => {
+    addRefFiles([file]);
+  }, [addRefFiles]);
 
   const removeRef = (idx: number) => {
     setRefFiles((prev) => {
@@ -765,6 +820,12 @@ export default function ImageGenPage() {
     }
   };
 
+  const handleOpenInCanvas = (_imageUrl: string) => {
+    setCanvasOpen(true);
+    // Increment key to force iframe re-render for fresh Excalidraw session
+    setExcalidrawKey((k) => k + 1);
+  };
+
   if (!loaded || loading) {
     return (
       <div className="flex-1 flex items-center justify-center bg-ink">
@@ -834,6 +895,7 @@ export default function ImageGenPage() {
                 onRemoveRef={removeRef}
                 onSend={handleSend}
                 onConfigChange={setConfig}
+                onPasteImage={handlePasteImage}
               />
             </div>
           </div>
@@ -846,6 +908,27 @@ export default function ImageGenPage() {
                 <span className="text-xs text-cream-dim">
                   ({Math.ceil(messages.filter((m) => m.type === 'ai' && m.record).length)} 张图片)
                 </span>
+              </div>
+              <div className="flex items-center gap-2">
+                {canvasOpen ? (
+                  <button
+                    onClick={() => setCanvasOpen(false)}
+                    className="flex items-center gap-1.5 rounded-lg border border-ink-border px-3 py-1.5 text-xs text-cream-dim hover:text-cream hover:bg-ink-lighter transition-colors"
+                    title="收起画布"
+                  >
+                    <Edit3 size={12} />
+                    画布
+                  </button>
+                ) : (
+                  <button
+                    onClick={() => setCanvasOpen(true)}
+                    className="flex items-center gap-1.5 rounded-lg border border-coral/30 px-3 py-1.5 text-xs text-coral hover:bg-coral/10 transition-colors"
+                    title="打开画布"
+                  >
+                    <Edit3 size={12} />
+                    画布
+                  </button>
+                )}
               </div>
             </div>
 
@@ -910,6 +993,13 @@ export default function ImageGenPage() {
                           <a href={imageUrl} download className="rounded-lg p-2 hover:bg-ink-lighter" title="下载图片">
                             <Download size={14} />
                           </a>
+                          <button
+                            onClick={() => handleOpenInCanvas(imageUrl)}
+                            className="rounded-lg p-2 hover:bg-ink-lighter transition-colors"
+                            title="在画布中标注"
+                          >
+                            <Edit3 size={14} />
+                          </button>
                           <button onClick={() => handleDelete(record.id, msg.id)} className="rounded-lg p-2 hover:bg-ink-lighter" title="删除记录">
                             <Trash2 size={14} />
                           </button>
@@ -949,11 +1039,43 @@ export default function ImageGenPage() {
                 onRemoveRef={removeRef}
                 onSend={handleSend}
                 onConfigChange={setConfig}
+                onPasteImage={handlePasteImage}
               />
             </div>
           </div>
         )}
       </div>
+
+      {/* Excalidraw Canvas Panel */}
+      {canvasOpen && (
+        <div className="flex shrink-0 flex-col border-l border-ink-border bg-ink-light" style={{ width: 520 }}>
+          {/* Panel Header */}
+          <div className="flex h-12 shrink-0 items-center justify-between border-b border-ink-border px-4 bg-ink-light/80">
+            <span className="flex items-center gap-1.5 text-sm font-bold tracking-wide text-coral">
+              <Edit3 size={14} />
+              画布
+            </span>
+            <button
+              onClick={() => setCanvasOpen(false)}
+              className="rounded-lg p-1.5 text-cream-dim hover:text-cream hover:bg-ink-lighter transition-colors"
+              title="收起画布"
+            >
+              <ChevronRight size={16} />
+            </button>
+          </div>
+          {/* Excalidraw iframe */}
+          <div className="flex-1 min-h-0">
+            <iframe
+              key={excalidrawKey}
+              src="https://excalidraw.com/"
+              className="h-full w-full border-0"
+              title="Excalidraw 无限画布"
+              allow="clipboard-read; clipboard-write"
+              sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-downloads"
+            />
+          </div>
+        </div>
+      )}
     </div>
   );
 }
