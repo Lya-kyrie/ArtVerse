@@ -143,17 +143,17 @@ function renderInlineMarkdown(text: string): ReactNode[] {
   const parts = text.split(/(\*\*[^*]+\*\*|`[^`]+`)/g);
   return parts.map((part, index) => {
     if (part.startsWith('**') && part.endsWith('**')) {
-      return <strong key={index} className="font-semibold text-white">{part.slice(2, -2)}</strong>;
+      return <strong key={index} className="font-semibold text-sumi">{part.slice(2, -2)}</strong>;
     }
     if (part.startsWith('`') && part.endsWith('`')) {
-      return <code key={index} className="rounded bg-white/10 px-1 py-0.5 text-[0.9em] text-amber-100">{part.slice(1, -1)}</code>;
+      return <code key={index} className="rounded bg-paper-surface px-1.5 py-0.5 text-[0.9em] text-vermilion font-medium">{part.slice(1, -1)}</code>;
     }
     return <Fragment key={index}>{part}</Fragment>;
   });
 }
 
 function MarkdownMessage({ content }: { content: string }) {
-  return <div className="whitespace-pre-wrap text-sm leading-7 text-gray-200">{renderInlineMarkdown(content)}</div>;
+  return <div className="whitespace-pre-wrap text-sm leading-7 text-sumi">{renderInlineMarkdown(content)}</div>;
 }
 
 function appendExecutionEvent(events: ExecutionEventItem[], event: ExecutionEventItem): ExecutionEventItem[] {
@@ -307,27 +307,27 @@ function inferExecutionEvent(event: Record<string, any>): ExecutionEventItem {
 
 function executionBadgeClass(tone: AgUiEventTone): string {
   return {
-    info: 'border-white/10 bg-white/[0.04] text-gray-300',
-    neutral: 'border-white/10 bg-white/[0.04] text-gray-300',
-    thinking: 'border-amber-300/20 bg-amber-300/[0.08] text-amber-100',
-    tool: 'border-cyan-300/20 bg-cyan-300/[0.08] text-cyan-100',
-    waiting: 'border-violet-300/20 bg-violet-300/[0.08] text-violet-100',
-    success: 'border-emerald-300/20 bg-emerald-300/[0.08] text-emerald-100',
-    warning: 'border-orange-300/20 bg-orange-300/[0.08] text-orange-100',
-    error: 'border-red-300/20 bg-red-300/[0.08] text-red-100',
+    info: 'border-paper-border bg-paper-surface text-sumi-dim',
+    neutral: 'border-paper-border bg-paper-surface text-sumi-dim',
+    thinking: 'border-kinpaku/30 bg-kinpaku-light/50 text-kinpaku',
+    tool: 'border-aizuri/30 bg-aizuri-light/50 text-aizuri',
+    waiting: 'border-vermilion/30 bg-vermilion-light/50 text-vermilion',
+    success: 'border-success/30 bg-success/10 text-success',
+    warning: 'border-warning/30 bg-warning/10 text-warning',
+    error: 'border-vermilion/30 bg-vermilion-light/30 text-vermilion',
   }[tone];
 }
 
 function executionIcon(tone: AgUiEventTone, icon: ExecutionEventItem['icon']) {
   const className = {
-    info: 'text-gray-300',
-    neutral: 'text-gray-300',
-    thinking: 'text-amber-200',
-    tool: 'text-cyan-200',
-    waiting: 'text-violet-200',
-    success: 'text-emerald-200',
-    warning: 'text-orange-200',
-    error: 'text-red-200',
+    info: 'text-sumi-dim',
+    neutral: 'text-sumi-dim',
+    thinking: 'text-kinpaku',
+    tool: 'text-aizuri',
+    waiting: 'text-vermilion',
+    success: 'text-success',
+    warning: 'text-warning',
+    error: 'text-vermilion',
   }[tone];
   const size = 15;
   switch (icon) {
@@ -378,8 +378,6 @@ export default function MangaAgentPage() {
 
   const activeStory = useMemo(() => stories.find((story) => String(story.id) === storyId) ?? null, [stories, storyId]);
   const activeChapter = useMemo(() => chapters.find((chapter) => String(chapter.id) === chapterId) ?? null, [chapters, chapterId]);
-  const activeConversation = useMemo(() => conversations.find((conversation) => conversation.conversationId === conversationId) ?? null, [conversations, conversationId]);
-  const pendingConversation = useMemo(() => conversations.find((conversation) => conversation.conversationId === pendingConversationId) ?? null, [conversations, pendingConversationId]);
   const latestExecutionEvent = executionEvents.length > 0 ? executionEvents[executionEvents.length - 1] : null;
   const showExecutionPanel = executionEvents.length > 0 || !!userInputRequest || !!draftReply || !!activeRequestId || sending;
   const waitingForHuman = !!userInputRequest;
@@ -559,18 +557,6 @@ export default function MangaAgentPage() {
         createdAt: event.createdAt,
       });
     }));
-  }
-
-  function resetLiveState() {
-    setInput('');
-    setUserInputRequest(null);
-    setCustomAnswer('');
-    setDraftReply('');
-    setExecutionEvents([]);
-    setRunStatus('尚未开始运行');
-    setBusinessStatus('');
-    setActiveRequestId(null);
-    activeRunConversationIdRef.current = '';
   }
 
   function recordAgUiEvent(rawEvent: Record<string, any>) {
@@ -868,188 +854,211 @@ export default function MangaAgentPage() {
     }
   }
 
+  const showWelcome = !bootLoading && stories.length === 0;
+
+  if (showWelcome) {
+    return (
+      <div className="flex min-h-0 flex-1 flex-col items-center justify-center bg-paper-base px-6 py-16 text-center">
+        <div className="animate-stamp mb-8 inline-flex h-20 w-20 items-center justify-center rounded-2xl border-2 border-vermilion/20 bg-vermilion-light/20">
+          <Sparkles size={36} className="text-vermilion" />
+        </div>
+        <h1 className="font-display text-4xl font-bold tracking-tight text-sumi">
+          ArtVerse
+        </h1>
+        <p className="mt-2 text-lg text-sumi-dim">AI 漫画创作工坊</p>
+        <div className="brush-divider my-6 w-48" />
+        <p className="max-w-md text-sm leading-relaxed text-sumi-dim">
+          将你的故事，变成漫画分镜。从创建故事开始，AI 将协助你完成角色设定、对话创作、分镜生成和漫画渲染。
+        </p>
+        <div className="mt-10 grid w-full max-w-xl grid-cols-3 gap-4">
+          {[
+            { icon: <BookOpenText size={22} />, label: '创建故事', desc: '设定世界观与角色' },
+            { icon: <MessageSquareText size={22} />, label: 'AI 创作', desc: '对话式推进剧情' },
+            { icon: <Sparkles size={22} />, label: '生成漫画', desc: '分镜转漫画图片' },
+          ].map((step, i) => (
+            <div key={i} className="panel-frame flex flex-col items-center gap-2 p-5">
+              <div className="text-vermilion">{step.icon}</div>
+              <div className="text-sm font-semibold text-sumi">{step.label}</div>
+              <div className="text-xs text-sumi-dim">{step.desc}</div>
+            </div>
+          ))}
+        </div>
+      </div>
+    );
+  }
+
   return (
-    <div className="flex min-h-0 flex-1 flex-col bg-[linear-gradient(180deg,_#09090b_0%,_#111827_45%,_#09090b_100%)] text-gray-100">
-      <header className="border-b border-white/10 bg-black/15 px-5 py-4 backdrop-blur-sm">
+    <div className="flex min-h-0 flex-1 flex-col bg-paper-base">
+      {/* Header */}
+      <header className="border-b border-paper-border bg-paper-surface/80 px-5 py-3 backdrop-blur-sm">
         <div className="flex flex-wrap items-center gap-3">
-          <div className="flex h-11 w-11 items-center justify-center rounded-2xl border border-white/10 bg-white/5">
-            <Sparkles size={18} className="text-amber-300" />
+          <div className="flex h-9 w-9 items-center justify-center rounded-lg border border-vermilion/20 bg-vermilion-light/30">
+            <Sparkles size={16} className="text-vermilion" />
           </div>
           <div className="min-w-0">
-            <h1 className="text-lg font-semibold text-white">漫画智能体</h1>
-            <p className="text-sm text-gray-400">会话历史、AG-UI 事件和业务状态统一展示</p>
+            <h1 className="font-display text-base font-semibold text-sumi">创作工坊</h1>
+            <p className="text-xs text-sumi-dim">{activeStory?.title || '选择故事开始'}{activeChapter ? ` · 第${activeChapter.chapter_number} 章` : ''}</p>
           </div>
         </div>
       </header>
 
       <div className="flex min-h-0 flex-1 gap-4 p-4">
-        <aside className="flex w-[340px] min-w-0 shrink-0 flex-col gap-4 rounded-3xl border border-white/10 bg-black/20 p-4 backdrop-blur-sm">
-          <div className="space-y-4">
-            <div>
-              <p className="mb-2 text-xs uppercase tracking-[0.22em] text-gray-500">故事</p>
-              <select
-                value={storyId}
-                onChange={(e) => setStoryId(e.target.value)}
-                className="w-full rounded-2xl border border-white/10 bg-white/5 px-3 py-3 text-sm text-gray-100 outline-none transition focus:border-amber-400/50"
-              >
-                {stories.length === 0 ? <option value="">暂无故事</option> : null}
-                {stories.map((story) => (
-                  <option key={story.id} value={story.id} className="bg-gray-900 text-gray-100">{story.title}</option>
-                ))}
-              </select>
-            </div>
+        {/* Left sidebar — story/chapter/conversation config */}
+        <aside className="flex w-[300px] min-w-0 shrink-0 flex-col gap-3 rounded-xl border border-paper-border bg-paper-surface/70 p-4">
+          <div>
+            <p className="mb-1.5 text-[11px] font-semibold uppercase tracking-wider text-sumi-faint">故事</p>
+            <select
+              value={storyId}
+              onChange={(e) => setStoryId(e.target.value)}
+              className="w-full rounded-md border border-paper-border bg-paper-base px-3 py-2.5 text-sm text-sumi outline-none transition focus:border-vermilion"
+            >
+              {stories.length === 0 ? <option value="">暂无故事</option> : null}
+              {stories.map((story) => (
+                <option key={story.id} value={story.id}>{story.title}</option>
+              ))}
+            </select>
+          </div>
 
-            <div>
-              <p className="mb-2 text-xs uppercase tracking-[0.22em] text-gray-500">章节</p>
-              <div className="relative">
-                <select
-                  value={chapterId}
-                  onChange={(e) => setChapterId(e.target.value)}
-                  disabled={chapterLoading || chapters.length === 0}
-                  className="w-full rounded-2xl border border-white/10 bg-white/5 px-3 py-3 text-sm text-gray-100 outline-none transition focus:border-amber-400/50 disabled:opacity-40"
-                >
+          <div>
+            <p className="mb-1.5 text-[11px] font-semibold uppercase tracking-wider text-sumi-faint">章节</p>
+            <div className="relative">
+              <select
+                value={chapterId}
+                onChange={(e) => setChapterId(e.target.value)}
+                disabled={chapterLoading || chapters.length === 0}
+                className="w-full rounded-md border border-paper-border bg-paper-base px-3 py-2.5 text-sm text-sumi outline-none transition focus:border-vermilion disabled:opacity-40"
+              >
                 {chapters.length === 0 ? <option value="">暂无章节</option> : null}
                 {chapters.map((chapter) => (
-                  <option key={chapter.id} value={chapter.id} className="bg-gray-900 text-gray-100">
-                    第{chapter.chapter_number} 章
-                  </option>
+                  <option key={chapter.id} value={chapter.id}>第{chapter.chapter_number} 章</option>
                 ))}
               </select>
-                {chapterLoading && <Loader2 size={16} className="absolute right-3 top-1/2 -translate-y-1/2 animate-spin text-gray-500" />}
-              </div>
+              {chapterLoading && <Loader2 size={14} className="absolute right-3 top-1/2 -translate-y-1/2 animate-spin text-sumi-faint" />}
             </div>
+          </div>
 
-            <div className="rounded-3xl border border-amber-300/10 bg-amber-300/[0.06] p-4">
-              <p className="text-xs uppercase tracking-[0.22em] text-amber-200/70">当前工作区</p>
-              <div className="mt-3 space-y-2">
-                <div>
-                  <div className="text-xs text-gray-500">故事标题</div>
-                  <div className="text-sm text-gray-100">{activeStory?.title || '未选择故事'}</div>
+          <div className="rounded-lg border border-kinpaku-light bg-kinpaku-light/40 p-3">
+            <p className="text-[11px] font-semibold uppercase tracking-wider text-kinpaku/80">当前工作区</p>
+            <div className="mt-2 space-y-1.5">
+              <div className="text-xs text-sumi-dim">故事：<span className="text-sumi font-medium">{activeStory?.title || '未选择'}</span></div>
+              <div className="text-xs text-sumi-dim">章节：<span className="text-sumi font-medium">{activeChapter ? `第${activeChapter.chapter_number} 章` : '未选择'}</span></div>
+            </div>
+            <button
+              onClick={() => void startNewConversation()}
+              disabled={!chapterId || conversationLoading}
+              className="mt-3 inline-flex w-full items-center justify-center gap-1.5 rounded-md border border-kinpaku/20 bg-paper-base px-3 py-2 text-xs font-medium text-sumi transition hover:border-kinpaku/40 hover:bg-kinpaku-light/30 disabled:cursor-not-allowed disabled:opacity-40"
+            >
+              <Plus size={14} />
+              新建会话
+            </button>
+          </div>
+
+          <div className="flex-1 min-h-0">
+            <p className="mb-1.5 text-[11px] font-semibold uppercase tracking-wider text-sumi-faint">会话列表</p>
+            <div className="max-h-full space-y-1.5 overflow-y-auto pr-1">
+              {conversations.length === 0 ? (
+                <div className="rounded-md border border-paper-border bg-paper-base/50 px-3 py-4 text-center text-xs text-sumi-faint">
+                  暂无会话
                 </div>
-                <div>
-                  <div className="text-xs text-gray-500">章节</div>
-                  <div className="text-sm text-gray-100">{activeChapter ? `第${activeChapter.chapter_number} 章` : '未选择章节'}</div>
-                </div>
-              </div>
-              <button
-                onClick={() => void startNewConversation()}
-                disabled={!chapterId || conversationLoading}
-                className="mt-4 inline-flex w-full items-center justify-center gap-2 rounded-2xl border border-amber-200/20 bg-black/20 px-3 py-2 text-sm text-amber-100 transition hover:border-amber-200/40 hover:bg-amber-200/10 disabled:cursor-not-allowed disabled:opacity-40"
-              >
-                <Plus size={15} />
-                新建会话
-              </button>
-            </div>
-
-            <div>
-              <p className="mb-2 text-xs uppercase tracking-[0.22em] text-gray-500">会话列表</p>
-              <div className="max-h-[260px] space-y-2 overflow-y-auto pr-1">
-                {conversations.length === 0 ? (
-                  <div className="rounded-2xl border border-white/10 bg-white/[0.03] px-3 py-4 text-sm text-gray-500">
-                    暂无会话
-                  </div>
-                ) : conversations.map((conversation) => {
-                  const selected = conversation.conversationId === conversationId;
-                  const pending = conversation.conversationId === pendingConversationId;
-                  return (
-                    <div
-                      key={conversation.conversationId}
-                      className={`flex items-start gap-2 rounded-2xl border px-3 py-3 transition ${selected ? 'border-amber-300/50 bg-amber-300/10' : 'border-white/10 bg-white/[0.04] hover:border-white/20 hover:bg-white/[0.07]'} ${pending ? 'ring-1 ring-amber-300/40' : ''}`}
-                    >
-                      <button
-                        type="button"
-                        onClick={() => void loadSelectedConversation(conversation.conversationId)}
-                        className="flex min-w-0 flex-1 items-start gap-3 text-left"
-                      >
-                        <div className={`mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-xl ${selected ? 'bg-amber-300 text-gray-950' : 'bg-white/5 text-gray-300'}`}>
-                            {pending ? <Loader2 size={15} className="animate-spin" /> : <MessageSquareText size={15} />}
-                        </div>
-                        <div className="min-w-0 flex-1">
-                          <div className="flex items-center gap-2">
-                            <div className="truncate text-sm font-medium text-white">{conversation.title || '新会话'}</div>
-                            {conversation.isActive && <span className="rounded-full border border-emerald-300/20 bg-emerald-300/10 px-2 py-0.5 text-[11px] text-emerald-100">活动</span>}
-                            {pending && <span className="rounded-full border border-amber-300/20 bg-amber-300/10 px-2 py-0.5 text-[11px] text-amber-100">切换中</span>}
-                          </div>
-                          <div className="mt-1 flex items-center gap-2 text-xs text-gray-500">
-                            <span>{conversationStatusLabel(conversation.status)}</span>
-                            {conversation.updatedAt && <span>{formatTimestamp(conversation.updatedAt)}</span>}
-                          </div>
-                        </div>
-                        <ChevronRight size={14} className="mt-1 shrink-0 text-gray-500" />
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => void deleteConversation(conversation)}
-                        className="mt-0.5 rounded-lg p-1 text-gray-500 transition hover:bg-red-500/10 hover:text-red-200"
-                        title="删除会话"
-                      >
-                        <Archive size={14} />
-                      </button>
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-
-            <div>
-              <p className="mb-2 text-xs uppercase tracking-[0.22em] text-gray-500">模式</p>
-              <div className="grid grid-cols-4 gap-2">
-                {WORKFLOW_ROUTES.map((route) => {
-                  const selected = workflowRoute === route.value;
-                  return (
+              ) : conversations.map((conversation) => {
+                const selected = conversation.conversationId === conversationId;
+                const pending = conversation.conversationId === pendingConversationId;
+                return (
+                  <div
+                    key={conversation.conversationId}
+                    className={`flex items-start gap-2 rounded-md border px-3 py-2.5 transition ${selected ? 'border-vermilion/40 bg-vermilion-light/20' : 'border-paper-border bg-paper-base hover:border-sumi-faint/40'} ${pending ? 'ring-1 ring-vermilion/30' : ''}`}
+                  >
                     <button
-                      key={route.value}
                       type="button"
-                      onClick={() => setWorkflowRoute(route.value)}
-                      disabled={sending || waitingForHuman}
-                      title={route.description}
-                      className={`rounded-2xl border px-3 py-2 text-sm transition disabled:cursor-not-allowed disabled:opacity-50 ${selected ? 'border-amber-300/60 bg-amber-300 text-gray-950' : 'border-white/10 bg-white/[0.04] text-gray-300 hover:border-amber-300/30 hover:bg-white/[0.08] hover:text-white'}`}
+                      onClick={() => void loadSelectedConversation(conversation.conversationId)}
+                      className="flex min-w-0 flex-1 items-start gap-2.5 text-left"
                     >
-                      {route.label}
+                      <div className={`mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-md ${selected ? 'bg-vermilion text-white' : 'bg-paper-surface text-sumi-dim'}`}>
+                        {pending ? <Loader2 size={13} className="animate-spin" /> : <MessageSquareText size={13} />}
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-center gap-1.5">
+                          <div className="truncate text-xs font-medium text-sumi">{conversation.title || '新会话'}</div>
+                          {conversation.isActive && <span className="shrink-0 rounded-full border border-success/20 bg-success/10 px-1.5 py-0.5 text-[10px] text-success">进行中</span>}
+                          {pending && <span className="shrink-0 rounded-full border border-kinpaku/20 bg-kinpaku-light/50 px-1.5 py-0.5 text-[10px] text-kinpaku">切换中</span>}
+                        </div>
+                        <div className="mt-0.5 text-[10px] text-sumi-faint">
+                          {conversationStatusLabel(conversation.status)}
+                          {conversation.updatedAt && <span> · {formatTimestamp(conversation.updatedAt)}</span>}
+                        </div>
+                      </div>
+                      <ChevronRight size={12} className="mt-1 shrink-0 text-sumi-faint" />
                     </button>
-                  );
-                })}
-              </div>
-              <div className="mt-2 text-xs leading-5 text-gray-500">
-                {WORKFLOW_ROUTES.find((route) => route.value === workflowRoute)?.description}
-              </div>
+                    <button
+                      type="button"
+                      onClick={() => void deleteConversation(conversation)}
+                      className="mt-0.5 rounded p-0.5 text-sumi-faint transition hover:bg-vermilion-light/30 hover:text-vermilion"
+                      title="删除会话"
+                    >
+                      <Archive size={12} />
+                    </button>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+
+          <div>
+            <p className="mb-1.5 text-[11px] font-semibold uppercase tracking-wider text-sumi-faint">工作模式</p>
+            <div className="grid grid-cols-2 gap-1.5">
+              {WORKFLOW_ROUTES.map((route) => {
+                const selected = workflowRoute === route.value;
+                return (
+                  <button
+                    key={route.value}
+                    type="button"
+                    onClick={() => setWorkflowRoute(route.value)}
+                    disabled={sending || waitingForHuman}
+                    title={route.description}
+                    className={`rounded-md border px-2.5 py-2 text-xs font-medium transition disabled:cursor-not-allowed disabled:opacity-50 ${selected ? 'border-vermilion/50 bg-vermilion text-white' : 'border-paper-border bg-paper-base text-sumi-dim hover:border-sumi-faint/40 hover:text-sumi'}`}
+                  >
+                    {route.label}
+                  </button>
+                );
+              })}
             </div>
           </div>
         </aside>
 
-        <main className="flex min-h-0 min-w-0 flex-1 flex-col rounded-[32px] border border-white/10 bg-black/20 backdrop-blur-sm">
-          <div className="flex items-center gap-3 border-b border-white/10 px-5 py-4">
-            <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-white/5">
-              <Bot size={18} className="text-gray-200" />
+        {/* Main chat area */}
+        <main className="flex min-h-0 min-w-0 flex-1 flex-col rounded-xl border border-paper-border bg-paper-raised shadow-sm">
+          <div className="flex items-center gap-2.5 border-b border-paper-border px-4 py-3">
+            <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-paper-surface">
+              <Bot size={16} className="text-sumi-dim" />
             </div>
             <div className="min-w-0">
-              <div className="text-sm font-medium text-white">漫画智能体</div>
-              <div className="text-xs text-gray-500">切换会话后自动恢复该会话的最后一条消息和运行状态</div>
+              <div className="text-sm font-medium text-sumi">AI 对话</div>
+              <div className="text-[11px] text-sumi-faint">模式：{routeLabel(workflowRoute)}</div>
             </div>
           </div>
 
-          {error && <div className="mx-4 mt-4 rounded-2xl border border-red-500/30 bg-red-950/40 px-3 py-2 text-sm text-red-200">{error}</div>}
+          {error && <div className="mx-4 mt-3 rounded-md border border-vermilion/20 bg-vermilion-light/20 px-3 py-2 text-xs text-vermilion">{error}</div>}
 
           <div className="min-h-0 flex-1 overflow-y-auto px-4 py-4">
             {bootLoading || conversationLoading ? (
               <div className="flex h-full items-center justify-center">
-                <Loader2 size={28} className="animate-spin text-amber-300" />
+                <Loader2 size={24} className="animate-spin text-vermilion" />
               </div>
             ) : messages.length === 0 && !showExecutionPanel ? (
               <div className="flex h-full flex-col items-center justify-center px-6 text-center">
-                <div className="mb-6 flex h-24 w-24 items-center justify-center rounded-full border border-white/10 bg-white/[0.04]">
-                  <BookOpenText size={34} className="text-amber-200" />
+                <div className="mb-5 flex h-20 w-20 items-center justify-center rounded-full border border-paper-border bg-paper-surface">
+                  <BookOpenText size={30} className="text-vermilion/60" />
                 </div>
-                <h2 className="text-3xl font-semibold text-white">漫画智能体</h2>
-                <p className="mt-3 max-w-xl text-sm leading-7 text-gray-400">
-                  先选择故事、章节和会话，再开始运行。右侧会实时显示 AG-UI 事件、业务状态和智能体文本流。
+                <h2 className="font-display text-2xl font-semibold text-sumi">开始创作</h2>
+                <p className="mt-2 max-w-md text-sm leading-relaxed text-sumi-dim">
+                  选择左侧的故事和章节，输入创作指令，AI 将协助你推进剧情、生成分镜和漫画。
                 </p>
               </div>
             ) : (
               <div className="space-y-3">
                 {messages.map((msg, idx) => (
                   <div key={`${msg.requestId || 'msg'}-${idx}`} className={msg.role === 'user' ? 'flex justify-end' : 'flex justify-start'}>
-                    <div className={'max-w-[85%] rounded-3xl px-4 py-3 shadow-sm ' + (msg.role === 'user' ? 'whitespace-pre-wrap bg-amber-300 text-sm leading-7 text-gray-950' : msg.role === 'system' ? 'border border-white/10 bg-white/[0.04] text-gray-300' : 'border border-white/10 bg-white/[0.04] text-gray-200')}>
+                    <div className={'max-w-[85%] rounded-xl px-4 py-2.5 text-sm leading-relaxed ' + (msg.role === 'user' ? 'bg-vermilion text-white' : msg.role === 'system' ? 'border border-paper-border bg-paper-surface text-sumi-dim' : 'border border-paper-border bg-paper-raised text-sumi shadow-sm')}>
                       {msg.role === 'assistant' || msg.role === 'system' ? <MarkdownMessage content={msg.content} /> : msg.content}
                     </div>
                   </div>
@@ -1057,50 +1066,42 @@ export default function MangaAgentPage() {
 
                 {showExecutionPanel && (
                   <div className="flex justify-start">
-                    <div className="max-w-[90%] rounded-3xl border border-white/10 bg-white/[0.04] px-4 py-4 text-sm text-gray-300">
-                      <div className="flex flex-wrap items-center gap-2">
-                        <span className={`inline-flex items-center gap-2 rounded-full border px-3 py-1 text-xs ${executionBadgeClass(latestExecutionEvent?.tone || (waitingForHuman ? 'waiting' : sending ? 'thinking' : 'neutral'))}`}>
+                    <div className="max-w-[90%] min-w-0 rounded-xl border border-paper-border bg-paper-surface px-4 py-3 text-sm">
+                      <div className="flex flex-wrap items-center gap-1.5">
+                        <span className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 text-[11px] font-medium ${executionBadgeClass(latestExecutionEvent?.tone || (waitingForHuman ? 'waiting' : sending ? 'thinking' : 'neutral'))}`}>
                           {executionIcon(latestExecutionEvent?.tone || (waitingForHuman ? 'waiting' : sending ? 'thinking' : 'neutral'), latestExecutionEvent?.icon || 'clock')}
-                          {waitingForHuman ? '等待用户输入' : runStatus}
+                          {waitingForHuman ? '等待确认' : runStatus}
                         </span>
-                        <span className="inline-flex items-center rounded-full border border-white/10 bg-black/20 px-3 py-1 text-xs text-gray-300">模式 {routeLabel(workflowRoute)}</span>
-                        {businessStatus && <span className="inline-flex items-center rounded-full border border-white/10 bg-black/20 px-3 py-1 text-xs text-gray-300">业务状态 {businessStatus}</span>}
-                        {activeRequestId && <span className="inline-flex items-center rounded-full border border-white/10 bg-black/20 px-3 py-1 text-xs text-gray-300">requestId {formatRequestId(activeRequestId)}</span>}
-                        {latestExecutionEvent?.createdAt && <span className="text-xs text-gray-500">{formatTimestamp(latestExecutionEvent.createdAt)}</span>}
+                        <span className="rounded-full border border-paper-border bg-paper-base px-2.5 py-0.5 text-[11px] text-sumi-dim">模式 {routeLabel(workflowRoute)}</span>
+                        {businessStatus && <span className="rounded-full border border-paper-border bg-paper-base px-2.5 py-0.5 text-[11px] text-sumi-dim">状态 {businessStatus}</span>}
+                        {activeRequestId && <span className="text-[10px] text-sumi-faint font-mono">{formatRequestId(activeRequestId)}</span>}
                         {activeRequestId && (sending || waitingForHuman) && (
-                          <button onClick={() => void cancelActiveRun()} className="inline-flex items-center gap-1 rounded-full border border-red-400/30 bg-red-950/30 px-3 py-1 text-xs text-red-100 transition hover:border-red-300/60 hover:bg-red-900/40">
-                            <Square size={12} />
+                          <button onClick={() => void cancelActiveRun()} className="inline-flex items-center gap-1 rounded-full border border-vermilion/30 bg-vermilion-light/20 px-2.5 py-0.5 text-[11px] text-vermilion transition hover:bg-vermilion-light/40">
+                            <Square size={10} />
                             停止
                           </button>
                         )}
                       </div>
 
-                      <div className="mt-3 rounded-2xl border border-white/10 bg-black/15 px-4 py-3">
-                        <div className="flex items-start gap-3">
-                          <div className="mt-0.5">{executionIcon(latestExecutionEvent?.tone || 'neutral', latestExecutionEvent?.icon || 'clock')}</div>
-                          <div className="min-w-0 flex-1">
-                            <div className="text-sm font-medium text-white">{latestExecutionEvent?.title || '运行面板'}</div>
-                            <div className="mt-1 text-xs leading-5 text-gray-400">{latestExecutionEvent?.detail || '正在等待 AG-UI 事件驱动状态更新'}</div>
-                          </div>
-                        </div>
-                      </div>
-
                       {executionEvents.length > 0 && (
-                        <div className="mt-3 grid gap-2">
-                          {executionEvents.slice(-10).map((event) => (
-                            <div key={event.id} className="flex items-start gap-3 rounded-2xl border border-white/10 bg-black/15 px-3 py-3">
-                              <div className="mt-0.5">{executionIcon(event.tone, event.icon)}</div>
-                              <div className="min-w-0 flex-1">
-                                <div className="flex flex-wrap items-center gap-2">
-                                  <span className="text-sm font-medium text-white">{event.title}</span>
-                                  <span className="text-[11px] uppercase tracking-[0.18em] text-gray-500">{event.type}</span>
+                        <details className="mt-2">
+                          <summary className="cursor-pointer text-xs text-sumi-faint hover:text-sumi-dim transition-colors">查看运行日志 ({executionEvents.length} 条事件)</summary>
+                          <div className="mt-2 grid gap-1.5">
+                            {executionEvents.slice(-10).map((event) => (
+                              <div key={event.id} className="flex items-start gap-2 rounded-md border border-paper-border bg-paper-base/50 px-2.5 py-2 text-xs">
+                                <div className="mt-0.5 shrink-0">{executionIcon(event.tone, event.icon)}</div>
+                                <div className="min-w-0 flex-1">
+                                  <div className="flex flex-wrap items-center gap-1.5">
+                                    <span className="font-medium text-sumi">{event.title}</span>
+                                    <span className="text-[10px] uppercase text-sumi-faint">{event.type}</span>
+                                  </div>
+                                  <div className="mt-0.5 text-sumi-dim">{event.detail}</div>
                                 </div>
-                                <div className="mt-1 text-xs leading-5 text-gray-400">{event.detail}</div>
+                                {event.createdAt && <div className="shrink-0 text-[10px] text-sumi-faint">{formatTimestamp(event.createdAt)}</div>}
                               </div>
-                              {event.createdAt && <div className="shrink-0 text-[11px] text-gray-500">{formatTimestamp(event.createdAt)}</div>}
-                            </div>
-                          ))}
-                        </div>
+                            ))}
+                          </div>
+                        </details>
                       )}
                     </div>
                   </div>
@@ -1108,7 +1109,7 @@ export default function MangaAgentPage() {
 
                 {draftReply && (
                   <div className="flex justify-start">
-                    <div className="max-w-[85%] rounded-3xl border border-white/10 bg-white/[0.04] px-4 py-3 text-sm leading-7 text-gray-200">
+                    <div className="max-w-[85%] rounded-xl border border-paper-border bg-paper-raised px-4 py-2.5 text-sm leading-relaxed shadow-sm">
                       <MarkdownMessage content={draftReply} />
                     </div>
                   </div>
@@ -1116,30 +1117,30 @@ export default function MangaAgentPage() {
 
                 {userInputRequest && (
                   <div className="flex justify-start">
-                    <div className="max-w-[85%] rounded-3xl border border-amber-300/20 bg-amber-300/[0.06] px-4 py-4 text-sm text-gray-100">
-                      <div className="text-xs uppercase tracking-[0.18em] text-amber-200/70">人工介入</div>
-                      <div className="mt-2 text-base font-medium text-white">{userInputRequest.question}</div>
-                      {userInputRequest.reason && <div className="mt-1 text-xs text-gray-400">{userInputRequest.reason}</div>}
-                      <div className="mt-4 space-y-2">
+                    <div className="max-w-[85%] rounded-xl border border-kinpaku/30 bg-kinpaku-light/40 px-4 py-3 text-sm">
+                      <div className="text-[11px] font-semibold uppercase tracking-wider text-kinpaku/80">需要确认</div>
+                      <div className="mt-1.5 text-sm font-medium text-sumi">{userInputRequest.question}</div>
+                      {userInputRequest.reason && <div className="mt-1 text-xs text-sumi-dim">{userInputRequest.reason}</div>}
+                      <div className="mt-3 space-y-1.5">
                         {userInputRequest.options.map((option) => (
-                          <button key={option.id} onClick={() => void resumeWithAnswer(option.label)} className="w-full rounded-2xl border border-white/10 bg-black/20 px-3 py-3 text-left transition hover:border-amber-300/40 hover:bg-white/[0.06]">
-                            <div className="flex items-center gap-2 text-sm font-medium text-white">
+                          <button key={option.id} onClick={() => void resumeWithAnswer(option.label)} className="w-full rounded-md border border-paper-border bg-paper-base px-3 py-2.5 text-left text-xs transition hover:border-vermilion/30 hover:bg-vermilion-light/10">
+                            <div className="flex items-center gap-2 font-medium text-sumi">
                               <span>{option.label}</span>
-                              {option.recommended && <span className="rounded-full bg-amber-300/15 px-2 py-0.5 text-[11px] text-amber-100">推荐</span>}
+                              {option.recommended && <span className="rounded-full bg-kinpaku-light px-1.5 py-0.5 text-[10px] text-kinpaku">推荐</span>}
                             </div>
-                            {option.description && <div className="mt-1 text-xs leading-5 text-gray-400">{option.description}</div>}
+                            {option.description && <div className="mt-0.5 text-sumi-dim">{option.description}</div>}
                           </button>
                         ))}
                       </div>
                       {userInputRequest.allowFreeText && (
-                        <div className="mt-3 flex gap-2">
+                        <div className="mt-2.5 flex gap-2">
                           <input
                             value={customAnswer}
                             onChange={(e) => setCustomAnswer(e.target.value)}
-                            placeholder="输入其他答案"
-                            className="min-w-0 flex-1 rounded-2xl border border-white/10 bg-black/20 px-3 py-2 text-sm text-gray-100 outline-none focus:border-amber-300/40"
+                            placeholder="输入你的回答"
+                            className="min-w-0 flex-1 rounded-md border border-paper-border bg-paper-base px-3 py-2 text-xs text-sumi outline-none transition focus:border-vermilion"
                           />
-                          <button onClick={() => void resumeWithAnswer(customAnswer)} disabled={!customAnswer.trim()} className="rounded-2xl bg-amber-300 px-4 py-2 text-sm font-medium text-gray-950 disabled:cursor-not-allowed disabled:opacity-40">
+                          <button onClick={() => void resumeWithAnswer(customAnswer)} disabled={!customAnswer.trim()} className="rounded-md bg-vermilion px-3 py-2 text-xs font-medium text-white disabled:cursor-not-allowed disabled:opacity-40 hover:bg-vermilion-hover transition-colors">
                             继续
                           </button>
                         </div>
@@ -1153,8 +1154,8 @@ export default function MangaAgentPage() {
             )}
           </div>
 
-          <div className="border-t border-white/10 p-4">
-            <div className="flex gap-3">
+          <div className="border-t border-paper-border p-3">
+            <div className="flex gap-2.5">
               <textarea
                 value={input}
                 onChange={(e) => setInput(e.target.value)}
@@ -1165,15 +1166,15 @@ export default function MangaAgentPage() {
                   }
                 }}
                 rows={2}
-                placeholder={chapterId ? '例如：检查这一章能否直接转成分镜？' : '请先选择故事和章节'}
-                className="min-h-[58px] flex-1 resize-none rounded-3xl border border-white/10 bg-white/[0.04] px-4 py-3 text-sm text-gray-100 outline-none transition placeholder:text-gray-500 focus:border-amber-300/40"
+                placeholder={chapterId ? '输入创作指令，例如：检查这一章能否直接转成分镜？' : '请先选择故事和章节'}
+                className="min-h-[52px] flex-1 resize-none rounded-lg border border-paper-border bg-paper-surface px-3.5 py-2.5 text-sm text-sumi outline-none transition placeholder:text-sumi-faint focus:border-vermilion"
               />
               <button
                 onClick={() => void startRun()}
                 disabled={sending || conversationLoading || !chapterId || !input.trim()}
-                className="inline-flex h-auto min-w-[110px] items-center justify-center gap-2 rounded-3xl bg-amber-300 px-4 py-3 text-sm font-medium text-gray-950 transition hover:bg-amber-200 disabled:cursor-not-allowed disabled:opacity-40"
+                className="inline-flex h-auto min-w-[100px] items-center justify-center gap-1.5 rounded-lg bg-vermilion px-4 py-2.5 text-sm font-medium text-white transition hover:bg-vermilion-hover disabled:cursor-not-allowed disabled:opacity-40"
               >
-                {sending ? <Loader2 size={16} className="animate-spin" /> : <Send size={16} />}
+                {sending ? <Loader2 size={15} className="animate-spin" /> : <Send size={15} />}
                 发送
               </button>
             </div>

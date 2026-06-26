@@ -291,7 +291,7 @@ function Composer({
                     <img src={rf.preview} alt={`参考图 ${i + 1}`} className="h-full w-full object-cover" />
                     <button
                       onClick={() => onRemoveRef(i)}
-                      className="absolute right-0 top-0 rounded-bl-md bg-black/70 p-0.5 text-cream"
+                      className="absolute right-0 top-0 rounded-bl-md bg-sumi/60 p-0.5 text-white"
                       aria-label={`移除参考图 ${i + 1}`}
                     >
                       <X size={10} />
@@ -1009,7 +1009,7 @@ export default function ImageGenPage() {
                   }
 
                   return (
-                    <div key={msg.id} className="rounded-2xl border border-red-800/40 bg-red-900/20 px-4 py-3 text-sm text-red-300">
+                    <div key={msg.id} className="rounded-md border border-vermilion/20 bg-vermilion-light/20 px-4 py-3 text-sm text-vermilion">
                       {msg.prompt}
                     </div>
                   );
