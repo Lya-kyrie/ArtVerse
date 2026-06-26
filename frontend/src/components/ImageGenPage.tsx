@@ -4,6 +4,7 @@ import {
   Copy,
   Download,
   Edit3,
+  GripVertical,
   ImagePlus,
   Loader2,
   Plus,
@@ -50,6 +51,7 @@ const LS_THEMES_KEY = 'artverse.genThemes';
 const LS_ACTIVE_THEME_KEY = 'artverse.activeGenTheme';
 const LS_GEN_CONFIG_KEY = 'artverse.genConfig';
 const LS_CANVAS_OPEN_KEY = 'artverse.genCanvasOpen';
+const LS_CANVAS_WIDTH_KEY = 'artverse.genCanvasWidth';
 
 const RESOLUTIONS = [
   { label: '1024×1024', value: '1024x1024', ratio: '1:1' },
@@ -506,7 +508,7 @@ export default function ImageGenPage() {
   const [generatingThemes, setGeneratingThemes] = useState<Record<string, boolean>>({});
   const [config, setConfig] = useState<GenConfig>(DEFAULT_CONFIG);
   const [sidebarOpen, setSidebarOpen] = useState(true);
-  const [copiedId, setCopiedId] = useState<number | null>(null);
+  const [copiedId, setCopiedId] = useState<string | null>(null);
   const [canvasOpen, setCanvasOpen] = useState(() => {
     try {
       return localStorage.getItem(LS_CANVAS_OPEN_KEY) === 'true';
@@ -514,8 +516,27 @@ export default function ImageGenPage() {
       return false;
     }
   });
+  const [canvasWidth, setCanvasWidth] = useState(() => {
+    try {
+      const saved = localStorage.getItem(LS_CANVAS_WIDTH_KEY);
+      if (saved) {
+        const w = parseInt(saved, 10);
+        if (!isNaN(w) && w >= 360 && w <= 1200) return w;
+      }
+    } catch { /* ignore */ }
+    return 520;
+  });
   const [excalidrawKey, setExcalidrawKey] = useState(0);
+  const [pasteHint, setPasteHint] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
+  const canvasPanelRef = useRef<HTMLDivElement>(null);
+  const abortRef = useRef<AbortController | null>(null);
+  const dragRef = useRef<{
+    isDragging: boolean;
+    lastX: number;
+    currentWidth: number;
+  }>({ isDragging: false, lastX: 0, currentWidth: 0 });
 
   function copyImageToClipboard(imageUrl: string, recordId: number) {
     const fullUrl = imageUrl.startsWith('http') ? imageUrl : window.location.origin + imageUrl;
@@ -545,7 +566,7 @@ export default function ImageGenPage() {
       .then((pngBlob) => {
         if (!navigator.clipboard) throw new Error('navigator.clipboard unavailable');
         return navigator.clipboard.write([new ClipboardItem({ 'image/png': pngBlob })]).then(() => {
-          setCopiedId(recordId);
+          setCopiedId(String(recordId));
           setTimeout(() => setCopiedId(null), 1500);
         });
       })
@@ -627,6 +648,11 @@ export default function ImageGenPage() {
   useEffect(() => {
     localStorage.setItem(LS_CANVAS_OPEN_KEY, String(canvasOpen));
   }, [canvasOpen]);
+
+  // Persist canvas width
+  useEffect(() => {
+    localStorage.setItem(LS_CANVAS_WIDTH_KEY, String(canvasWidth));
+  }, [canvasWidth]);
 
   // Derived states
   const isGenerating = useMemo(
@@ -737,6 +763,14 @@ export default function ImageGenPage() {
     if (!prompt.trim() && refFiles.length === 0) return;
     if (!activeThemeId) return;
 
+    // Abort any previous generation for this theme
+    if (abortRef.current) {
+      abortRef.current.abort();
+      abortRef.current = null;
+    }
+    const controller = new AbortController();
+    abortRef.current = controller;
+
     // Capture the target theme ID at the moment of sending,
     // so that switching themes mid-generation doesn't misroute the result.
     const targetThemeId = activeThemeId;
@@ -753,7 +787,7 @@ export default function ImageGenPage() {
       ),
     );
 
-    const promptText = prompt.trim();
+    const promptText = prompt.trim() || '仅使用参考图生成';
     const filesToSend = refFiles;
     const currentConfig = config;
     setPrompt('');
@@ -776,7 +810,10 @@ export default function ImageGenPage() {
         promptText,
         refBase64.length > 0 ? refBase64 : undefined,
         currentConfig.resolution,
+        controller.signal,
       );
+      // Clear abort ref if this request completed
+      if (abortRef.current === controller) abortRef.current = null;
       setThemes((prev) =>
         prev.map((t) =>
           t.id === targetThemeId
@@ -785,6 +822,8 @@ export default function ImageGenPage() {
         ),
       );
     } catch (e: any) {
+      // If aborted, don't show error — user is editing
+      if (e instanceof DOMException && e.name === 'AbortError') return;
       setThemes((prev) =>
         prev.map((t) =>
           t.id === targetThemeId
@@ -799,6 +838,7 @@ export default function ImageGenPage() {
         ),
       );
     } finally {
+      if (abortRef.current === controller) abortRef.current = null;
       setGeneratingThemes((prev) => ({ ...prev, [targetThemeId]: false }));
     }
   };
@@ -820,11 +860,170 @@ export default function ImageGenPage() {
     }
   };
 
-  const handleOpenInCanvas = (_imageUrl: string) => {
-    setCanvasOpen(true);
-    // Increment key to force iframe re-render for fresh Excalidraw session
-    setExcalidrawKey((k) => k + 1);
+  const handleDeleteUserMessage = (msgId: string) => {
+    if (!activeThemeId) return;
+    setThemes((prev) =>
+      prev.map((t) =>
+        t.id === activeThemeId
+          ? { ...t, messages: t.messages.filter((m) => m.id !== msgId) }
+          : t,
+      ),
+    );
   };
+
+  const handleCopyMessage = (text: string, msgId: string) => {
+    navigator.clipboard.writeText(text).then(() => {
+      setCopiedId(msgId);
+      setTimeout(() => setCopiedId(null), 1500);
+    }).catch(() => {});
+  };
+
+  const handleEditMessage = (msg: Message) => {
+    // Abort ongoing generation if editing while generating
+    if (abortRef.current) {
+      abortRef.current.abort();
+      abortRef.current = null;
+    }
+    // Fill the prompt text into the composer
+    setPrompt(msg.prompt || '');
+
+    // Restore reference images from stored blob URLs
+    if (msg.refThumbnails && msg.refThumbnails.length > 0) {
+      Promise.all(
+        msg.refThumbnails.map(async (url) => {
+          const resp = await fetch(url);
+          const blob = await resp.blob();
+          const file = new File([blob], `ref-${Date.now()}.png`, { type: blob.type });
+          return { file, preview: URL.createObjectURL(file) } as RefFile;
+        }),
+      ).then((refs) => {
+        setRefFiles(refs.slice(0, 3));
+      });
+    }
+
+    // Remove the message and restore generation config from the AI response that follows this user message
+    if (activeThemeId) {
+      setThemes((prev) => {
+        const theme = prev.find((t) => t.id === activeThemeId);
+        if (theme) {
+          const msgIndex = theme.messages.findIndex((m) => m.id === msg.id);
+          const nextMsg = theme.messages[msgIndex + 1];
+          if (nextMsg?.type === 'ai' && nextMsg.record?.size) {
+            const size = nextMsg.record.size;
+            const matching = RESOLUTIONS.find((r) => r.value === size);
+            if (matching) {
+              setConfig({ resolution: matching.value, aspectRatio: matching.ratio });
+            }
+          }
+        }
+        return prev.map((t) =>
+          t.id === activeThemeId
+            ? { ...t, messages: t.messages.filter((m) => m.id !== msg.id) }
+            : t,
+        );
+      });
+    }
+  };
+
+  const handleOpenInCanvas = (imageUrl: string) => {
+    // Reset Excalidraw to blank state
+    setExcalidrawKey((k) => k + 1);
+    setCanvasOpen(true);
+    // Show paste hint persistently until user dismisses it
+    setPasteHint(true);
+    // Pre-fill prompt with canvas annotation instructions
+    setPrompt('按照画布标注修改图片');
+    // Copy image to clipboard so user can paste it into Excalidraw
+    // Also add the original image as a reference in the chat composer
+    const fullUrl = imageUrl.startsWith('http') ? imageUrl : window.location.origin + imageUrl;
+    fetch(fullUrl)
+      .then((r) => {
+        if (!r.ok) throw new Error('HTTP ' + r.status);
+        return r.blob();
+      })
+      .then((blob) => {
+        // Add original image as reference in the chat
+        const file = new File([blob], `canvas-original-${Date.now()}.png`, { type: 'image/png' });
+        addRefFiles([file]);
+        return createImageBitmap(blob);
+      })
+      .then((bitmap) => {
+        const canvas = document.createElement('canvas');
+        canvas.width = bitmap.width;
+        canvas.height = bitmap.height;
+        const ctx = canvas.getContext('2d');
+        if (!ctx) throw new Error('No 2D context');
+        ctx.drawImage(bitmap, 0, 0);
+        bitmap.close();
+        return new Promise<Blob>((resolve, reject) => {
+          canvas.toBlob((b) => {
+            canvas.remove();
+            if (b) resolve(b);
+            else reject(new Error('toBlob returned null'));
+          }, 'image/png');
+        });
+      })
+      .then((pngBlob) => {
+        if (!navigator.clipboard) return;
+        navigator.clipboard.write([new ClipboardItem({ 'image/png': pngBlob })]).catch(() => {
+          // Silently fail — user can still manually copy
+        });
+      })
+      .catch(() => {
+        // Silently fail — user can still manually copy
+      });
+  };
+
+  const handleDividerMouseDown = useCallback(
+    (e: React.PointerEvent) => {
+      e.preventDefault();
+      const panel = canvasPanelRef.current;
+      const container = containerRef.current;
+      if (!panel || !container) return;
+      // Capture pointer on the divider element so we get events even outside the window
+      (e.target as HTMLElement).setPointerCapture(e.pointerId);
+
+      const containerRect = container.getBoundingClientRect();
+      const cw = containerRect.width;
+      const maxW = cw * 0.7;
+
+      const d = dragRef.current;
+      d.isDragging = true;
+      d.lastX = e.clientX;
+      d.currentWidth = Math.round(Math.min(Math.max(canvasWidth, 360), maxW));
+
+      // Ensure DOM matches initial state to avoid flicker
+      panel.style.width = d.currentWidth + 'px';
+
+      const maxAllowed = maxW;
+
+      const handlePointerMove = (ev: PointerEvent) => {
+        if (!dragRef.current.isDragging) return;
+        const delta = dragRef.current.lastX - ev.clientX;
+        dragRef.current.lastX = ev.clientX;
+        const raw = dragRef.current.currentWidth + delta;
+        dragRef.current.currentWidth = Math.round(Math.min(Math.max(raw, 360), maxAllowed));
+        panel.style.width = dragRef.current.currentWidth + 'px';
+      };
+
+      const handlePointerUp = () => {
+        if (!dragRef.current.isDragging) return;
+        dragRef.current.isDragging = false;
+        document.removeEventListener('pointermove', handlePointerMove);
+        document.removeEventListener('pointerup', handlePointerUp);
+        document.body.style.cursor = '';
+        document.body.style.userSelect = '';
+        // Sync final width back to React state
+        setCanvasWidth(dragRef.current.currentWidth);
+      };
+
+      document.addEventListener('pointermove', handlePointerMove);
+      document.addEventListener('pointerup', handlePointerUp);
+      document.body.style.cursor = 'col-resize';
+      document.body.style.userSelect = 'none';
+    },
+    [canvasWidth],
+  );
 
   if (!loaded || loading) {
     return (
@@ -835,7 +1034,7 @@ export default function ImageGenPage() {
   }
 
   return (
-    <div className="flex-1 min-h-0 bg-ink text-cream flex">
+    <div ref={containerRef} className="flex-1 min-h-0 bg-ink text-cream flex">
       {/* Theme Sidebar */}
       <ThemeSidebar
         themes={themes}
@@ -937,7 +1136,7 @@ export default function ImageGenPage() {
                 {messages.map((msg) => {
                   if (msg.type === 'user') {
                     return (
-                      <div key={msg.id} className="flex justify-end">
+                      <div key={msg.id} className="group flex justify-end">
                         <div className="max-w-[78%]">
                           <div className="inline-flex items-center gap-2 rounded-2xl border border-ink-border bg-ink-lighter px-4 py-3 text-sm text-cream shadow-sm">
                             {msg.refThumbnails && msg.refThumbnails.length > 0 && (
@@ -948,6 +1147,29 @@ export default function ImageGenPage() {
                               </div>
                             )}
                             <span className="whitespace-pre-wrap break-words">{msg.prompt}</span>
+                          </div>
+                          <div className="mt-1 flex justify-end gap-1 opacity-0 transition-opacity group-hover:opacity-100">
+                            <button
+                              onClick={() => handleCopyMessage(msg.prompt || '', msg.id)}
+                              className="rounded-md p-1.5 transition-colors"
+                              title={copiedId === msg.id ? '已复制' : '复制提示词'}
+                            >
+                              {copiedId === msg.id ? <Check size={14} className="text-coral" /> : <Copy size={14} className="text-cream-dim" />}
+                            </button>
+                            <button
+                              onClick={() => handleEditMessage(msg)}
+                              className="rounded-md p-1.5 text-cream-dim hover:text-coral hover:bg-ink-lighter transition-colors"
+                              title="修改提示词"
+                            >
+                              <Edit3 size={14} />
+                            </button>
+                            <button
+                              onClick={() => handleDeleteUserMessage(msg.id)}
+                              className="rounded-md p-1.5 text-cream-dim hover:text-red-400 hover:bg-ink-lighter transition-colors"
+                              title="删除这条消息"
+                            >
+                              <Trash2 size={14} />
+                            </button>
                           </div>
                         </div>
                       </div>
@@ -980,12 +1202,12 @@ export default function ImageGenPage() {
 
                         <div className="flex items-center gap-2 text-cream-dim">
                           <button
-                            className="rounded-lg p-2 hover:bg-ink-lighter transition-colors flex items-center gap-1"
+                            className="rounded-lg p-2 hover:bg-ink-lighter transition-colors"
                             title="复制图片到剪贴板"
                             onClick={() => copyImageToClipboard(imageUrl, record.id)}
                           >
-                            {copiedId === record.id ? (
-                              <span className="text-xs text-coral">已复制</span>
+                            {copiedId === String(record.id) ? (
+                              <Check size={14} className="text-coral" />
                             ) : (
                               <Copy size={14} />
                             )}
@@ -1046,9 +1268,29 @@ export default function ImageGenPage() {
         )}
       </div>
 
-      {/* Excalidraw Canvas Panel */}
-      {canvasOpen && (
-        <div className="flex shrink-0 flex-col border-l border-ink-border bg-ink-light" style={{ width: 520 }}>
+      {/* Draggable Divider — always mounted, hidden when closed */}
+      <div
+        className={(
+          'flex w-[5px] shrink-0 cursor-col-resize items-center justify-center bg-transparent transition-colors hover:bg-coral/40 active:bg-coral/60 group touch-none '
+          + (canvasOpen ? '' : 'hidden')
+        )}
+        onPointerDown={handleDividerMouseDown}
+        title="拖拽调整画布宽度"
+      >
+        <div className="flex h-8 w-0.5 items-center justify-center rounded-full bg-ink-muted opacity-0 transition-opacity group-hover:opacity-100">
+          <GripVertical size={10} className="text-ink-muted" />
+        </div>
+      </div>
+
+      {/* Excalidraw Canvas Panel — always mounted, hidden when closed */}
+      <div
+        ref={canvasPanelRef}
+        className={(
+          'flex shrink-0 flex-col border-l border-ink-border bg-ink-light '
+          + (canvasOpen ? '' : 'hidden')
+        )}
+        style={{ width: canvasWidth }}
+      >
           {/* Panel Header */}
           <div className="flex h-12 shrink-0 items-center justify-between border-b border-ink-border px-4 bg-ink-light/80">
             <span className="flex items-center gap-1.5 text-sm font-bold tracking-wide text-coral">
@@ -1063,6 +1305,19 @@ export default function ImageGenPage() {
               <ChevronRight size={16} />
             </button>
           </div>
+          {/* Paste hint banner */}
+          {pasteHint && (
+            <div className="flex shrink-0 items-center justify-between gap-2 bg-coral/15 px-4 py-2 text-xs text-coral border-b border-coral/20 animate-fade-in">
+              <span>原图已添加到聊天框，在画布中标注后粘贴回来一起发送</span>
+              <button
+                onClick={() => setPasteHint(false)}
+                className="shrink-0 rounded p-0.5 text-coral/60 hover:text-coral hover:bg-coral/20 transition-colors"
+                aria-label="关闭提示"
+              >
+                <X size={14} />
+              </button>
+            </div>
+          )}
           {/* Excalidraw iframe */}
           <div className="flex-1 min-h-0">
             <iframe
@@ -1075,7 +1330,6 @@ export default function ImageGenPage() {
             />
           </div>
         </div>
-      )}
     </div>
   );
 }
