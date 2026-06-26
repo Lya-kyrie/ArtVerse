@@ -291,7 +291,7 @@ export default function MyWorksPage() {
               <div className="mt-2 text-2xl font-semibold text-cream">{works.length}</div>
             </div>
             <div className="rounded-lg border border-ink-border bg-ink-light p-3">
-              <div className="flex items-center gap-2 text-xs text-cream-dim"><Globe size={14} className="text-green-400" />{text.publishedWorks}</div>
+              <div className="flex items-center gap-2 text-xs text-cream-dim"><Globe size={14} className="text-success" />{text.publishedWorks}</div>
               <div className="mt-2 text-2xl font-semibold text-cream">{dashboardStats.publishedWorks}</div>
             </div>
             <div className="rounded-lg border border-ink-border bg-ink-light p-3">
@@ -338,7 +338,7 @@ export default function MyWorksPage() {
                           <h3 className="truncate text-base font-semibold text-cream">{work.title}</h3>
                           <p className="mt-1 line-clamp-2 text-sm leading-relaxed text-cream-dim">{work.description || text.noDescription}</p>
                         </div>
-                        <span className={`shrink-0 rounded-md border px-2 py-1 text-xs ${work.is_published ? 'border-green-800/60 bg-green-900/30 text-green-400' : 'border-ink-border bg-ink text-cream-dim'}`}>{work.is_published ? text.published : text.draft}</span>
+                        <span className={`shrink-0 rounded-md border px-2 py-1 text-xs ${work.is_published ? 'border-success/30 bg-success/10 text-success' : 'border-ink-border bg-ink text-cream-dim'}`}>{work.is_published ? text.published : text.draft}</span>
                       </div>
                       <div className="mt-4 grid grid-cols-3 gap-2 text-xs text-cream-dim">
                         <span className="rounded-md bg-ink px-2 py-1.5">{text.totalPrefix} {stats.totalChapters} {text.chapterUnit}</span>
@@ -389,7 +389,7 @@ export default function MyWorksPage() {
                 <h1 className="mt-4 text-xl font-semibold text-cream">{selectedWork.title}</h1>
                 <p className="mt-2 text-sm leading-relaxed text-cream-dim">{selectedWork.description || text.noDescription}</p>
                 <div className="mt-4 flex flex-wrap gap-2 text-xs">
-                  <span className={`rounded-md border px-2 py-1 ${selectedWork.is_published ? 'border-green-800/60 bg-green-900/30 text-green-400' : 'border-ink-border bg-ink text-cream-dim'}`}>{selectedWork.is_published ? text.publicWork : text.privateWork}</span>
+                  <span className={`rounded-md border px-2 py-1 ${selectedWork.is_published ? 'border-success/30 bg-success/10 text-success' : 'border-ink-border bg-ink text-cream-dim'}`}>{selectedWork.is_published ? text.publicWork : text.privateWork}</span>
                   <span className="rounded-md border border-ink-border bg-ink px-2 py-1 text-cream-dim">{text.createdAt} {formatDate(selectedWork.created_at)}</span>
                 </div>
               </div>
@@ -432,7 +432,7 @@ export default function MyWorksPage() {
                         </div>
                         <span className="text-sm font-medium text-cream-dim">{chapterTitle(chapter.chapter_number)}</span>
                         <input value={chapter.display_title || ''} onChange={(event) => updateDisplayTitle(chapter.id, event.target.value)} placeholder={chapterTitle(chapter.chapter_number)} className="min-w-0 rounded-md border border-ink-border bg-ink-lighter px-3 py-2 text-sm text-cream placeholder-ink-muted focus:border-coral focus:outline-none" />
-                        <span className={`w-fit rounded-md border px-2 py-1 text-xs ${chapter.is_published ? 'border-green-800/60 bg-green-900/30 text-green-400' : 'border-ink-border bg-ink-lighter text-cream-dim'}`}>{chapter.is_published ? text.publishedChapterCount : text.draft}</span>
+                        <span className={`w-fit rounded-md border px-2 py-1 text-xs ${chapter.is_published ? 'border-success/30 bg-success/10 text-success' : 'border-ink-border bg-ink-lighter text-cream-dim'}`}>{chapter.is_published ? text.publishedChapterCount : text.draft}</span>
                         <label className="flex items-center gap-2 text-xs text-cream-dim">
                           <input type="checkbox" checked={chapter.is_published} onChange={() => toggleChapter(chapter.id)} className="h-4 w-4 rounded border-ink-muted bg-ink-lighter text-coral focus:border-coral" />{text.visible}
                         </label>
@@ -457,8 +457,8 @@ export default function MyWorksPage() {
     const prevDisabled = currentReaderIdx <= 0;
 
     return (
-      <div className="flex-1 flex flex-col min-h-0 bg-black">
-        <div className="flex items-center justify-between border-b border-ink-border bg-ink px-3 py-2.5 md:px-5 shrink-0">
+      <div className="flex-1 flex flex-col min-h-0 bg-paper-base">
+        <div className="flex items-center justify-between border-b border-paper-border bg-paper-surface px-3 py-2.5 md:px-5 shrink-0">
           <button onClick={closeReader} className="flex items-center gap-1.5 text-sm text-cream-dim transition-colors hover:text-cream"><ChevronLeft size={18} />{text.back}</button>
           <div className="flex min-w-0 items-center gap-2 px-3">
             <span className="truncate text-sm font-medium text-cream">{selectedWork.title}</span>
