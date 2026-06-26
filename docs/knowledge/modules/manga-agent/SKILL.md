@@ -22,6 +22,7 @@ Image generation is not performed by the Manga Agent. The agent prepares or refi
 - Public application facade: `ArtVerse/src/main/java/com/artverse/application/MangaAgentService.java`. Depends on `MangaAgentConversationService` for conversation/message operations, `MangaWorkflowOrchestrator` for execution, `MangaAgentRunService` for run lifecycle, and `MangaAgentRunEventPublisher` for SSE.
 - Workflow execution orchestration: `ArtVerse/src/main/java/com/artverse/application/workflow/MangaWorkflowOrchestrator.java`.
 - Workflow node dispatch and handlers: `ArtVerse/src/main/java/com/artverse/application/workflow/MangaWorkflowNodeRegistry.java`, `ArtVerse/src/main/java/com/artverse/application/workflow/MangaWorkflowNodeHandler.java`, and `ArtVerse/src/main/java/com/artverse/application/workflow/nodes/`.
+- User intent classification for automatic routing: `ArtVerse/src/main/java/com/artverse/application/workflow/MangaIntentClassifierService.java` and `MangaIntentResult.java`.
 - Conversation management and prompt construction: `ArtVerse/src/main/java/com/artverse/application/MangaAgentConversationService.java`.
 - Run state and event snapshots: `ArtVerse/src/main/java/com/artverse/application/MangaAgentRunService.java`.
 - SSE publishing and event persistence: `ArtVerse/src/main/java/com/artverse/application/MangaAgentRunEventPublisher.java`.
@@ -35,24 +36,25 @@ Image generation is not performed by the Manga Agent. The agent prepares or refi
 - AgentScope event mapping: inlined into MangaDirectorAgentNode as mapAgentScopeEvent() private method.
 - AgentScope v2 migration plan: `docs/knowledge/modules/manga-agent/agentscope-v2-refactor-plan.md`.
 - Frontend API and stream parser: `frontend/src/api.ts`.
-- Frontend UI state machine: `frontend/src/components/MangaAgentPage.tsx`.
+- Frontend UI state machine: `frontend/src/components/MangaAgentPage.tsx` (chapter conversation list, Chinese-only labels, AG-UI event panel).
 - Frontend navigation shell: `frontend/src/App.tsx`; main nav `home` renders `MangaAgentPage`, while `workspace` renders the story/workspace list (`HomePage`).
 
 ## Core Flow
 
 The controller resolves the current user and delegates to `MangaAgentService`. Synchronous calls return a final reply. Stream calls return an `SseEmitter` and run on `mangaGenerationExecutor`.
 
-For a new run, `MangaAgentService` resolves the active `MangaAgentConversation` unless a conversation id is supplied, opens the per-run tool tracking scope, and delegates workflow execution to `MangaWorkflowOrchestrator`. The orchestrator validates the message, builds a workflow context snapshot, checks idempotency through `GenerationGuardService.executeMangaAgentRun`, and dispatches to a `MangaWorkflowNodeHandler` through `MangaWorkflowNodeRegistry`.
+For a new run, `MangaAgentService` resolves the active `MangaAgentConversation` unless a conversation id is supplied, opens the per-run tool tracking scope, and delegates workflow execution to `MangaWorkflowOrchestrator`. The orchestrator validates the message, builds a workflow context snapshot, checks idempotency through `GenerationGuardService.executeMangaAgentRun`, resolves `AUTO` requests through `MangaIntentClassifierService`, and dispatches to a `MangaWorkflowNodeHandler` through `MangaWorkflowNodeRegistry`.
 
-`MangaDirectorAgentNode` is the first concrete AgentScope-backed node. It saves the user message, builds agent messages from the selected conversation history, syncs chapter knowledge to the AgentScope workspace, builds an `AgentRunRequest`, invokes AgentScope through the gateway, maps streamed events, and saves the final assistant or degraded reply. `HITL` and `REVIEW` currently use lightweight static workflow nodes until dedicated AgentScope-backed nodes are added.
+`MangaDirectorAgentNode` is the first concrete AgentScope-backed node. It saves the user message, builds agent messages from the selected conversation history, syncs chapter knowledge to the AgentScope workspace, builds an `AgentRunRequest`, invokes AgentScope through the gateway, maps streamed events, and saves the final assistant or degraded reply. `CHAT`, `HITL`, and `REVIEW` currently use lightweight static workflow nodes until dedicated AgentScope-backed nodes are added.
 
 For resume, the service requires an existing `WAITING_USER` run, reconstructs a continuation message from the stored user-input request and the user's answer, clears waiting state, and continues the same request id.
 
 `AgentScopeAgentFactory` creates or reuses a per-user/story/chapter/conversation/task/model/workspace agent and registers Manga Director tools with AgentScope v2 `Toolkit` tool groups. `AgentScopeRuntimeContextFactory` passes per-call business values through AgentScope v2 `RuntimeContext` as `MangaAgentRuntimeContext`.
 
-The frontend consumes AG-UI as the default live protocol. `POST /conversations/{conversationId}/ag-ui/run` and `POST /conversations/{conversationId}/ag-ui/runs/{requestId}/resume` are the preferred endpoints. Run requests may include an explicit `route` (`DIRECTOR`, `HITL`, or `REVIEW`); omitted route defaults to `DIRECTOR`. Legacy chapter-level endpoints auto-resolve the active conversation and remain compatibility paths. Keep the execution panel as the single place that explains what the agent is doing; do not add a second competing progress widget.
+The frontend consumes AG-UI as the default live protocol. `POST /conversations/{conversationId}/ag-ui/run` and `POST /conversations/{conversationId}/ag-ui/runs/{requestId}/resume` are the preferred endpoints. Run requests may include an explicit `route` (`AUTO`, `CHAT`, `DIRECTOR`, `HITL`, or `REVIEW`); omitted route defaults to `DIRECTOR` for backward compatibility, while the frontend defaults to `AUTO`. Legacy chapter-level endpoints auto-resolve the active conversation and remain compatibility paths. Keep the execution panel as the single place that explains what the agent is doing; do not add a second competing progress widget.
+The left sidebar must expose conversation history explicitly. Switching a conversation must reload that conversation's messages and open run snapshot, and the chat should land on the latest message instead of staying at the top.
 
-In the main app navigation, `濡絾鐗犻妴濉?is the Manga Agent conversation surface. `鐎规悶鍎扮紞鏃堝礌缁?is the story/project management surface where users create, import, select, and edit stories. Do not point `workspace` back to `home`; that recreates a navigation loop and hides the agent from the first screen.
+In the main app navigation, `漫画智能体` is the Manga Agent conversation surface. `工作区` is the story/project management surface where users create, import, select, and edit stories. Do not point `workspace` back to `home`; that recreates a navigation loop and hides the agent from the first screen.
 
 ## Tools
 
@@ -82,8 +84,9 @@ After a mutating tool succeeds, failures in the final agent response may degrade
 - Manga Director must not use AgentScope shell/filesystem tools to find business content. `AgentScopeHarnessAgentGateway` disables Harness shell/filesystem tools for this business agent; chapter/story facts must come from `get_chapter_context`, synced `KNOWLEDGE.md`, and registered ArtVerse tools.
 - Manga Director tools should read user, chapter, conversation, request id, and Coze key from `MangaAgentRuntimeContext` injected through `RuntimeContext`. Avoid adding new factory-captured per-run fields.
 - AgentScope-related development must use AgentScope Java v2 documented primitives first, especially `HarnessAgent`, `RuntimeContext`, middleware, `Toolkit`, tool groups, AG-UI, and state/workspace features. Do not invent duplicate wrappers or custom framework concepts when AgentScope already provides the concept.
-- Workflow route is an explicit application contract. Do not infer route from free-text user prompts unless a future route-classifier node is deliberately designed and documented.
+- Workflow route is an explicit application contract. Only `AUTO` may infer an execution route from free-text prompts through `MangaIntentClassifierService`; explicit `CHAT`, `DIRECTOR`, `HITL`, and `REVIEW` requests must not be silently reclassified.
 - When backend emits AG-UI frames, `MangaAgentPage.tsx` must translate `ag_ui_event` frames into execution panel state and synchronize final persisted messages after `RUN_FINISHED`; otherwise the frontend can appear stuck or require a manual refresh.
+- The execution panel should treat `RUN_STARTED`, `STATE_SNAPSHOT`, `CUSTOM`, `TEXT_MESSAGE_CONTENT`, `RUN_FINISHED`, and `RUN_ERROR` as live events. Business run status (`RUNNING`, `WAITING_USER`, and terminal states) remains visible as secondary metadata.
 - Use `ask_user` for blocking decisions instead of plain-text questions.
 - Keep controllers thin. Put public entrypoint behavior in `MangaAgentService` and workflow execution behavior in `MangaWorkflowOrchestrator`.
 - Keep AgentScope execution inside workflow nodes. `MangaWorkflowOrchestrator` should own routing, guard/run lifecycle, and workflow-level status events, not direct AgentScope request construction.

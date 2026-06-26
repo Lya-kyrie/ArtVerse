@@ -5,17 +5,13 @@ export const DEEPSEEK_USAGE_URL = 'https://platform.deepseek.com/usage';
 export const IMAGE2_CONSOLE_URL = 'https://api.duojie.games/console/token';
 
 
-const LS_SATOKEN = 'artverse.satoken';
+const LS_REFRESH_TOKEN = 'artverse.refreshToken';
 const LS_USER = 'artverse.user';
 
 export interface UserInfo {
   id: number;
   username: string;
   email: string;
-}
-
-function getSaToken(): string | null {
-  return localStorage.getItem(LS_SATOKEN);
 }
 
 export function getUser(): UserInfo | null {
@@ -25,11 +21,11 @@ export function getUser(): UserInfo | null {
 }
 
 export function isAuthenticated(): boolean {
-  return !!getSaToken();
+  return !!getUser();
 }
 
 export function clearAuth(): void {
-  localStorage.removeItem(LS_SATOKEN);
+  localStorage.removeItem(LS_REFRESH_TOKEN);
   localStorage.removeItem(LS_USER);
 }
 
@@ -44,15 +40,25 @@ async function tryRefreshToken(): Promise<boolean> {
   if (!refreshPromise) {
     refreshPromise = (async () => {
       try {
+        const refreshToken = localStorage.getItem(LS_REFRESH_TOKEN);
+        const body = refreshToken ? JSON.stringify({ refresh_token: refreshToken }) : undefined;
         const res = await fetch(`${BASE}/api/auth/refresh`, {
           method: 'POST',
-          headers: { 'satoken': getSaToken() || '' },
+          credentials: 'same-origin',
+          headers: body ? { 'Content-Type': 'application/json' } : undefined,
+          body,
         });
-        if (!res.ok) return false;
+        if (!res.ok) {
+          if (res.status === 401) {
+            localStorage.removeItem(LS_REFRESH_TOKEN);
+          }
+          return false;
+        }
         const data = await res.json();
-        const newToken = data.tokenValue ?? data.token_value;
-        if (!newToken) return false;
-        localStorage.setItem(LS_SATOKEN, newToken);
+        const newRefresh = data.refreshToken ?? data.refresh_token;
+        if (newRefresh) {
+          localStorage.setItem(LS_REFRESH_TOKEN, newRefresh);
+        }
         return true;
       } catch {
         return false;
@@ -64,9 +70,9 @@ async function tryRefreshToken(): Promise<boolean> {
   return ok;
 }
 
-async function fetchAndSaveUser(tokenValue: string): Promise<void> {
+async function fetchAndSaveUser(): Promise<void> {
   const res = await fetch(`${BASE}/api/user/me`, {
-    headers: { 'satoken': tokenValue },
+    credentials: 'same-origin',
   });
   if (!res.ok) throw new Error('Error');
   const user: UserInfo = await res.json();
@@ -77,40 +83,37 @@ export async function loginUser(username: string, password: string): Promise<voi
   const res = await fetch(`${BASE}/api/auth/login`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
+    credentials: 'same-origin',
     body: JSON.stringify({ username, password }),
   });
   if (!res.ok) throw new Error(parseApiError(await res.text()));
   const data = await res.json();
-  const tokenValue: string = data.tokenValue ?? data.token_value;
-  if (!tokenValue) throw new Error('Error');
-  localStorage.setItem(LS_SATOKEN, tokenValue);
-  await fetchAndSaveUser(tokenValue);
+  const rt = data.refreshToken ?? data.refresh_token;
+  if (rt) localStorage.setItem(LS_REFRESH_TOKEN, rt);
+  await fetchAndSaveUser();
 }
 
 export async function registerUser(username: string, email: string, password: string): Promise<void> {
   const res = await fetch(`${BASE}/api/auth/register`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
+    credentials: 'same-origin',
     body: JSON.stringify({ username, email, password }),
   });
   if (!res.ok) throw new Error(parseApiError(await res.text()));
   const data = await res.json();
-  const tokenValue: string = data.tokenValue ?? data.token_value;
-  if (!tokenValue) throw new Error('Error');
-  localStorage.setItem(LS_SATOKEN, tokenValue);
-  await fetchAndSaveUser(tokenValue);
+  const rt = data.refreshToken ?? data.refresh_token;
+  if (rt) localStorage.setItem(LS_REFRESH_TOKEN, rt);
+  await fetchAndSaveUser();
 }
 
 export async function logoutUser(): Promise<void> {
-  const token = getSaToken();
-  if (token) {
-    try {
-      await fetch(`${BASE}/api/auth/logout`, {
-        method: 'POST',
-        headers: { 'satoken': token },
-      });
-    } catch { /* ignore */ }
-  }
+  try {
+    await fetch(`${BASE}/api/auth/logout`, {
+      method: 'POST',
+      credentials: 'same-origin',
+    });
+  } catch { /* ignore */ }
   clearAuth();
 }
 
@@ -168,19 +171,17 @@ export async function saveUserApiKey(provider: string, apiKey: string): Promise<
 
 
 function apiHeaders(json = false): HeadersInit {
-  const token = getSaToken();
   return {
     ...(json ? { 'Content-Type': 'application/json' } : {}),
-    ...(token ? { 'satoken': token } : {}),
   };
 }
 
 async function authFetch(input: RequestInfo, init?: RequestInit): Promise<Response> {
-  let res = await fetch(input, { ...init, headers: { ...apiHeaders(), ...(init?.headers || {}) } });
+  let res = await fetch(input, { ...init, credentials: 'same-origin', headers: { ...apiHeaders(), ...(init?.headers || {}) } });
   if (res.status === 401) {
     const refreshed = await tryRefreshToken();
     if (refreshed) {
-      res = await fetch(input, { ...init, headers: { ...apiHeaders(), ...(init?.headers || {}) } });
+      res = await fetch(input, { ...init, credentials: 'same-origin', headers: { ...apiHeaders(), ...(init?.headers || {}) } });
     } else {
       notifyAuthExpired();
     }
@@ -1154,7 +1155,7 @@ export interface MangaAgentConversation {
   archivedAt?: string | null;
 }
 
-export type MangaWorkflowRoute = 'DIRECTOR' | 'HITL' | 'REVIEW';
+export type MangaWorkflowRoute = 'AUTO' | 'CHAT' | 'DIRECTOR' | 'HITL' | 'REVIEW';
 
 export type MangaAgentRunEvent =
   | { type: 'status'; data: { message?: string; requestId?: string; request_id?: string } }
@@ -1265,6 +1266,13 @@ export async function createMangaAgentConversation(chapterId: number): Promise<M
   });
   if (!res.ok) throw new Error(parseApiError(await res.text()));
   return res.json();
+}
+
+export async function deleteMangaAgentConversation(chapterId: number, conversationId: string): Promise<void> {
+  const res = await authFetch(`${BASE}/api/chapters/${chapterId}/manga-agent/conversations/${conversationId}`, {
+    method: 'DELETE',
+  });
+  if (!res.ok) throw new Error(parseApiError(await res.text()));
 }
 
 export async function getMangaAgentConversationMessages(

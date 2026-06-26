@@ -12,6 +12,7 @@ import com.artverse.domain.Story;
 import com.artverse.media.MediaStorageService;
 import com.artverse.persistence.ChapterRepository;
 import com.artverse.persistence.MangaImageRepository;
+import com.artverse.persistence.StoryAssetGroupRepository;
 import com.artverse.storage.ObjectStorageService;
 import com.artverse.storage.StoredObject;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -68,6 +69,7 @@ class MangaGenerationServiceTest {
         ChapterRepository chapterRepository = mock(ChapterRepository.class);
         MangaImageRepository mangaImageRepository = mock(MangaImageRepository.class);
         CharacterProfileService characterProfileService = mock(CharacterProfileService.class);
+        StoryAssetGroupRepository storyAssetGroupRepository = mock(StoryAssetGroupRepository.class);
         CapturingImage2Client image2Client = new CapturingImage2Client();
 
         when(chapterRepository.findByIdForIdempotency(7L)).thenReturn(Optional.of(chapter));
@@ -89,6 +91,7 @@ class MangaGenerationServiceTest {
                 imageStorageService,
                 directExecutor(),
                 characterProfileService,
+                storyAssetGroupRepository,
                 properties,
                 new ObjectMapper()
         );
@@ -121,6 +124,7 @@ class MangaGenerationServiceTest {
         ChapterRepository chapterRepository = mock(ChapterRepository.class);
         MangaImageRepository mangaImageRepository = mock(MangaImageRepository.class);
         CharacterProfileService characterProfileService = mock(CharacterProfileService.class);
+        StoryAssetGroupRepository storyAssetGroupRepository = mock(StoryAssetGroupRepository.class);
 
         when(chapterRepository.findByIdForIdempotency(7L)).thenReturn(Optional.of(chapter));
         when(mangaImageRepository.findByChapterIdAndImageNumber(7L, 1)).thenReturn(Optional.empty());
@@ -139,6 +143,7 @@ class MangaGenerationServiceTest {
                 imageStorageService,
                 directExecutor(),
                 characterProfileService,
+                storyAssetGroupRepository,
                 properties,
                 new ObjectMapper()
         );
