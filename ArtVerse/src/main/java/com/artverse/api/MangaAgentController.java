@@ -53,6 +53,13 @@ public class MangaAgentController {
         );
     }
 
+    @DeleteMapping("/conversations/{conversationId}")
+    public void deleteConversation(@PathVariable Long chapterId,
+                                   @PathVariable UUID conversationId) {
+        User user = currentUserService.requireCurrentUser();
+        mangaAgentService.deleteConversation(chapterId, conversationId, user);
+    }
+
     @GetMapping("/conversations/{conversationId}/messages")
     public MangaAgentDtos.MessagesResponse conversationMessages(@PathVariable Long chapterId,
                                                                @PathVariable UUID conversationId) {

@@ -55,6 +55,10 @@ public class MangaAgentService {
         return conversationService.archiveConversation(chapterId, user, conversationId);
     }
 
+    public void deleteConversation(Long chapterId, UUID conversationId, User user) {
+        conversationService.deleteConversation(chapterId, user, conversationId);
+    }
+
     @Transactional(readOnly = true)
     public List<MangaAgentMessage> listMessages(Long chapterId, UUID conversationId, User user) {
         MangaAgentConversation conversation = conversationService.requireConversation(chapterId, user, conversationId);

@@ -1268,6 +1268,13 @@ export async function createMangaAgentConversation(chapterId: number): Promise<M
   return res.json();
 }
 
+export async function deleteMangaAgentConversation(chapterId: number, conversationId: string): Promise<void> {
+  const res = await authFetch(`${BASE}/api/chapters/${chapterId}/manga-agent/conversations/${conversationId}`, {
+    method: 'DELETE',
+  });
+  if (!res.ok) throw new Error(parseApiError(await res.text()));
+}
+
 export async function getMangaAgentConversationMessages(
   chapterId: number,
   conversationId: string,
