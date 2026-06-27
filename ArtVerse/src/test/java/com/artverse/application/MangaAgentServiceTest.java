@@ -30,7 +30,7 @@ class MangaAgentServiceTest {
     void runDelegatesToWorkflowOrchestrator() {
         Fixture fixture = fixture();
         UUID requestId = UUID.randomUUID();
-        when(fixture.orchestrator.runWithToolState(any(), any(), any(), any()))
+        when(fixture.orchestrator.runWithToolState(any(), any(), any(), any(), any()))
                 .thenReturn(Map.of("reply", "ok"));
 
         MangaAgentService.RunResult result = fixture.service.run(7L, "continue", requestId, fixture.user);
@@ -42,7 +42,7 @@ class MangaAgentServiceTest {
     void runPropagatesWorkflowErrors() {
         Fixture fixture = fixture();
         UUID requestId = UUID.randomUUID();
-        when(fixture.orchestrator.runWithToolState(any(), any(), any(), any()))
+        when(fixture.orchestrator.runWithToolState(any(), any(), any(), any(), any()))
                 .thenThrow(new BusinessException(502, "Agent service failed: model down"));
 
         assertThatThrownBy(() -> fixture.service.run(7L, "continue", requestId, fixture.user))

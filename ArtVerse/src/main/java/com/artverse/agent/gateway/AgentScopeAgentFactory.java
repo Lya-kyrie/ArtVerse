@@ -27,10 +27,11 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 
+import jakarta.annotation.PostConstruct;
+import jakarta.annotation.PreDestroy;
+
 import java.nio.file.Path;
 import java.util.List;
-import java.util.Map;
-import java.util.concurrent.ConcurrentHashMap;
 
 @Slf4j
 @Component
@@ -54,13 +55,30 @@ public class AgentScopeAgentFactory {
     private final GenerationGuardService generationGuardService;
     private final AgentToolAuditService agentToolAuditService;
     private final AgentRunToolStatus agentRunToolStatus;
-    private final Map<String, HarnessAgent> agentCache = new ConcurrentHashMap<>();
+    private AgentCache<HarnessAgent> agentCache;
+
+    @PostConstruct
+    public void init() {
+        ArtVerseProperties.Agent.AgentCache cacheProps = properties.getAgent().getCache();
+        this.agentCache = new AgentCache<>(
+                cacheProps.getMaxSize(),
+                cacheProps.getIdleTimeoutMinutes(),
+                cacheProps.getCleanupIntervalMinutes()
+        );
+    }
+
+    @PreDestroy
+    public void destroy() {
+        if (agentCache != null) {
+            agentCache.destroy();
+        }
+    }
 
     public HarnessAgent getOrCreate(AgentRunRequest request) {
         Path requestWorkspace = agentWorkspaceService.workspaceFor(request);
         String agentKey = buildAgentCacheKey(request, defaultModelSpec(request.userApiKey()), requestWorkspace,
                 promptProvider.promptVersionFor(request.taskType()));
-        return agentCache.computeIfAbsent(agentKey, k -> buildAgent(request, requestWorkspace));
+        return agentCache.getOrCreate(agentKey, k -> buildAgent(request, requestWorkspace));
     }
 
     private HarnessAgent buildAgent(AgentRunRequest request, Path requestWorkspace) {
@@ -81,6 +99,10 @@ public class AgentScopeAgentFactory {
                 .build();
         if (request.taskType() == AgentTaskType.MANGA_DIRECTOR) {
             configureMangaDirectorTools(agent.getToolkit());
+        } else if (request.taskType() == AgentTaskType.MANGA_REVIEW
+                || request.taskType() == AgentTaskType.MANGA_CHAT
+                || request.taskType() == AgentTaskType.MANGA_HITL) {
+            configureReadOnlyTools(agent.getToolkit());
         }
         return agent;
     }
@@ -113,6 +135,20 @@ public class AgentScopeAgentFactory {
                 .group(HITL_TOOLS)
                 .apply();
         toolkit.setActiveGroups(List.of(CONTEXT_TOOLS, STORYBOARD_TOOLS, HITL_TOOLS));
+        toolkit.registerMetaTool();
+    }
+
+    private void configureReadOnlyTools(Toolkit toolkit) {
+        MangaToolSupport support = new MangaToolSupport(agentRunToolStatus);
+        toolkit.createToolGroup(
+                CONTEXT_TOOLS,
+                "Read-only manga chapter, story, storyboard, and image context tools.",
+                true
+        );
+        toolkit.registration().tool(new MangaContextTools(
+                mangaImageRepository, sceneService, chapterAccessService, agentToolAuditService, support
+        )).group(CONTEXT_TOOLS).apply();
+        toolkit.setActiveGroups(List.of(CONTEXT_TOOLS));
         toolkit.registerMetaTool();
     }
 

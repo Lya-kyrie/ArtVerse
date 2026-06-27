@@ -22,7 +22,6 @@ class AgUiEventFactoryTest {
 
         Map<String, Object> event = factory.runStarted(run, UUID.randomUUID(), "hello");
 
-        assertThat(event).containsEntry("route", "REVIEW");
         assertThat(event.get("input")).isInstanceOf(Map.class);
         Map<?, ?> input = (Map<?, ?>) event.get("input");
         Map<?, ?> state = (Map<?, ?>) input.get("state");

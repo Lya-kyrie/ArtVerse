@@ -1,15 +1,34 @@
 package com.artverse.application.workflow.nodes;
 
+import com.artverse.agent.AgentTaskType;
+import com.artverse.agent.AgentWorkspaceSyncService;
+import com.artverse.agent.gateway.AgentScopeHarnessAgentGateway;
+import com.artverse.application.ApiKeyService;
 import com.artverse.application.MangaAgentConversationService;
-import com.artverse.application.workflow.MangaWorkflowExecutionContext;
+import com.artverse.application.MangaAgentRunService;
 import com.artverse.application.workflow.MangaWorkflowRoute;
+import com.artverse.config.ArtVerseProperties;
 import org.springframework.stereotype.Component;
 
+/**
+ * LLM-powered decision-assistance node.
+ * <p>
+ * The agent helps users make creative decisions by structuring trade-offs,
+ * presenting pros/cons for each option, and guiding convergence toward
+ * a concrete, actionable choice. Read-only access via {@code context-tools}.
+ */
 @Component
-public class MangaHitlNode extends AbstractStaticReplyNode {
+public class MangaHitlNode extends AbstractLlmNode {
 
-    public MangaHitlNode(MangaAgentConversationService mangaAgentConversationService) {
-        super(mangaAgentConversationService);
+    public MangaHitlNode(
+            MangaAgentConversationService mangaAgentConversationService,
+            AgentScopeHarnessAgentGateway harnessAgentGateway,
+            AgentWorkspaceSyncService agentWorkspaceSyncService,
+            ApiKeyService apiKeyService,
+            ArtVerseProperties properties,
+            MangaAgentRunService mangaAgentRunService) {
+        super(mangaAgentConversationService, harnessAgentGateway, agentWorkspaceSyncService,
+                apiKeyService, properties, mangaAgentRunService);
     }
 
     @Override
@@ -18,12 +37,7 @@ public class MangaHitlNode extends AbstractStaticReplyNode {
     }
 
     @Override
-    protected String responseText(MangaWorkflowExecutionContext context) {
-        return """
-                当前处于「决策」模式，这是一个需要你收束选择的工作节点。
-
-                请说明需要确认什么（例如：选择分支、确认创意方向、决定是否执行工具操作），
-                然后切回「导演」模式，我会根据你的选择继续推进。
-                """.trim();
+    public AgentTaskType agentTaskType() {
+        return AgentTaskType.MANGA_HITL;
     }
 }

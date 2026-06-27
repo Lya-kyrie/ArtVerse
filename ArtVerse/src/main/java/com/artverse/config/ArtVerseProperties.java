@@ -127,11 +127,19 @@ public class ArtVerseProperties {
         private int runTimeoutSeconds = 180;
         private int staleRunningSeconds = 600;
         private IntentClassification intentClassification = new IntentClassification();
+        private AgentCache cache = new AgentCache();
 
         @Data
         public static class IntentClassification {
             private boolean enabled = true;
             private int timeoutSeconds = 8;
+        }
+
+        @Data
+        public static class AgentCache {
+            private int maxSize = 100;
+            private int idleTimeoutMinutes = 30;
+            private int cleanupIntervalMinutes = 5;
         }
     }
 }

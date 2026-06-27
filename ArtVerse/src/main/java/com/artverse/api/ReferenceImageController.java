@@ -247,7 +247,7 @@ public class ReferenceImageController {
         return name.endsWith(".png") || name.endsWith(".jpg") || name.endsWith(".jpeg") || name.endsWith(".webp");
     }
 
-    private Long currentUserId() {
+    Long currentUserId() {
         return cn.dev33.satoken.stp.StpUtil.getLoginIdAsLong();
     }
 }

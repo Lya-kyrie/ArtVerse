@@ -16,6 +16,7 @@ import org.springframework.stereotype.Component;
 import org.springframework.web.reactive.function.BodyInserters;
 import org.springframework.web.reactive.function.client.ExchangeStrategies;
 import org.springframework.web.reactive.function.client.WebClient;
+import org.springframework.web.reactive.function.client.WebClientResponseException;
 import reactor.core.publisher.Mono;
 import reactor.core.scheduler.Schedulers;
 import reactor.netty.http.HttpProtocol;
@@ -106,9 +107,12 @@ public class WebClientImage2Client implements Image2Client {
                 .contentType(MediaType.APPLICATION_JSON)
                 .bodyValue(body)
                 .retrieve()
+                .onStatus(status -> status.isError(), response -> response.createException())
                 .bodyToMono(String.class)
                 .timeout(READ_TIMEOUT)
-                .flatMap(response -> parseImageResponse(response, request.prompt()));
+                .flatMap(response -> parseImageResponse(response, request.prompt()))
+                .onErrorMap(WebClientResponseException.class,
+                        ex -> mapHttpError("/images/generations", ex));
     }
 
     private Mono<GeneratedImage> generateWithReferences(ImageGenerationRequest request, String apiKey) {
@@ -133,9 +137,12 @@ public class WebClientImage2Client implements Image2Client {
                 .contentType(MediaType.MULTIPART_FORM_DATA)
                 .body(BodyInserters.fromMultipartData(builder.build()))
                 .retrieve()
+                .onStatus(status -> status.isError(), response -> response.createException())
                 .bodyToMono(String.class)
                 .timeout(READ_TIMEOUT)
-                .flatMap(response -> parseImageResponse(response, request.prompt()));
+                .flatMap(response -> parseImageResponse(response, request.prompt()))
+                .onErrorMap(WebClientResponseException.class,
+                        ex -> mapHttpError("/images/edits", ex));
     }
 
     private Mono<GeneratedImage> parseImageResponse(String response, String prompt) {
@@ -210,5 +217,13 @@ public class WebClientImage2Client implements Image2Client {
             return configKey;
         }
         throw new BusinessException(400, "Image API Key is missing. Please set it in the frontend settings.", "Image");
+    }
+
+    private BusinessException mapHttpError(String url, WebClientResponseException ex) {
+        if (ex.getStatusCode().value() == 401) {
+            return new BusinessException(401, "Image2 API Key 无效或已过期，请在前端设置中更新。", "Image2");
+        }
+        return new BusinessException(ex.getStatusCode().value(),
+                "Image2 API error (" + ex.getStatusCode() + "): " + ex.getMessage(), "Image2");
     }
 }

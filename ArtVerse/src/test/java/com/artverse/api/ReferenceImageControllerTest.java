@@ -43,7 +43,7 @@ class ReferenceImageControllerTest {
         ChapterRepository chapterRepository = mock(ChapterRepository.class);
         StoryAssetGroupRepository assetGroupRepository = mock(StoryAssetGroupRepository.class);
         when(storyRepository.findById(3L)).thenReturn(Optional.of(story));
-        when(chapterRepository.findById(7L)).thenReturn(Optional.of(chapter));
+        when(chapterRepository.findByIdForIdempotency(7L)).thenReturn(Optional.of(chapter));
 
         ReferenceImageController controller = new ReferenceImageController(
                 storyRepository,
@@ -52,7 +52,12 @@ class ReferenceImageControllerTest {
                 new MediaStorageService(properties),
                 storage,
                 properties
-        );
+        ) {
+            @Override
+            Long currentUserId() {
+                return 1L;
+            }
+        };
 
         Map<String, Object> result = controller.addChapterRefImage(7L, Map.of("image", pngBase64()));
 

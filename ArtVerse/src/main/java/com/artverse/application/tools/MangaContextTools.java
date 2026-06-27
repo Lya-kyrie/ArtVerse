@@ -53,7 +53,7 @@ public class MangaContextTools {
                     .map(image -> Map.of(
                             "image_number", image.getImageNumber(),
                             "image_path", image.getImagePath(),
-                            "has_prompt", image.getPrompt() != null && !image.getPrompt().isBlank()
+                            "prompt", support.excerpt(image.getPrompt(), 500)
                     ))
                     .toList());
             return result;
