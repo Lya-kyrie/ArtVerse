@@ -86,7 +86,7 @@ public class AgentScopeAgentFactory {
                 : defaultModelSpec(request.userApiKey());
         Model effectiveModel = resolveModel(request.userApiKey(), modelSpec);
         HarnessAgent agent = HarnessAgent.builder()
-                .name("artverse-story-" + request.storyId())
+                .name("artverse-story-" + request.storyId() + "-ch" + request.chapterId())
                 .sysPrompt(promptProvider.promptFor(request.taskType()))
                 .model(effectiveModel)
                 .workspace(requestWorkspace)
