@@ -7,15 +7,18 @@ import com.artverse.domain.Chapter;
 import com.artverse.domain.ColorMode;
 import com.artverse.domain.MangaAgentConversation;
 import com.artverse.domain.MangaAgentConversationStatus;
+import com.artverse.domain.MangaAgentRun;
 import com.artverse.domain.Story;
 import com.artverse.domain.User;
 import com.artverse.guard.AgentConcurrencyGate;
 import com.artverse.persistence.MangaAgentConversationRepository;
 import com.artverse.persistence.MangaAgentMessageRepository;
 import org.junit.jupiter.api.Test;
+import org.mockito.Mockito;
 import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.data.redis.core.ValueOperations;
 
+import java.io.IOException;
 import java.time.Duration;
 import java.util.List;
 import java.util.Map;
@@ -57,6 +60,41 @@ class MangaAgentServiceTest {
     }
 
     @Test
+    void resumeWrapsCheckedFailuresAsBusinessException() throws Exception {
+        Fixture fixture = fixture();
+        UUID requestId = UUID.randomUUID();
+        MangaAgentConversation conversation = fixture.conversation;
+        MangaAgentRunService.RunSnapshot snapshot = new MangaAgentRunService.RunSnapshot(
+                requestId,
+                com.artverse.domain.MangaAgentRunStatus.WAITING_USER,
+                "continue",
+                null,
+                null,
+                com.artverse.application.workflow.MangaWorkflowRoute.DIRECTOR,
+                new AgentUserInputRequest("Why?", List.of(), true, "Need confirmation"),
+                List.of(),
+                null,
+                null,
+                null
+        );
+        Mockito.doReturn(java.util.Optional.of(fixture.waitingRun))
+                .when(fixture.runService).findRun(conversation, requestId);
+        Mockito.doReturn(snapshot).when(fixture.runService).snapshot(fixture.waitingRun);
+        Mockito.doAnswer(invocation -> {
+            sneakyThrow(new IOException("disk full"));
+            return null;
+        }).when(fixture.orchestrator).runWithToolState(any(), any(), any(), any(), any());
+
+        assertThatThrownBy(() -> fixture.service.resume(7L, requestId, "answer", fixture.user))
+                .isInstanceOf(BusinessException.class)
+                .satisfies(error -> {
+                    BusinessException businessException = (BusinessException) error;
+                    assertThat(businessException.getStatus()).isEqualTo(502);
+                    assertThat(businessException.getMessage()).contains("disk full");
+                });
+    }
+
+    @Test
     void runStreamCreatesEmitter() {
         Fixture fixture = fixture();
         assertThat(fixture.service.runAgUiStream(7L, "continue", UUID.randomUUID(), fixture.user)).isNotNull();
@@ -95,7 +133,13 @@ class MangaAgentServiceTest {
                 concurrencyGate,
                 Executors.newSingleThreadExecutor()
         );
-        return new Fixture(service, orchestrator, user);
+        MangaAgentRun waitingRun = new MangaAgentRun();
+        waitingRun.setConversation(conversation);
+        waitingRun.setUser(user);
+        waitingRun.setChapter(chapter);
+        waitingRun.setRequestId(UUID.fromString("22222222-2222-2222-2222-222222222222"));
+        waitingRun.setStatus(com.artverse.domain.MangaAgentRunStatus.WAITING_USER);
+        return new Fixture(service, orchestrator, runService, user, conversation, waitingRun);
     }
 
     private RedisTemplate<String, Object> redisTemplate() {
@@ -107,6 +151,11 @@ class MangaAgentServiceTest {
         doNothing().when(valueOperations).set(anyString(), any(), any(Duration.class));
         when(valueOperations.get(anyString())).thenReturn(null);
         return redisTemplate;
+    }
+
+    @SuppressWarnings("unchecked")
+    private static <T extends Throwable> void sneakyThrow(Throwable throwable) throws T {
+        throw (T) throwable;
     }
 
     private static User user(Long id) {
@@ -140,6 +189,8 @@ class MangaAgentServiceTest {
         return conversation;
     }
 
-    private record Fixture(MangaAgentService service, MangaWorkflowOrchestrator orchestrator, User user) {
+    private record Fixture(MangaAgentService service, MangaWorkflowOrchestrator orchestrator,
+                           MangaAgentRunService runService, User user, MangaAgentConversation conversation,
+                           MangaAgentRun waitingRun) {
     }
 }

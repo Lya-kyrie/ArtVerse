@@ -124,6 +124,11 @@ class MangaAgentConversationServiceTest {
                 .thenReturn(Optional.of(conversation));
         when(messageRepository.findByConversationIdAndRequestIdAndRole(any(), any(UUID.class), any(MessageRole.class)))
                 .thenReturn(Optional.empty());
+        when(messageRepository.save(any(MangaAgentMessage.class))).thenAnswer(invocation -> {
+            MangaAgentMessage savedMessage = invocation.getArgument(0);
+            saved.add(savedMessage);
+            return savedMessage;
+        });
         return new Fixture(service, conversationRepository, messageRepository, user, chapter, conversation, saved);
     }
 

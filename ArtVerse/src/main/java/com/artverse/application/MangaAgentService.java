@@ -246,9 +246,10 @@ public class MangaAgentService {
         } catch (Exception e) {
             String detail = e.getMessage() == null ? "Agent request failed" : e.getMessage();
             mangaAgentRunService.markFailed(conversation, requestId, detail);
-            throw e instanceof RuntimeException runtimeException
-                    ? runtimeException
-                    : new RuntimeException(detail, e);
+            if (e instanceof RuntimeException runtimeException) {
+                throw runtimeException;
+            }
+            throw new BusinessException(502, detail);
         }
     }
 

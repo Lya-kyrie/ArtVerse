@@ -131,7 +131,7 @@ public class MangaDirectorAgentNode implements MangaWorkflowNodeHandler {
                     .doOnNext(event -> mapAgentScopeEvent(event).ifPresent(mapped -> {
                         if (mangaAgentRunService.isTerminal(
                                 context.requestId(), context.user().getId(), context.chapter().getId())) {
-                            throw new AgentRunTerminatedException();
+                            throw new AgentRunTerminatedException(context.requestId(), context.user().getId(), context.chapter().getId());
                         }
                         if ("text_delta".equals(mapped.type()) && mapped.text() != null) {
                             reply.append(mapped.text());
@@ -331,8 +331,4 @@ public class MangaDirectorAgentNode implements MangaWorkflowNodeHandler {
             case "ask_user" -> "询问用户";
             default -> toolName == null || toolName.isBlank() ? "工具" : toolName;
         };
-    }
-
-    private static class AgentRunTerminatedException extends RuntimeException {
-    }
-}
+    }}
