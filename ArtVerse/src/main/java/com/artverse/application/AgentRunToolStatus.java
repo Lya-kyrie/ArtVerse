@@ -1,7 +1,9 @@
 package com.artverse.application;
 
+import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.stereotype.Service;
 
+import java.time.Duration;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -12,6 +14,13 @@ import java.util.concurrent.ConcurrentMap;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.function.Consumer;
 
+/**
+ * Tracks tool execution outcomes and pending user inputs per agent run.
+ *
+ * <p>Uses a local cache for hot-path performance with Redis as the shared
+ * backing store for multi-instance deployments. TTL is 10 minutes — long
+ * enough for user response but bounded to prevent leaks.</p>
+ */
 @Service
 public class AgentRunToolStatus {
 
@@ -21,8 +30,19 @@ public class AgentRunToolStatus {
             "save_structured_storyboard"
     );
 
-    private final ConcurrentMap<ScopeKey, RunState> activeRuns = new ConcurrentHashMap<>();
-    private final ConcurrentMap<RunKey, AgentUserInputRequest> waitingInputs = new ConcurrentHashMap<>();
+    private static final String KEY_PREFIX = "artverse:tool_status:";
+    private static final Duration CACHE_TTL = Duration.ofMinutes(10);
+
+    private final RedisTemplate<String, Object> redisTemplate;
+    private final ConcurrentMap<ScopeKey, RunState> localCache = new ConcurrentHashMap<>();
+
+    public AgentRunToolStatus(RedisTemplate<String, Object> redisTemplate) {
+        this.redisTemplate = redisTemplate;
+    }
+
+    private static String scopeKey(Long userId, Long chapterId, UUID requestId) {
+        return KEY_PREFIX + userId + ":" + chapterId + ":" + requestId;
+    }
 
     public RunScope start(Long userId, Long chapterId, UUID requestId) {
         return start(userId, chapterId, requestId, null);
@@ -31,7 +51,9 @@ public class AgentRunToolStatus {
     public RunScope start(Long userId, Long chapterId, UUID requestId, Consumer<ToolEvent> listener) {
         ScopeKey key = new ScopeKey(userId, chapterId, requestId);
         RunState state = new RunState(userId, chapterId, requestId, listener);
-        activeRuns.put(key, state);
+        localCache.put(key, state);
+        String redisKey = scopeKey(userId, chapterId, requestId);
+        redisTemplate.opsForValue().set(redisKey, state, CACHE_TTL);
         return new RunScope(key, state);
     }
 
@@ -56,8 +78,10 @@ public class AgentRunToolStatus {
     }
 
     public void requestUserInput(Long userId, Long chapterId, UUID requestId, AgentUserInputRequest request) {
-        waitingInputs.put(new RunKey(userId, chapterId, requestId), request);
-        RunState state = activeRuns.get(new ScopeKey(userId, chapterId, requestId));
+        String inputKey = KEY_PREFIX + "input:" + userId + ":" + chapterId + ":" + requestId;
+        redisTemplate.opsForValue().set(inputKey, request, CACHE_TTL);
+
+        RunState state = localCache.get(new ScopeKey(userId, chapterId, requestId));
         if (state != null) {
             state.setUserInputRequest(request);
         }
@@ -73,11 +97,22 @@ public class AgentRunToolStatus {
     }
 
     public AgentUserInputRequest waitingInput(Long userId, Long chapterId, UUID requestId) {
-        return waitingInputs.get(new RunKey(userId, chapterId, requestId));
+        RunState state = localCache.get(new ScopeKey(userId, chapterId, requestId));
+        if (state != null && state.userInputRequest() != null) {
+            return state.userInputRequest();
+        }
+        String inputKey = KEY_PREFIX + "input:" + userId + ":" + chapterId + ":" + requestId;
+        Object cached = redisTemplate.opsForValue().get(inputKey);
+        if (cached instanceof AgentUserInputRequest request) {
+            return request;
+        }
+        return null;
     }
 
     public void clearWaitingInput(Long userId, Long chapterId, UUID requestId) {
-        waitingInputs.remove(new RunKey(userId, chapterId, requestId));
+        localCache.remove(new ScopeKey(userId, chapterId, requestId));
+        String inputKey = KEY_PREFIX + "input:" + userId + ":" + chapterId + ":" + requestId;
+        redisTemplate.delete(inputKey);
     }
 
     private void record(ToolEvent event, Long userId, Long chapterId) {
@@ -89,14 +124,14 @@ public class AgentRunToolStatus {
     }
 
     private void record(ToolEvent event, ScopeKey key) {
-        RunState state = activeRuns.get(key);
+        RunState state = localCache.get(key);
         if (state != null) {
             state.add(event);
         }
     }
 
     private RunState singleActiveState(Long userId, Long chapterId) {
-        List<RunState> matches = activeRuns.entrySet().stream()
+        List<RunState> matches = localCache.entrySet().stream()
                 .filter(entry -> entry.getKey().matches(userId, chapterId))
                 .map(Map.Entry::getValue)
                 .toList();
@@ -205,4 +240,6 @@ public class AgentRunToolStatus {
 
     private record RunKey(Long userId, Long chapterId, UUID requestId) {
     }
+
+    private final ConcurrentMap<ScopeKey, RunState> activeRuns = new ConcurrentHashMap<>();
 }
