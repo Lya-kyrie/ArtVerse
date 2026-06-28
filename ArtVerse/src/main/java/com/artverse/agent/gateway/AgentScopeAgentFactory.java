@@ -19,6 +19,7 @@ import com.artverse.guard.GenerationGuardService;
 import com.artverse.persistence.MangaImageRepository;
 import io.agentscope.core.model.Model;
 import io.agentscope.core.model.OpenAIChatModel;
+import io.agentscope.core.state.AgentStateStore;
 import io.agentscope.core.tool.Toolkit;
 import io.agentscope.harness.agent.HarnessAgent;
 import io.agentscope.harness.agent.memory.compaction.CompactionConfig;
@@ -54,6 +55,7 @@ public class AgentScopeAgentFactory {
     private final GenerationGuardService generationGuardService;
     private final AgentToolAuditService agentToolAuditService;
     private final AgentRunToolStatus agentRunToolStatus;
+    private final AgentStateStore agentStateStore;
     private AgentCache<HarnessAgent> agentCache;
 
     @PostConstruct
@@ -91,6 +93,7 @@ public class AgentScopeAgentFactory {
                 .model(effectiveModel)
                 .workspace(requestWorkspace)
                 .compaction(compactionConfig)
+                .stateStore(agentStateStore)
                 .enablePendingToolRecovery(true)
                 .disableShellTool()
                 .disableFilesystemTools()
