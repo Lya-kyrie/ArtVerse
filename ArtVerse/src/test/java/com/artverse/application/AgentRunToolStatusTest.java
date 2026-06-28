@@ -1,15 +1,23 @@
 package com.artverse.application;
 
 import org.junit.jupiter.api.Test;
+import org.springframework.data.redis.core.RedisTemplate;
+import org.springframework.data.redis.core.ValueOperations;
 
+import java.time.Duration;
 import java.util.Map;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.Mockito.doNothing;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
 
 class AgentRunToolStatusTest {
 
-    private final AgentRunToolStatus status = new AgentRunToolStatus();
+    private final AgentRunToolStatus status = new AgentRunToolStatus(redisTemplate());
 
     @Test
     void recordsToolEventOnlyForMatchingRequestId() {
@@ -50,5 +58,16 @@ class AgentRunToolStatusTest {
 
             assertThat(scope.state().events()).hasSize(1);
         }
+    }
+
+    private RedisTemplate<String, Object> redisTemplate() {
+        @SuppressWarnings("unchecked")
+        RedisTemplate<String, Object> redisTemplate = mock(RedisTemplate.class);
+        @SuppressWarnings("unchecked")
+        ValueOperations<String, Object> valueOperations = mock(ValueOperations.class);
+        when(redisTemplate.opsForValue()).thenReturn(valueOperations);
+        doNothing().when(valueOperations).set(anyString(), any(), any(Duration.class));
+        when(valueOperations.get(anyString())).thenReturn(null);
+        return redisTemplate;
     }
 }

@@ -12,7 +12,10 @@ import com.artverse.domain.User;
 import com.artverse.persistence.MangaAgentConversationRepository;
 import com.artverse.persistence.MangaAgentMessageRepository;
 import org.junit.jupiter.api.Test;
+import org.springframework.data.redis.core.RedisTemplate;
+import org.springframework.data.redis.core.ValueOperations;
 
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -21,7 +24,8 @@ import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.Mockito.doNothing;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -53,7 +57,7 @@ class MangaAgentConversationServiceTest {
     void fallbackAfterToolSuccessWritesAssistantAndSystemMarkers() {
         Fixture fixture = fixture();
         UUID requestId = UUID.randomUUID();
-        AgentRunToolStatus toolStatus = new AgentRunToolStatus();
+        AgentRunToolStatus toolStatus = new AgentRunToolStatus(redisTemplate());
         when(fixture.messageRepository.findByConversationIdAndRequestIdAndRole(any(), any(UUID.class), any(MessageRole.class)))
                 .thenReturn(Optional.empty());
 
@@ -118,18 +122,20 @@ class MangaAgentConversationServiceTest {
         when(accessService.requireVisible(7L, 1L)).thenReturn(chapter);
         when(conversationRepository.findByUserIdAndChapterIdAndConversationUuid(1L, 7L, conversation.getConversationUuid()))
                 .thenReturn(Optional.of(conversation));
-        when(messageRepository.findByUserIdAndChapterIdOrderByCreatedAtAsc(1L, 7L))
-                .thenAnswer(invocation -> List.copyOf(saved));
-        when(messageRepository.findByUserIdAndChapterIdAndRequestIdAndRole(eq(1L), eq(7L), any(UUID.class), any(MessageRole.class)))
-                .thenReturn(Optional.empty());
         when(messageRepository.findByConversationIdAndRequestIdAndRole(any(), any(UUID.class), any(MessageRole.class)))
                 .thenReturn(Optional.empty());
-        when(messageRepository.save(any(MangaAgentMessage.class))).thenAnswer(invocation -> {
-            MangaAgentMessage message = invocation.getArgument(0);
-            saved.add(message);
-            return message;
-        });
-        return new Fixture(service, conversationRepository, messageRepository, accessService, user, chapter, conversation, saved);
+        return new Fixture(service, conversationRepository, messageRepository, user, chapter, conversation, saved);
+    }
+
+    private RedisTemplate<String, Object> redisTemplate() {
+        @SuppressWarnings("unchecked")
+        RedisTemplate<String, Object> redisTemplate = mock(RedisTemplate.class);
+        @SuppressWarnings("unchecked")
+        ValueOperations<String, Object> valueOperations = mock(ValueOperations.class);
+        when(redisTemplate.opsForValue()).thenReturn(valueOperations);
+        doNothing().when(valueOperations).set(anyString(), any(), any(Duration.class));
+        when(valueOperations.get(anyString())).thenReturn(null);
+        return redisTemplate;
     }
 
     private static User user(Long id) {
@@ -141,14 +147,14 @@ class MangaAgentConversationServiceTest {
     private static Chapter chapter(User user) {
         Story story = new Story();
         story.setId(3L);
-        story.setTitle("Story");
+        story.setTitle("Test Story");
         story.setUser(user);
         Chapter chapter = new Chapter();
         chapter.setId(7L);
         chapter.setStory(story);
         chapter.setChapterNumber(1);
         chapter.setColorMode(ColorMode.BW);
-        chapter.setImageCount(10);
+        chapter.setImageCount(1);
         return chapter;
     }
 
@@ -157,17 +163,15 @@ class MangaAgentConversationServiceTest {
         conversation.setId(99L);
         conversation.setConversationUuid(UUID.fromString("11111111-1111-1111-1111-111111111111"));
         conversation.setUser(user);
-        conversation.setStory(chapter.getStory());
         conversation.setChapter(chapter);
-        conversation.setTitle("Test Conversation");
+        conversation.setStory(chapter.getStory());
         conversation.setStatus(MangaAgentConversationStatus.ACTIVE);
         return conversation;
     }
 
-    private static MangaAgentMessage message(User user, Chapter chapter, MessageRole role, String content, UUID requestId) {
+    private MangaAgentMessage message(User user, Chapter chapter, MessageRole role, String content, UUID requestId) {
         MangaAgentMessage message = new MangaAgentMessage();
         message.setUser(user);
-        message.setStory(chapter.getStory());
         message.setChapter(chapter);
         message.setRole(role);
         message.setContent(content);
@@ -175,13 +179,14 @@ class MangaAgentConversationServiceTest {
         return message;
     }
 
-    private record Fixture(MangaAgentConversationService service,
-                           MangaAgentConversationRepository conversationRepository,
-                           MangaAgentMessageRepository messageRepository,
-                           ChapterAccessService accessService,
-                           User user,
-                           Chapter chapter,
-                           MangaAgentConversation conversation,
-                           List<MangaAgentMessage> saved) {
+    private record Fixture(
+            MangaAgentConversationService service,
+            MangaAgentConversationRepository conversationRepository,
+            MangaAgentMessageRepository messageRepository,
+            User user,
+            Chapter chapter,
+            MangaAgentConversation conversation,
+            List<MangaAgentMessage> saved
+    ) {
     }
 }
