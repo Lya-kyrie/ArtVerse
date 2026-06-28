@@ -160,7 +160,7 @@ public class MangaAgentRunEventPublisher {
         try {
             mangaAgentRunService.appendEvent(run, eventName, payload);
         } catch (Exception e) {
-            log.debug("Failed to persist manga agent run event {}: {}", eventName, e.getMessage());
+            log.warn("Failed to persist manga agent run event {}", eventName, e);
         }
     }
 
@@ -168,7 +168,7 @@ public class MangaAgentRunEventPublisher {
         try {
             emitter.send(SseEmitter.event().data(objectMapper.writeValueAsString(event), MediaType.APPLICATION_JSON));
         } catch (Exception e) {
-            log.debug("Failed to send manga agent SSE: {}", e.getMessage());
+            log.warn("Failed to send manga agent SSE", e);
         }
     }
 
@@ -202,7 +202,7 @@ public class MangaAgentRunEventPublisher {
         try {
             emitter.complete();
         } catch (Exception e) {
-            log.debug("Failed to complete manga agent SSE: {}", e.getMessage());
+            log.warn("Failed to complete manga agent SSE", e);
         }
     }
 }

@@ -110,6 +110,13 @@ public class AgentRunToolStatus {
         return null;
     }
 
+    public void markCancelled(Long userId, Long chapterId, UUID requestId) {
+        RunState state = localCache.get(new ScopeKey(userId, chapterId, requestId));
+        if (state != null) {
+            state.markCancelled();
+        }
+    }
+
     public void clearWaitingInput(Long userId, Long chapterId, UUID requestId) {
         localCache.remove(new ScopeKey(userId, chapterId, requestId));
         String inputKey = KEY_PREFIX + "input:" + userId + ":" + chapterId + ":" + requestId;
@@ -188,6 +195,7 @@ public class AgentRunToolStatus {
         private final Consumer<ToolEvent> listener;
         private final CopyOnWriteArrayList<ToolEvent> events = new CopyOnWriteArrayList<>();
         private volatile AgentUserInputRequest userInputRequest;
+        private volatile boolean cancelled;
 
         private RunState(Long userId, Long chapterId, UUID requestId, Consumer<ToolEvent> listener) {
             this.userId = userId;
@@ -240,6 +248,14 @@ public class AgentRunToolStatus {
 
         public AgentUserInputRequest userInputRequest() {
             return userInputRequest;
+        }
+
+        public boolean isCancelled() {
+            return cancelled;
+        }
+
+        private void markCancelled() {
+            this.cancelled = true;
         }
     }
 

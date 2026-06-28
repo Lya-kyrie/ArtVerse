@@ -121,6 +121,17 @@ class MangaAgentRunServiceTest {
         assertThat(run.getErrorMessage()).contains("interrupted");
     }
 
+    @Test
+    void waitingInputReturnsNullForCorruptedJsonInsteadOfThrowing() {
+        Fixture fixture = fixture();
+        MangaAgentRun run = run(fixture.user, fixture.chapter, UUID.randomUUID(), "生成分镜");
+        run.setUserInputRequestJson("{not valid json!@#}");
+
+        AgentUserInputRequest result = fixture.service.waitingInput(run);
+
+        assertThat(result).isNull();
+    }
+
     private Fixture fixture() {
         MangaAgentRunRepository runRepository = mock(MangaAgentRunRepository.class);
         MangaAgentRunEventRepository eventRepository = mock(MangaAgentRunEventRepository.class);

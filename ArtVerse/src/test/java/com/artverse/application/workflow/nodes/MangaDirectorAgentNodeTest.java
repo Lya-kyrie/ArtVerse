@@ -49,21 +49,20 @@ import static org.mockito.Mockito.when;
 class MangaDirectorAgentNodeTest {
 
     @Test
-    void streamReturnsEmptyReplyWhenRunIsTerminal() {
+    void streamReturnsEmptyReplyWhenRunIsCancelledViaToolState() {
         Fixture fixture = fixture();
-        when(fixture.runService.isTerminal(fixture.requestId, fixture.user.getId(), fixture.chapter.getId())).thenReturn(true);
         when(fixture.gateway.streamEvents(any(AgentRunRequest.class))).thenReturn(Flux.just(new AgentStartEvent("session-1", "reply-1", "agent")));
         when(fixture.runService.toPayload(any())).thenReturn(Map.of("type", "workflow_step"));
 
         Map<String, Object> result;
         try (AgentRunToolStatus.RunScope scope = fixture.toolStatus.start(fixture.user.getId(), fixture.chapter.getId(), fixture.requestId)) {
+            fixture.toolStatus.markCancelled(fixture.user.getId(), fixture.chapter.getId(), fixture.requestId);
             result = fixture.node.stream(fixture.context(scope.state()), fixture.streamContext);
         }
 
         assertThat(result).containsEntry("reply", "");
         verify(fixture.conversationService).saveMessage(fixture.conversation, com.artverse.domain.MessageRole.USER, fixture.message, fixture.requestId);
         verify(fixture.conversationService, never()).saveMessage(eq(fixture.conversation), eq(com.artverse.domain.MessageRole.ASSISTANT), anyString(), any());
-        verify(fixture.runService).isTerminal(fixture.requestId, fixture.user.getId(), fixture.chapter.getId());
     }
 
     private Fixture fixture() {
@@ -112,7 +111,6 @@ class MangaDirectorAgentNodeTest {
         when(conversationService.buildMessages(any(), any(), any(List.class), anyString(), any())).thenReturn(List.of(new AgentMessage("user", "continue")));
         when(apiKeyService.getDecryptedKey(user, "coze")).thenReturn(null);
         doNothing().when(workspaceSyncService).syncMangaDirectorKnowledge(chapter.getId(), String.valueOf(user.getId()));
-        when(runService.isTerminal(requestId, user.getId(), chapter.getId())).thenReturn(true);
 
         return new Fixture(node, conversationService, gateway, runService, toolStatus, streamContext, conversation, user, chapter, requestId, "continue");
     }

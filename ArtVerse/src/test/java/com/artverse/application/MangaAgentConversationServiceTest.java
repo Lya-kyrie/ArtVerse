@@ -12,6 +12,7 @@ import com.artverse.domain.User;
 import com.artverse.persistence.MangaAgentConversationRepository;
 import com.artverse.persistence.MangaAgentMessageRepository;
 import org.junit.jupiter.api.Test;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.data.redis.core.ValueOperations;
 
@@ -107,6 +108,26 @@ class MangaAgentConversationServiceTest {
         fixture.service.deleteConversation(7L, fixture.user, fixture.conversation.getConversationUuid());
 
         verify(fixture.conversationRepository).delete(fixture.conversation);
+    }
+
+    @Test
+    void activeOrCreateRetriesFindWhenSaveHitsUniqueConstraint() {
+        Fixture fixture = fixture();
+        MangaAgentConversation raceWinner = fixture.conversation;
+        MangaAgentConversation another = conversation(fixture.user, fixture.chapter);
+        another.setId(100L);
+
+        when(fixture.conversationRepository.findFirstByUserIdAndChapterIdAndStatusOrderByUpdatedAtDesc(
+                1L, 7L, MangaAgentConversationStatus.ACTIVE))
+                .thenReturn(Optional.empty())
+                .thenReturn(Optional.of(raceWinner));
+        when(fixture.conversationRepository.save(any(MangaAgentConversation.class)))
+                .thenThrow(new DataIntegrityViolationException("duplicate key"));
+
+        MangaAgentConversation result = fixture.service.activeOrCreate(7L, fixture.user);
+
+        assertThat(result).isEqualTo(raceWinner);
+        verify(fixture.conversationRepository).save(any(MangaAgentConversation.class));
     }
 
     private Fixture fixture() {

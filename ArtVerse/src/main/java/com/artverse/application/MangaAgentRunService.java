@@ -15,6 +15,7 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -26,6 +27,7 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 
+@Slf4j
 @Service
 @RequiredArgsConstructor
 public class MangaAgentRunService {
@@ -158,7 +160,8 @@ public class MangaAgentRunService {
         try {
             return objectMapper.readValue(run.getUserInputRequestJson(), AgentUserInputRequest.class);
         } catch (Exception e) {
-            throw new BusinessException(500, "Stored user input request is invalid");
+            log.warn("Failed to parse stored user input request JSON for run {}; treating as absent", run.getId(), e);
+            return null;
         }
     }
 
@@ -325,6 +328,19 @@ public class MangaAgentRunService {
         );
     }
 
+    /**
+     * Lightweight resume context that skips the event history query.
+     * Only reads fields needed by the resume path: status, route, and user input request.
+     */
+    @Transactional(readOnly = true)
+    public ResumeContext resumeContext(MangaAgentRun run) {
+        return new ResumeContext(
+                run.getStatus(),
+                run.getRoute() == null ? MangaWorkflowRoute.DIRECTOR : run.getRoute(),
+                waitingInput(run)
+        );
+    }
+
     public Map<String, Object> toPayload(AgentRunEvent event) {
         Map<String, Object> payload = new LinkedHashMap<>();
         payload.put("type", event.type());
@@ -411,6 +427,13 @@ public class MangaAgentRunService {
 
     private String asString(Object value) {
         return value == null ? null : String.valueOf(value);
+    }
+
+    public record ResumeContext(
+            MangaAgentRunStatus status,
+            MangaWorkflowRoute route,
+            AgentUserInputRequest userInputRequest
+    ) {
     }
 
     public record RunSnapshot(

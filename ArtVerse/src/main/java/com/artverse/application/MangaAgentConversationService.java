@@ -11,6 +11,8 @@ import com.artverse.domain.User;
 import com.artverse.persistence.MangaAgentConversationRepository;
 import com.artverse.persistence.MangaAgentMessageRepository;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -22,6 +24,7 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 
+@Slf4j
 @Service
 @RequiredArgsConstructor
 public class MangaAgentConversationService {
@@ -43,12 +46,8 @@ public class MangaAgentConversationService {
     @Transactional
     public MangaAgentConversation activeOrCreate(Long chapterId, User user) {
         Chapter chapter = chapterAccessService.requireVisible(chapterId, user.getId());
-        return conversationRepository.findFirstByUserIdAndChapterIdAndStatusOrderByUpdatedAtDesc(
-                        user.getId(),
-                        chapterId,
-                        MangaAgentConversationStatus.ACTIVE
-                )
-                .orElseGet(() -> conversationRepository.save(newConversation(user, chapter)));
+        return findActiveConversation(user.getId(), chapterId)
+                .orElseGet(() -> saveNewConversation(user, chapter));
     }
 
     @Transactional
@@ -59,7 +58,24 @@ public class MangaAgentConversationService {
                 chapterId,
                 MangaAgentConversationStatus.ACTIVE
         ).ifPresent(this::archiveConversation);
-        return conversationRepository.save(newConversation(user, chapter));
+        return saveNewConversation(user, chapter);
+    }
+
+    private Optional<MangaAgentConversation> findActiveConversation(Long userId, Long chapterId) {
+        return conversationRepository.findFirstByUserIdAndChapterIdAndStatusOrderByUpdatedAtDesc(
+                userId, chapterId, MangaAgentConversationStatus.ACTIVE);
+    }
+
+    private MangaAgentConversation saveNewConversation(User user, Chapter chapter) {
+        try {
+            return conversationRepository.save(newConversation(user, chapter));
+        } catch (DataIntegrityViolationException e) {
+            log.warn("Race creating active conversation for user {} chapter {}; falling back to existing",
+                    user.getId(), chapter.getId(), e);
+            return findActiveConversation(user.getId(), chapter.getId())
+                    .orElseThrow(() -> new BusinessException(409,
+                            "Another active conversation was just created for this chapter; please retry"));
+        }
     }
 
     @Transactional(readOnly = true)

@@ -23,14 +23,18 @@ import java.time.Duration;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.RejectedExecutionException;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.doNothing;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 class MangaAgentServiceTest {
@@ -64,22 +68,14 @@ class MangaAgentServiceTest {
         Fixture fixture = fixture();
         UUID requestId = UUID.randomUUID();
         MangaAgentConversation conversation = fixture.conversation;
-        MangaAgentRunService.RunSnapshot snapshot = new MangaAgentRunService.RunSnapshot(
-                requestId,
+        MangaAgentRunService.ResumeContext ctx = new MangaAgentRunService.ResumeContext(
                 com.artverse.domain.MangaAgentRunStatus.WAITING_USER,
-                "continue",
-                null,
-                null,
                 com.artverse.application.workflow.MangaWorkflowRoute.DIRECTOR,
-                new AgentUserInputRequest("Why?", List.of(), true, "Need confirmation"),
-                List.of(),
-                null,
-                null,
-                null
+                new AgentUserInputRequest("Why?", List.of(), true, "Need confirmation")
         );
         Mockito.doReturn(java.util.Optional.of(fixture.waitingRun))
                 .when(fixture.runService).findRun(conversation, requestId);
-        Mockito.doReturn(snapshot).when(fixture.runService).snapshot(fixture.waitingRun);
+        Mockito.doReturn(ctx).when(fixture.runService).resumeContext(fixture.waitingRun);
         Mockito.doAnswer(invocation -> {
             sneakyThrow(new IOException("disk full"));
             return null;
@@ -98,6 +94,51 @@ class MangaAgentServiceTest {
     void runStreamCreatesEmitter() {
         Fixture fixture = fixture();
         assertThat(fixture.service.runAgUiStream(7L, "continue", UUID.randomUUID(), fixture.user)).isNotNull();
+    }
+
+    @Test
+    void runStreamReleasesConcurrencyGateWhenExecutorRejects() {
+        MangaAgentMessageRepository messageRepository = mock(MangaAgentMessageRepository.class);
+        MangaAgentConversationRepository conversationRepository = mock(MangaAgentConversationRepository.class);
+        ChapterAccessService accessService = mock(ChapterAccessService.class);
+        MangaAgentRunService runService = mock(MangaAgentRunService.class);
+        MangaAgentRunEventPublisher eventPublisher = mock(MangaAgentRunEventPublisher.class);
+        MangaWorkflowOrchestrator orchestrator = mock(MangaWorkflowOrchestrator.class);
+        ArtVerseProperties props = new ArtVerseProperties();
+        props.getAgent().setMaxConcurrentRuns(3);
+        AgentRunToolStatus toolStatus = new AgentRunToolStatus(redisTemplate());
+        AgentConcurrencyGate gate = new AgentConcurrencyGate(props);
+
+        User user = user(1L);
+        Chapter chapter = chapter(user);
+        MangaAgentConversation conversation = conversation(user, chapter);
+        when(accessService.requireVisible(7L, 1L)).thenReturn(chapter);
+        when(conversationRepository.findFirstByUserIdAndChapterIdAndStatusOrderByUpdatedAtDesc(
+                user.getId(), 7L, MangaAgentConversationStatus.ACTIVE))
+                .thenReturn(java.util.Optional.of(conversation));
+
+        MangaAgentConversationService conversationService =
+                new MangaAgentConversationService(conversationRepository, messageRepository, accessService);
+
+        ExecutorService rejectingExecutor = Executors.newSingleThreadExecutor();
+        rejectingExecutor.shutdown(); // now rejects new tasks
+
+        MangaAgentService service = new MangaAgentService(
+                conversationService, runService, eventPublisher, orchestrator,
+                toolStatus, accessService, props, gate, rejectingExecutor);
+
+        MangaAgentRunEventPublisher.RunEventSink sink = mock(MangaAgentRunEventPublisher.RunEventSink.class);
+        when(eventPublisher.newSink(any())).thenReturn(sink);
+
+        int permitsBefore = gate.availablePermits();
+        assertThat(permitsBefore).isEqualTo(3);
+
+        assertThatThrownBy(() -> service.runAgUiStream(7L, "test", UUID.randomUUID(), user))
+                .isInstanceOf(BusinessException.class)
+                .hasMessageContaining("Failed to submit");
+
+        // Permit must be released after rejection
+        assertThat(gate.availablePermits()).isEqualTo(3);
     }
 
     private Fixture fixture() {

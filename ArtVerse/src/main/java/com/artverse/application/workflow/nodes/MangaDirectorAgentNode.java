@@ -129,8 +129,7 @@ public class MangaDirectorAgentNode implements MangaWorkflowNodeHandler {
         try {
             harnessAgentGateway.streamEvents(request)
                     .doOnNext(event -> mapAgentScopeEvent(event).ifPresent(mapped -> {
-                        if (mangaAgentRunService.isTerminal(
-                                context.requestId(), context.user().getId(), context.chapter().getId())) {
+                        if (context.toolState().isCancelled()) {
                             throw new AgentRunTerminatedException(context.requestId(), context.user().getId(), context.chapter().getId());
                         }
                         if ("text_delta".equals(mapped.type()) && mapped.text() != null) {
@@ -142,6 +141,8 @@ public class MangaDirectorAgentNode implements MangaWorkflowNodeHandler {
             finished.set(true);
             throwIfWaitingForUser(context);
         } catch (AgentRunTerminatedException e) {
+            log.debug("Agent run terminated by concurrent cancel: requestId={} userId={} chapterId={}",
+                    e.requestId(), e.userId(), e.chapterId());
             return Map.of("reply", "");
         } catch (AgentUserInputRequiredException e) {
             throw e;
@@ -149,7 +150,7 @@ public class MangaDirectorAgentNode implements MangaWorkflowNodeHandler {
             log.warn("Circuit breaker open for agent LLM, fast-failing request={}", context.requestId());
             throw new BusinessException(503, "AI 服务暂时不可用，请稍后重试");
         } catch (Exception e) {
-            if (mangaAgentRunService.isTerminal(context.requestId(), context.user().getId(), context.chapter().getId())) {
+            if (context.toolState().isCancelled()) {
                 return Map.of("reply", "");
             }
             String error = e.getMessage() == null ? "unknown error" : e.getMessage();
@@ -162,7 +163,7 @@ public class MangaDirectorAgentNode implements MangaWorkflowNodeHandler {
         }
 
         String finalReply = reply.toString().trim();
-        if (mangaAgentRunService.isTerminal(context.requestId(), context.user().getId(), context.chapter().getId())) {
+        if (context.toolState().isCancelled()) {
             return Map.of("reply", "");
         }
         if (!finished.get() || finalReply.isBlank()) {
