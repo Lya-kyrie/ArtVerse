@@ -1,4 +1,4 @@
-﻿import { Fragment, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+﻿import { Fragment, useEffect, useRef, useState, type ReactNode } from 'react';
 import {
   Archive,
   Bot,
@@ -16,6 +16,7 @@ import {
   TriangleAlert,
   Wrench,
 } from 'lucide-react';
+import ModelSwitcher from './ModelSwitcher';
 import {
   API_KEY_CHANGE_EVENT,
   cancelMangaAgentConversationRun,
@@ -65,6 +66,71 @@ interface ExecutionEventItem {
   createdAt?: string;
   tone: AgUiEventTone;
   icon: 'bot' | 'sparkles' | 'wrench' | 'question' | 'check' | 'warning' | 'clock' | 'message' | 'archive';
+}
+
+/* ------------------------------------------------------------------ */
+/*  Lightweight upward-opening select                                 */
+/* ------------------------------------------------------------------ */
+
+function SelectUpward<T extends string>({
+  value,
+  label,
+  options,
+  onChange,
+  disabled,
+  width,
+}: {
+  value: T;
+  label: string;
+  options: { value: T; label: string }[];
+  onChange: (value: T) => void;
+  disabled?: boolean;
+  width: string;
+}) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const h = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    };
+    document.addEventListener('mousedown', h);
+    return () => document.removeEventListener('mousedown', h);
+  }, [open]);
+
+  const display = options.find(o => o.value === value)?.label || label;
+
+  return (
+    <div ref={ref} className={`relative ${width} shrink-0`}>
+      <button
+        type="button"
+        disabled={disabled}
+        onClick={() => { if (!disabled) setOpen(v => !v); }}
+        className={`flex w-full items-center gap-1 truncate rounded-xl border px-3 py-1.5 text-xs font-medium transition outline-none ${open ? 'border-vermilion/40 bg-vermilion-light/10 text-vermilion' : 'border-paper-border bg-paper-surface/80 text-sumi hover:border-sumi-faint/40'}`}
+      >
+        <span className="truncate flex-1 text-left">{display}</span>
+        <svg className={`shrink-0 text-sumi-faint transition-transform ${open ? 'rotate-180' : ''}`} width="12" height="12" viewBox="0 0 20 20" fill="none"><path stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.5" d="M6 8l4 4 4-4"/></svg>
+      </button>
+      {open && (
+        <div className="absolute bottom-[calc(100%+4px)] left-0 z-40 w-full max-h-[200px] overflow-y-auto overscroll-contain rounded-xl border border-paper-border bg-paper-raised shadow-lg animate-fade-in p-1">
+          {options.map(o => {
+            const sel = o.value === value;
+            return (
+              <button
+                key={o.value}
+                type="button"
+                onClick={() => { onChange(o.value); setOpen(false); }}
+                className={`w-full truncate rounded-lg px-2.5 py-2 text-xs text-left transition-colors ${sel ? 'bg-vermilion-light/20 text-vermilion font-medium' : 'text-sumi hover:bg-paper-surface'}`}
+              >
+                {o.label}
+              </button>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
 }
 
 const WORKFLOW_ROUTES: Array<{ value: MangaWorkflowRoute; label: string }> = [
@@ -351,7 +417,6 @@ export default function MangaAgentPage({ onCreateStory }: { onCreateStory?: () =
   const [chapterId, setChapterId] = useState('');
   const [conversations, setConversations] = useState<ConversationView[]>([]);
   const [conversationId, setConversationId] = useState('');
-  const [llmModels, setLlmModels] = useState<string[]>(() => getProviderModelOptions('llm'));
   const [selectedLlmModel, setSelectedLlmModel] = useState(() => getPrimaryProviderModel('llm'));
   const [input, setInput] = useState('');
   const [messages, setMessages] = useState<Message[]>([]);
@@ -376,8 +441,7 @@ export default function MangaAgentPage({ onCreateStory }: { onCreateStory?: () =
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
   const conversationCacheRef = useRef<Record<string, ConversationCacheEntry>>({});
 
-  const activeStory = useMemo(() => stories.find((story) => String(story.id) === storyId) ?? null, [stories, storyId]);
-  const activeChapter = useMemo(() => chapters.find((chapter) => String(chapter.id) === chapterId) ?? null, [chapters, chapterId]);
+
   const latestExecutionEvent = executionEvents.length > 0 ? executionEvents[executionEvents.length - 1] : null;
   const showExecutionPanel = executionEvents.length > 0 || !!userInputRequest || !!draftReply || !!activeRequestId || sending;
   const waitingForHuman = !!userInputRequest;
@@ -390,7 +454,6 @@ export default function MangaAgentPage({ onCreateStory }: { onCreateStory?: () =
   useEffect(() => {
     const syncModels = () => {
       const options = getProviderModelOptions('llm');
-      setLlmModels(options);
       setSelectedLlmModel((prev) => (prev && options.includes(prev) ? prev : (options[0] || '')));
     };
     syncModels();
@@ -658,6 +721,10 @@ export default function MangaAgentPage({ onCreateStory }: { onCreateStory?: () =
       const list = await getMangaAgentConversationMessages(chapterNumericId, selectedConversationId);
       setMessages(toMessages(list));
       setDraftReply('');
+      // Clear runtime state after run finishes — the reply is persisted in messages,
+      // and clearing events/requestId hides the execution panel naturally.
+      setExecutionEvents([]);
+      setActiveRequestId(null);
     } catch {
       // ignore refresh failure; live state still exists
     }
@@ -913,112 +980,72 @@ export default function MangaAgentPage({ onCreateStory }: { onCreateStory?: () =
           </div>
           <div className="min-w-0">
             <h1 className="font-display text-base font-semibold text-sumi">创作工坊</h1>
-            <p className="text-xs text-sumi-dim">{activeStory?.title || '选择故事开始'}{activeChapter ? ` · 第${activeChapter.chapter_number} 章` : ''}</p>
+            <p className="text-xs text-sumi-dim">AI 漫画创作工坊</p>
           </div>
         </div>
       </header>
 
       <div className="flex min-h-0 flex-1 gap-4 p-4">
-        {/* Left sidebar — story/chapter/conversation config */}
-        <aside className="flex w-[300px] min-w-0 shrink-0 flex-col gap-3 rounded-xl border border-paper-border bg-paper-surface/70 p-4">
-          <div>
-            <p className="mb-1.5 text-[11px] font-semibold uppercase tracking-wider text-sumi-faint">故事</p>
-            <select
-              value={storyId}
-              onChange={(e) => setStoryId(e.target.value)}
-              className="w-full rounded-md border border-paper-border bg-paper-base px-3 py-2.5 text-sm text-sumi outline-none transition focus:border-vermilion"
-            >
-              {stories.length === 0 ? <option value="">暂无故事</option> : null}
-              {stories.map((story) => (
-                <option key={story.id} value={story.id}>{story.title}</option>
-              ))}
-            </select>
-          </div>
-
-          <div>
-            <p className="mb-1.5 text-[11px] font-semibold uppercase tracking-wider text-sumi-faint">章节</p>
-            <div className="relative">
-              <select
-                value={chapterId}
-                onChange={(e) => setChapterId(e.target.value)}
-                disabled={chapterLoading || chapters.length === 0}
-                className="w-full rounded-md border border-paper-border bg-paper-base px-3 py-2.5 text-sm text-sumi outline-none transition focus:border-vermilion disabled:opacity-40"
-              >
-                {chapters.length === 0 ? <option value="">暂无章节</option> : null}
-                {chapters.map((chapter) => (
-                  <option key={chapter.id} value={chapter.id}>第{chapter.chapter_number} 章</option>
-                ))}
-              </select>
-              {chapterLoading && <Loader2 size={14} className="absolute right-3 top-1/2 -translate-y-1/2 animate-spin text-sumi-faint" />}
-            </div>
-          </div>
-
-          <div className="rounded-lg border border-kinpaku-light bg-kinpaku-light/40 p-3">
-            <p className="text-[11px] font-semibold uppercase tracking-wider text-kinpaku/80">当前工作区</p>
-            <div className="mt-2 space-y-1.5">
-              <div className="text-xs text-sumi-dim">故事：<span className="text-sumi font-medium">{activeStory?.title || '未选择'}</span></div>
-              <div className="text-xs text-sumi-dim">章节：<span className="text-sumi font-medium">{activeChapter ? `第${activeChapter.chapter_number} 章` : '未选择'}</span></div>
-            </div>
+        {/* Left sidebar — conversation list only */}
+        <aside className="flex w-[240px] min-w-0 shrink-0 flex-col rounded-xl border border-paper-border bg-paper-surface/70 p-4">
+          <div className="mb-3 flex items-center justify-between">
+            <p className="text-[11px] font-semibold uppercase tracking-wider text-sumi-faint">会话列表</p>
             <button
               onClick={() => void startNewConversation()}
               disabled={!chapterId || conversationLoading}
-              className="mt-3 inline-flex w-full items-center justify-center gap-1.5 rounded-md border border-kinpaku/20 bg-paper-base px-3 py-2 text-xs font-medium text-sumi transition hover:border-kinpaku/40 hover:bg-kinpaku-light/30 disabled:cursor-not-allowed disabled:opacity-40"
+              className="inline-flex items-center gap-1 rounded-md border border-paper-border bg-paper-base px-2 py-1 text-[11px] text-sumi-dim transition hover:border-vermilion/30 hover:text-vermilion disabled:cursor-not-allowed disabled:opacity-40"
             >
-              <Plus size={14} />
-              新建会话
+              <Plus size={12} />
+              新建
             </button>
           </div>
 
-          <div className="flex-1 min-h-0">
-            <p className="mb-1.5 text-[11px] font-semibold uppercase tracking-wider text-sumi-faint">会话列表</p>
-            <div className="max-h-full space-y-1.5 overflow-y-auto pr-1">
-              {conversations.length === 0 ? (
-                <div className="rounded-md border border-paper-border bg-paper-base/50 px-3 py-4 text-center text-xs text-sumi-faint">
-                  暂无会话
-                </div>
-              ) : conversations.map((conversation) => {
-                const selected = conversation.conversationId === conversationId;
-                const pending = conversation.conversationId === pendingConversationId;
-                return (
-                  <div
-                    key={conversation.conversationId}
-                    className={`flex items-start gap-2 rounded-md border px-3 py-2.5 transition ${selected ? 'border-vermilion/40 bg-vermilion-light/20' : 'border-paper-border bg-paper-base hover:border-sumi-faint/40'} ${pending ? 'ring-1 ring-vermilion/30' : ''}`}
+          <div className="flex-1 min-h-0 space-y-1.5 overflow-y-auto pr-1">
+            {conversations.length === 0 ? (
+              <div className="rounded-md border border-paper-border bg-paper-base/50 px-3 py-4 text-center text-xs text-sumi-faint">
+                暂无会话
+              </div>
+            ) : conversations.map((conversation) => {
+              const selected = conversation.conversationId === conversationId;
+              const pending = conversation.conversationId === pendingConversationId;
+              return (
+                <div
+                  key={conversation.conversationId}
+                  className={`flex items-start gap-2 rounded-md border px-3 py-2.5 transition ${selected ? 'border-vermilion/40 bg-vermilion-light/20' : 'border-paper-border bg-paper-base hover:border-sumi-faint/40'} ${pending ? 'ring-1 ring-vermilion/30' : ''}`}
+                >
+                  <button
+                    type="button"
+                    onClick={() => void loadSelectedConversation(conversation.conversationId)}
+                    className="flex min-w-0 flex-1 items-start gap-2.5 text-left"
                   >
-                    <button
-                      type="button"
-                      onClick={() => void loadSelectedConversation(conversation.conversationId)}
-                      className="flex min-w-0 flex-1 items-start gap-2.5 text-left"
-                    >
-                      <div className={`mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-md ${selected ? 'bg-vermilion text-white' : 'bg-paper-surface text-sumi-dim'}`}>
-                        {pending ? <Loader2 size={13} className="animate-spin" /> : <MessageSquareText size={13} />}
+                    <div className={`mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-md ${selected ? 'bg-vermilion text-white' : 'bg-paper-surface text-sumi-dim'}`}>
+                      {pending ? <Loader2 size={13} className="animate-spin" /> : <MessageSquareText size={13} />}
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center gap-1.5">
+                        <div className="truncate text-xs font-medium text-sumi">{conversation.title || '新会话'}</div>
+                        {conversation.isActive && <span className="shrink-0 rounded-full border border-success/20 bg-success/10 px-1.5 py-0.5 text-[10px] text-success">进行中</span>}
+                        {pending && <span className="shrink-0 rounded-full border border-kinpaku/20 bg-kinpaku-light/50 px-1.5 py-0.5 text-[10px] text-kinpaku">切换中</span>}
                       </div>
-                      <div className="min-w-0 flex-1">
-                        <div className="flex items-center gap-1.5">
-                          <div className="truncate text-xs font-medium text-sumi">{conversation.title || '新会话'}</div>
-                          {conversation.isActive && <span className="shrink-0 rounded-full border border-success/20 bg-success/10 px-1.5 py-0.5 text-[10px] text-success">进行中</span>}
-                          {pending && <span className="shrink-0 rounded-full border border-kinpaku/20 bg-kinpaku-light/50 px-1.5 py-0.5 text-[10px] text-kinpaku">切换中</span>}
-                        </div>
-                        <div className="mt-0.5 text-[10px] text-sumi-faint">
-                          {conversationStatusLabel(conversation.status)}
-                          {conversation.updatedAt && <span> · {formatTimestamp(conversation.updatedAt)}</span>}
-                        </div>
+                      <div className="mt-0.5 text-[10px] text-sumi-faint">
+                        {conversationStatusLabel(conversation.status)}
+                        {conversation.updatedAt && <span> · {formatTimestamp(conversation.updatedAt)}</span>}
                       </div>
-                      <ChevronRight size={12} className="mt-1 shrink-0 text-sumi-faint" />
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => void deleteConversation(conversation)}
-                      className="mt-0.5 rounded p-0.5 text-sumi-faint transition hover:bg-vermilion-light/30 hover:text-vermilion"
-                      title="删除会话"
-                    >
-                      <Archive size={12} />
-                    </button>
-                  </div>
-                );
-              })}
-            </div>
+                    </div>
+                    <ChevronRight size={12} className="mt-1 shrink-0 text-sumi-faint" />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => void deleteConversation(conversation)}
+                    className="mt-0.5 rounded p-0.5 text-sumi-faint transition hover:bg-vermilion-light/30 hover:text-vermilion"
+                    title="删除会话"
+                  >
+                    <Archive size={12} />
+                  </button>
+                </div>
+              );
+            })}
           </div>
-
         </aside>
 
         {/* Main chat area */}
@@ -1047,7 +1074,7 @@ export default function MangaAgentPage({ onCreateStory }: { onCreateStory?: () =
                 </div>
                 <h2 className="font-display text-2xl font-semibold text-sumi">开始创作</h2>
                 <p className="mt-2 max-w-md text-sm leading-relaxed text-sumi-dim">
-                  选择左侧的故事和章节，输入创作指令，AI 将协助你推进剧情、生成分镜和漫画。
+                  在下方选择故事和章节，输入创作指令，AI 将协助你推进剧情、生成分镜和漫画。
                 </p>
               </div>
             ) : (
@@ -1149,20 +1176,40 @@ export default function MangaAgentPage({ onCreateStory }: { onCreateStory?: () =
             )}
           </div>
 
-          <div className="border-t border-paper-border p-3">
-            <div className="mb-2 flex items-center justify-between gap-2">
-              <span className="text-[11px] text-sumi-faint">模型</span>
-              <select
-                value={selectedLlmModel}
-                onChange={(e) => setSelectedLlmModel(e.target.value)}
-                disabled={sending || conversationLoading || llmModels.length === 0}
-                className="max-w-[280px] rounded-md border border-paper-border bg-paper-base px-2.5 py-1.5 text-xs text-sumi outline-none transition focus:border-vermilion disabled:opacity-40"
-              >
-                {llmModels.length === 0 ? <option value="">未配置模型</option> : null}
-                {llmModels.map((model) => (
-                  <option key={model} value={model}>{model}</option>
-                ))}
-              </select>
+          <div className="border-t border-paper-border px-4 py-3">
+            {/* Story / Chapter / Model row */}
+            <div className="mb-3 flex items-center gap-2">
+              {/* Story selector — opens upward */}
+              <SelectUpward
+                value={storyId}
+                label="暂无故事"
+                width="w-[120px]"
+                options={stories.length === 0 ? [{ value: '', label: '暂无故事' }] : stories.map(s => ({ value: String(s.id), label: s.title }))}
+                onChange={(v) => setStoryId(v)}
+              />
+
+              {/* Chapter selector — opens upward */}
+              <SelectUpward
+                value={chapterId}
+                label={chapterLoading ? '加载中…' : '暂无章节'}
+                width="w-[100px]"
+                disabled={chapterLoading || chapters.length === 0}
+                options={chapters.length === 0 ? [{ value: '', label: '暂无章节' }] : chapters.map(c => ({ value: String(c.id), label: `第${c.chapter_number} 章` }))}
+                onChange={(v) => setChapterId(v)}
+              />
+
+              {/* Divider */}
+              <span className="mx-0.5 h-5 w-px shrink-0 bg-paper-border" />
+
+              {/* Spacer — pushes model switcher to the right */}
+              <div className="flex-1" />
+
+              <ModelSwitcher
+                capability="llm"
+                selectedModel={selectedLlmModel}
+                onSelect={setSelectedLlmModel}
+                disabled={sending || conversationLoading}
+              />
             </div>
             <div className="flex gap-2.5">
               <textarea

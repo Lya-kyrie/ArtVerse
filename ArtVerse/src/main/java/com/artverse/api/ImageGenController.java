@@ -2,6 +2,7 @@ package com.artverse.api;
 
 import com.artverse.application.ImageGenService;
 import com.artverse.application.ApiKeyService;
+import com.artverse.application.UserProviderConfig;
 import com.artverse.guard.GenerationGuardService;
 import com.artverse.application.CurrentUserService;
 import com.artverse.domain.User;
@@ -27,12 +28,12 @@ public class ImageGenController {
         @SuppressWarnings("unchecked")
         List<String> referenceImages = (List<String>) body.get("reference_images");
         User user = currentUser();
-        String imageApiKey = apiKeyService.getDecryptedKey(user, "image2");
+        UserProviderConfig imageConfig = apiKeyService.resolveProviderConfig(user, ApiKeyService.SLOT_IMAGE);
         return generationGuardService.executeImageGeneration(
                 user.getId(),
                 prompt,
                 referenceImages,
-                () -> imageGenService.generate(prompt, referenceImages, imageApiKey)
+                () -> imageGenService.generate(prompt, referenceImages, imageConfig)
         );
     }
 

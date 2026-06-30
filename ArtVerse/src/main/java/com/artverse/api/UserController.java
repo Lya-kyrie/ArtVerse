@@ -3,13 +3,16 @@ package com.artverse.api;
 import com.artverse.api.dto.AuthDtos.*;
 import com.artverse.application.ApiKeyService;
 import com.artverse.application.ApiKeyService.KeyInfo;
+import com.artverse.application.ApiKeyService.ProviderInfo;
 import com.artverse.application.CurrentUserService;
+import com.artverse.application.UserProviderConfig;
 import com.artverse.domain.User;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
+import java.util.Map;
 
 @RestController
 @RequestMapping("/api/user")
@@ -53,7 +56,44 @@ public class UserController {
         return ResponseEntity.noContent().build();
     }
 
+    @GetMapping("/provider-configs")
+    public ResponseEntity<List<ProviderInfo>> getProviderConfigs() {
+        User user = currentUser();
+        return ResponseEntity.ok(apiKeyService.getProviderConfigs(user));
+    }
+
+    @PutMapping("/provider-configs")
+    public ResponseEntity<Void> saveProviderConfig(@RequestBody Map<String, Object> body) {
+        User user = currentUser();
+        UserProviderConfig config = new UserProviderConfig(
+                str(body, "slot"),
+                str(body, "provider"),
+                str(body, "label"),
+                str(body, "api_key"),
+                str(body, "base_url"),
+                str(body, "model")
+        );
+        apiKeyService.saveProviderConfig(user, config);
+        return ResponseEntity.ok().build();
+    }
+
+    @PostMapping("/provider-models/discover")
+    public ResponseEntity<Map<String, Object>> discoverModels(@RequestBody Map<String, Object> body) {
+        List<String> models = apiKeyService.discoverModels(
+                str(body, "slot"),
+                str(body, "provider"),
+                str(body, "api_key"),
+                str(body, "base_url")
+        );
+        return ResponseEntity.ok(Map.of("models", models));
+    }
+
     private User currentUser() {
         return currentUserService.requireCurrentUser();
+    }
+
+    private static String str(Map<String, Object> body, String key) {
+        Object val = body.get(key);
+        return val == null ? "" : val.toString();
     }
 }
