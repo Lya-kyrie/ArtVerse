@@ -118,40 +118,288 @@ export async function logoutUser(): Promise<void> {
 }
 
 
-const LS_DEEPSEEK_API_KEY = 'lorevista.deepseekApiKey';
+const LS_LLM_API_KEY = 'lorevista.llmApiKey';
 const LS_IMAGE_API_KEY = 'lorevista.imageApiKey';
-const LS_COZE_API_KEY = 'lorevista.cozeApiKey';
+const LS_WORKFLOW_API_KEY = 'lorevista.workflowApiKey';
+const LS_LEGACY_DEEPSEEK_API_KEY = 'lorevista.deepseekApiKey';
+const LS_LEGACY_COZE_API_KEY = 'lorevista.cozeApiKey';
+const LS_PROVIDER_SETTINGS = 'lorevista.apiProviderSettings.v3';
+const LS_PROVIDER_SETTINGS_LEGACY = 'lorevista.apiProviderSettings.v2';
 export const API_KEY_CHANGE_EVENT = 'lorevista:api-key-change';
 
+export type ApiCapability = 'llm' | 'image' | 'workflow';
+export type ProviderMode = 'official' | 'custom';
+
+export interface ProviderEndpointConfig {
+  presetId: string;
+  label: string;
+  apiKey: string;
+  baseUrl: string;
+  model: string;
+}
+
+export interface ProviderPresetConfig {
+  presetId: string;
+  label: string;
+  mode: ProviderMode;
+  apiKey: string;
+  baseUrl: string;
+  selectedModels: string[];
+  availableModels: string[];
+}
+
+export interface CapabilityProviderSettings {
+  activePresetId: string;
+  presets: Record<string, ProviderPresetConfig>;
+}
+
 export interface ApiKeySettings {
-  deepseekApiKey: string;
-  imageApiKey: string;
-  cozeApiKey: string;
+  providers: Record<ApiCapability, CapabilityProviderSettings>;
+}
+
+const DEFAULT_PROVIDER_LIBRARY: Record<ApiCapability, Array<{ presetId: string; label: string; baseUrl: string; models: string[] }>> = {
+  llm: [
+    { presetId: 'deepseek', label: 'DeepSeek Official', baseUrl: 'https://api.deepseek.com', models: ['deepseek-v4-flash', 'deepseek-chat'] },
+    { presetId: 'openai', label: 'OpenAI Official', baseUrl: 'https://api.openai.com/v1', models: ['gpt-4.1-mini', 'gpt-4.1'] },
+    { presetId: 'openrouter', label: 'OpenRouter', baseUrl: 'https://openrouter.ai/api/v1', models: ['openai/gpt-4.1-mini', 'anthropic/claude-3.7-sonnet'] },
+    { presetId: 'siliconflow', label: 'SiliconFlow', baseUrl: 'https://api.siliconflow.cn/v1', models: ['deepseek-ai/DeepSeek-V3', 'Qwen/Qwen3-32B'] },
+    { presetId: 'qwen', label: 'Qwen Bailian', baseUrl: 'https://dashscope.aliyuncs.com/compatible-mode/v1', models: ['qwen-plus', 'qwen-max'] },
+    { presetId: 'ark', label: 'Volcengine Ark', baseUrl: 'https://ark.cn-beijing.volces.com/api/v3', models: ['doubao-seed-1-6-flash-250615', 'doubao-1-5-pro-32k-250115'] },
+  ],
+  image: [
+    { presetId: 'image2', label: 'Image2 Official', baseUrl: 'https://api.duojie.games/v1', models: ['gpt-image-2'] },
+    { presetId: 'openai-images', label: 'OpenAI Images', baseUrl: 'https://api.openai.com/v1', models: ['gpt-image-1'] },
+    { presetId: 'openrouter-images', label: 'OpenRouter Images', baseUrl: 'https://openrouter.ai/api/v1', models: ['openai/gpt-image-1'] },
+    { presetId: 'siliconflow-images', label: 'SiliconFlow Images', baseUrl: 'https://api.siliconflow.cn/v1', models: ['black-forest-labs/FLUX.1-schnell', 'stabilityai/stable-image-ultra'] },
+  ],
+  workflow: [
+    { presetId: 'coze', label: 'Coze Official', baseUrl: 'https://api.coze.cn', models: ['workflow'] },
+    { presetId: 'dify', label: 'Dify Workflow', baseUrl: 'https://api.dify.ai/v1', models: ['workflow'] },
+  ],
+};
+
+const DEFAULT_ACTIVE_PRESET: Record<ApiCapability, string> = {
+  llm: 'deepseek',
+  image: 'image2',
+  workflow: 'coze',
+};
+
+function readStorageWithLegacy(primaryKey: string, legacyKey?: string): string {
+  return localStorage.getItem(primaryKey) || (legacyKey ? localStorage.getItem(legacyKey) : '') || '';
+}
+
+export function parseProviderModels(value: string | string[] | null | undefined): string[] {
+  if (Array.isArray(value)) {
+    return Array.from(new Set(value.map((item) => String(item || '').trim()).filter(Boolean)));
+  }
+  return Array.from(new Set(
+    String(value || '')
+      .split(/[\n,]+/)
+      .map((item) => item.trim())
+      .filter(Boolean),
+  ));
+}
+
+function serializeProviderModels(modelIds: string[]): string {
+  return modelIds.join('\n');
+}
+
+function createDefaultPresetConfig(
+  presetId: string,
+  label: string,
+  baseUrl: string,
+  models: string[],
+): ProviderPresetConfig {
+  return {
+    presetId,
+    label,
+    mode: 'official',
+    apiKey: '',
+    baseUrl,
+    selectedModels: [...models],
+    availableModels: [...models],
+  };
+}
+
+function createDefaultCapabilitySettings(capability: ApiCapability): CapabilityProviderSettings {
+  const presets = Object.fromEntries(
+    DEFAULT_PROVIDER_LIBRARY[capability].map((preset) => [
+      preset.presetId,
+      createDefaultPresetConfig(preset.presetId, preset.label, preset.baseUrl, preset.models),
+    ]),
+  ) as Record<string, ProviderPresetConfig>;
+  presets.custom = createDefaultPresetConfig(
+    'custom',
+    capability === 'llm' ? 'Custom OpenAI-Compatible' : capability === 'image' ? 'Custom Image Gateway' : 'Custom Workflow Gateway',
+    capability === 'llm'
+      ? 'https://your-gateway.example.com/v1'
+      : capability === 'image'
+        ? 'https://your-image-gateway.example.com/v1'
+        : 'https://your-workflow.example.com/v1',
+    [capability === 'workflow' ? 'workflow-or-agent' : 'your-model-name'],
+  );
+  return {
+    activePresetId: DEFAULT_ACTIVE_PRESET[capability],
+    presets,
+  };
+}
+
+function createDefaultSettings(): ApiKeySettings {
+  return {
+    providers: {
+      llm: createDefaultCapabilitySettings('llm'),
+      image: createDefaultCapabilitySettings('image'),
+      workflow: createDefaultCapabilitySettings('workflow'),
+    },
+  };
+}
+
+function normalizePresetConfig(
+  raw: Partial<ProviderPresetConfig> | null | undefined,
+  fallback: ProviderPresetConfig,
+): ProviderPresetConfig {
+  const selectedModels = parseProviderModels(raw?.selectedModels);
+  const availableModels = Array.from(new Set([
+    ...parseProviderModels(raw?.availableModels),
+    ...selectedModels,
+    ...fallback.availableModels,
+  ]));
+  return {
+    presetId: String(raw?.presetId || fallback.presetId),
+    label: String(raw?.label || fallback.label),
+    mode: raw?.mode === 'custom' ? 'custom' : 'official',
+    apiKey: String(raw?.apiKey || ''),
+    baseUrl: String(raw?.baseUrl || fallback.baseUrl),
+    selectedModels: selectedModels.length > 0 ? selectedModels : [...fallback.selectedModels],
+    availableModels,
+  };
+}
+
+function normalizeCapabilitySettings(
+  capability: ApiCapability,
+  raw: Partial<CapabilityProviderSettings> | null | undefined,
+): CapabilityProviderSettings {
+  const fallback = createDefaultCapabilitySettings(capability);
+  const presets = { ...fallback.presets };
+  Object.entries(raw?.presets || {}).forEach(([presetId, preset]) => {
+    const typedPreset = preset as Partial<ProviderPresetConfig>;
+    const presetFallback = presets[presetId] || createDefaultPresetConfig(
+      presetId,
+      String(typedPreset.label || presetId),
+      String(typedPreset.baseUrl || ''),
+      parseProviderModels(typedPreset.selectedModels),
+    );
+    presets[presetId] = normalizePresetConfig(typedPreset, presetFallback);
+  });
+  const activePresetId = String(raw?.activePresetId || fallback.activePresetId);
+  return {
+    activePresetId: presets[activePresetId] ? activePresetId : fallback.activePresetId,
+    presets,
+  };
+}
+
+function migrateLegacySettings(): ApiKeySettings {
+  const settings = createDefaultSettings();
+  let storedProviders: Partial<Record<ApiCapability, Partial<ProviderEndpointConfig>>> = {};
+  try {
+    const raw = localStorage.getItem(LS_PROVIDER_SETTINGS_LEGACY);
+    if (raw) storedProviders = JSON.parse(raw);
+  } catch {
+    storedProviders = {};
+  }
+  const fallbackKeys: Record<ApiCapability, string> = {
+    llm: readStorageWithLegacy(LS_LLM_API_KEY, LS_LEGACY_DEEPSEEK_API_KEY),
+    image: localStorage.getItem(LS_IMAGE_API_KEY) || '',
+    workflow: readStorageWithLegacy(LS_WORKFLOW_API_KEY, LS_LEGACY_COZE_API_KEY),
+  };
+  (['llm', 'image', 'workflow'] as ApiCapability[]).forEach((capability) => {
+    const legacy = storedProviders[capability];
+    if (!legacy) return;
+    const presetId = String(legacy.presetId || settings.providers[capability].activePresetId);
+    const activePresetId = settings.providers[capability].presets[presetId] ? presetId : 'custom';
+    const preset = settings.providers[capability].presets[activePresetId];
+    const defaultPreset = settings.providers[capability].presets[preset.presetId];
+    settings.providers[capability].activePresetId = activePresetId;
+    preset.label = String(legacy.label || preset.label);
+    preset.apiKey = String(legacy.apiKey || fallbackKeys[capability]);
+    preset.baseUrl = String(legacy.baseUrl || preset.baseUrl);
+    preset.selectedModels = parseProviderModels(legacy.model);
+    preset.availableModels = Array.from(new Set([...preset.availableModels, ...preset.selectedModels]));
+    preset.mode = activePresetId === 'custom' || preset.baseUrl !== defaultPreset.baseUrl ? 'custom' : 'official';
+  });
+  return settings;
 }
 
 export function getApiKeySettings(): ApiKeySettings {
+  try {
+    const raw = localStorage.getItem(LS_PROVIDER_SETTINGS);
+    if (raw) {
+      const parsed = JSON.parse(raw) as Partial<ApiKeySettings>;
+      return {
+        providers: {
+          llm: normalizeCapabilitySettings('llm', parsed.providers?.llm),
+          image: normalizeCapabilitySettings('image', parsed.providers?.image),
+          workflow: normalizeCapabilitySettings('workflow', parsed.providers?.workflow),
+        },
+      };
+    }
+  } catch {
+    // Fall through to legacy migration.
+  }
+  return migrateLegacySettings();
+}
+
+export function getActiveProviderPreset(settings: ApiKeySettings, capability: ApiCapability): ProviderPresetConfig {
+  const capabilitySettings = settings.providers[capability];
+  return capabilitySettings.presets[capabilitySettings.activePresetId] || capabilitySettings.presets.custom;
+}
+
+export function getProviderModelOptions(capability: ApiCapability): string[] {
+  return getActiveProviderPreset(getApiKeySettings(), capability).selectedModels;
+}
+
+export function getPrimaryProviderModel(capability: ApiCapability): string {
+  return getProviderModelOptions(capability)[0] || '';
+}
+
+export function toProviderEndpointConfig(preset: ProviderPresetConfig): ProviderEndpointConfig {
   return {
-    deepseekApiKey: localStorage.getItem(LS_DEEPSEEK_API_KEY) || '',
-    imageApiKey: localStorage.getItem(LS_IMAGE_API_KEY) || '',
-    cozeApiKey: localStorage.getItem(LS_COZE_API_KEY) || '',
+    presetId: preset.presetId,
+    label: preset.label,
+    apiKey: preset.apiKey,
+    baseUrl: preset.baseUrl,
+    model: serializeProviderModels(preset.selectedModels),
   };
 }
 
 export function saveApiKeySettings(settings: ApiKeySettings): void {
-  const deepseek = settings.deepseekApiKey.trim();
-  const image = settings.imageApiKey.trim();
-  const coze = (settings.cozeApiKey || '').trim();
-  if (deepseek) localStorage.setItem(LS_DEEPSEEK_API_KEY, deepseek);
-  else localStorage.removeItem(LS_DEEPSEEK_API_KEY);
-  if (image) localStorage.setItem(LS_IMAGE_API_KEY, image);
-  else localStorage.removeItem(LS_IMAGE_API_KEY);
-  if (coze) localStorage.setItem(LS_COZE_API_KEY, coze);
-  else localStorage.removeItem(LS_COZE_API_KEY);
+  const normalized: ApiKeySettings = {
+    providers: {
+      llm: normalizeCapabilitySettings('llm', settings.providers.llm),
+      image: normalizeCapabilitySettings('image', settings.providers.image),
+      workflow: normalizeCapabilitySettings('workflow', settings.providers.workflow),
+    },
+  };
+  localStorage.setItem(LS_PROVIDER_SETTINGS, JSON.stringify(normalized));
+  const storageMap: Record<ApiCapability, string> = {
+    llm: LS_LLM_API_KEY,
+    image: LS_IMAGE_API_KEY,
+    workflow: LS_WORKFLOW_API_KEY,
+  };
+  (['llm', 'image', 'workflow'] as ApiCapability[]).forEach((capability) => {
+    const active = getActiveProviderPreset(normalized, capability);
+    const value = active.apiKey.trim();
+    if (value) localStorage.setItem(storageMap[capability], value);
+    else localStorage.removeItem(storageMap[capability]);
+  });
+  localStorage.removeItem(LS_LEGACY_DEEPSEEK_API_KEY);
+  localStorage.removeItem(LS_LEGACY_COZE_API_KEY);
+  localStorage.removeItem(LS_PROVIDER_SETTINGS_LEGACY);
   try { window.dispatchEvent(new Event(API_KEY_CHANGE_EVENT)); } catch { /* ignore */ }
 }
 
 export function clearApiKeySettings(): void {
-  saveApiKeySettings({ deepseekApiKey: '', imageApiKey: '', cozeApiKey: '' });
+  saveApiKeySettings(createDefaultSettings());
 }
 
 export async function getUserApiKeys(): Promise<{ provider: string; api_key_masked: string }[]> {
@@ -167,6 +415,61 @@ export async function saveUserApiKey(provider: string, apiKey: string): Promise<
     body: JSON.stringify({ provider, api_key: apiKey }),
   });
   if (!res.ok) throw new Error(parseApiError(await res.text()));
+}
+
+export async function saveUserProviderConfig(capability: ApiCapability, config: ProviderEndpointConfig): Promise<void> {
+  const res = await authFetch(`${BASE}/api/user/provider-configs`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      slot: capability,
+      provider: config.presetId,
+      label: config.label,
+      api_key: config.apiKey,
+      base_url: config.baseUrl,
+      model: config.model,
+    }),
+  });
+  if (!res.ok) throw new Error(parseApiError(await res.text()));
+}
+
+export async function getUserProviderConfigs(): Promise<Partial<Record<ApiCapability, ProviderEndpointConfig>>> {
+  const res = await authFetch(`${BASE}/api/user/provider-configs`);
+  if (!res.ok) throw new Error(parseApiError(await res.text()));
+  const data = await res.json();
+  return Object.fromEntries(
+    (Array.isArray(data) ? data : []).map((item: any) => [
+      item.slot,
+      {
+        presetId: String(item.provider || ''),
+        label: String(item.label || ''),
+        apiKey: '',
+        baseUrl: String(item.base_url || item.baseUrl || ''),
+        model: String(item.model || ''),
+      } satisfies ProviderEndpointConfig,
+    ]),
+  ) as Partial<Record<ApiCapability, ProviderEndpointConfig>>;
+}
+
+export async function discoverProviderModels(
+  capability: ApiCapability,
+  config: Pick<ProviderEndpointConfig, 'presetId' | 'apiKey' | 'baseUrl'>,
+): Promise<string[]> {
+  const res = await authFetch(`${BASE}/api/user/provider-models/discover`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      slot: capability,
+      provider: config.presetId,
+      api_key: config.apiKey,
+      base_url: config.baseUrl,
+    }),
+  });
+  if (!res.ok) throw new Error(parseApiError(await res.text()));
+  const data = await res.json();
+  return Array.isArray(data?.models)
+    ? data.models.map((item: unknown) => String(item || '').trim()).filter(Boolean)
+    : [];
 }
 
 
@@ -315,7 +618,7 @@ export function importStoryPackage(
           return;
         }
         const percent = Math.max(1, Math.min(99, Math.round((event.loaded / event.total) * 100)));
-        onProgress?.({ phase: 'uploading', percent, message: `正在上传作品包 ${percent}%` });
+        onProgress?.({ phase: 'uploading', percent, message: `婵犳鍠楃换鎰緤閽樺鑰挎い蹇撴噽閳绘柨鈹戦悩杈厡闁绘劕锕ら湁闁挎繂妫涢惌濠囨煙娴ｅ啿娲ょ粈?${percent}%` });
       };
 
       xhr.onload = async () => {
@@ -416,13 +719,14 @@ export function chatStream(
   onToken: (token: string) => void,
   _onDone: (fullContent: string) => void,
   onError: (err: string) => void,
+  model?: string,
 ): AbortController {
   const controller = new AbortController();
 
   authFetch(`${BASE}/api/chapters/${chapterId}/chat`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ message: content }),
+    body: JSON.stringify({ message: content, ...(model ? { model } : {}) }),
     signal: controller.signal,
   })
     .then(async (res) => {
@@ -502,7 +806,24 @@ export async function importNovel(chapterId: number, content: string): Promise<C
 
 
 export async function generateScenes(chapterId: number, signal?: AbortSignal): Promise<string[]> {
-  const res = await authFetch(`${BASE}/api/chapters/${chapterId}/generate-scenes`, { method: 'POST', signal });
+  const res = await authFetch(`${BASE}/api/chapters/${chapterId}/generate-scenes`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({}),
+    signal,
+  });
+  if (!res.ok) throw new Error(await res.text());
+  const data = await res.json();
+  return data.scenes;
+}
+
+export async function generateScenesWithModel(chapterId: number, model?: string, signal?: AbortSignal): Promise<string[]> {
+  const res = await authFetch(`${BASE}/api/chapters/${chapterId}/generate-scenes`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(model ? { model } : {}),
+    signal,
+  });
   if (!res.ok) throw new Error(await res.text());
   const data = await res.json();
   return data.scenes;
@@ -801,18 +1122,18 @@ export async function deleteChapterRefImage(chapterId: number, filename: string)
 export type MangaStyle = 'japanese_manga' | 'korean_webtoon' | 'american_comic' | 'ligne_claire' | 'chinese_ink' | 'semi_realistic' | 'realistic' | 'oil_painting' | 'flat_design' | 'pixel_art' | 'watercolor' | 'cyberpunk';
 
 export const MANGA_STYLE_LABELS: Record<MangaStyle, string> = {
-  japanese_manga: '日式漫画',
-  korean_webtoon: '韩式条漫',
-  american_comic: '美式漫画',
-  ligne_claire: '欧式清线',
-  chinese_ink: '水墨国风',
-  semi_realistic: '半写实',
-  realistic: '全写实',
-  oil_painting: '厚涂油画',
-  flat_design: '扁平极简',
-  pixel_art: '像素风',
-  watercolor: '水彩淡雅',
-  cyberpunk: '赛博朋克',
+  japanese_manga: 'Japanese Manga',
+  korean_webtoon: 'Korean Webtoon',
+  american_comic: 'American Comic',
+  ligne_claire: 'Ligne Claire',
+  chinese_ink: 'Chinese Ink',
+  semi_realistic: 'Semi Realistic',
+  realistic: 'Realistic',
+  oil_painting: 'Oil Painting',
+  flat_design: 'Flat Design',
+  pixel_art: 'Pixel Art',
+  watercolor: 'Watercolor',
+  cyberpunk: 'Cyberpunk',
 };
 
 export async function getMangaStyle(storyId: number): Promise<MangaStyle> {
@@ -835,9 +1156,9 @@ export async function setMangaStyle(storyId: number, style: MangaStyle): Promise
 export type ColorMode = 'bw' | 'grayscale' | 'color' | 'duotone';
 
 export const COLOR_MODE_LABELS: Record<ColorMode, string> = {
-  bw: '黑白',
-  grayscale: '灰度',
-  color: '彩色',
+  bw: 'Black & White',
+  grayscale: 'Grayscale',
+  color: 'Color',
   duotone: 'Duotone',
 };
 
@@ -881,11 +1202,12 @@ export async function regenerateImage(
   chapterId: number,
   imageNumber: number,
   prompt: string,
+  model?: string,
 ): Promise<{ id: number; image_number: number; image_path: string; prompt: string }> {
   const res = await authFetch(`${BASE}/api/chapters/${chapterId}/regenerate-image/${imageNumber}`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ prompt }),
+    body: JSON.stringify({ prompt, ...(model ? { model } : {}) }),
   });
   if (!res.ok) throw new Error(await res.text());
   return res.json();
@@ -901,6 +1223,7 @@ export function generateMangaStream(
   chapterId: number,
   assetGroupId: number | null | undefined,
   onEvent: (event: MangaProgress) => void,
+  model?: string,
 ): AbortController {
   const controller = new AbortController();
   let reconnectAttempts = 0;
@@ -911,7 +1234,7 @@ export function generateMangaStream(
     if (controller.signal.aborted) return;
     reconnectAttempts += 1;
     if (reconnectAttempts > maxReconnectAttempts) {
-      onEvent({ type: 'error', data: { error: reason || '生成连接已断开，请稍后重试' } });
+      onEvent({ type: 'error', data: { error: reason || 'Stream disconnected too many times.' } });
       return;
     }
     onEvent({
@@ -929,7 +1252,7 @@ export function generateMangaStream(
     authFetch(`${BASE}/api/chapters/${chapterId}/generate-manga-stream`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ assetGroupId: assetGroupId ?? null }),
+      body: JSON.stringify({ assetGroupId: assetGroupId ?? null, ...(model ? { model } : {}) }),
       signal: controller.signal,
     })
       .then(async (res) => {
@@ -975,12 +1298,12 @@ export function generateMangaStream(
       }
       if (buffer.trim()) handleLine(buffer);
       if (!receivedTerminalEvent && !controller.signal.aborted) {
-        scheduleReconnect('生成连接已断开，请稍后重试');
+        scheduleReconnect('Stream disconnected unexpectedly.');
       }
     })
     .catch((err) => {
       if (err.name !== 'AbortError') {
-        scheduleReconnect(err.message || '生成连接已断开，请稍后重试');
+        scheduleReconnect(err.message || 'Stream disconnected unexpectedly.');
       }
     });
   };
@@ -1046,10 +1369,10 @@ export async function listMyWorks(): Promise<MyWork[]> {
 // ---- Image Gen ----
 export interface ImageGenRecord { id: number; prompt: string; image_url: string; model: string; size: string; created_at: string; }
 
-export async function generateImage(prompt: string, referenceImages?: string[], size?: string, signal?: AbortSignal): Promise<ImageGenRecord> {
+export async function generateImage(prompt: string, referenceImages?: string[], size?: string, model?: string, signal?: AbortSignal): Promise<ImageGenRecord> {
   const res = await authFetch(BASE+'/api/image-gen/generate', {
     method: 'POST', headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ prompt, reference_images: referenceImages || [], ...(size ? { size } : {}) }),
+    body: JSON.stringify({ prompt, reference_images: referenceImages || [], ...(size ? { size } : {}), ...(model ? { model } : {}) }),
     signal,
   });
   if (!res.ok) throw new Error(parseApiError(await res.text()));
@@ -1320,6 +1643,7 @@ class ArtVerseMangaAgentHttpAgent extends HttpAgent {
   private readonly message: string;
   private readonly requestId?: string;
   private readonly answer?: string;
+  private readonly model?: string;
 
   constructor(
     url: string,
@@ -1327,6 +1651,7 @@ class ArtVerseMangaAgentHttpAgent extends HttpAgent {
     requestId: string | undefined,
     abortController: AbortController,
     answer?: string,
+    model?: string,
   ) {
     super({
       url,
@@ -1335,6 +1660,7 @@ class ArtVerseMangaAgentHttpAgent extends HttpAgent {
     this.message = message;
     this.requestId = requestId;
     this.answer = answer;
+    this.model = model;
     this.abortController = abortController;
   }
 
@@ -1350,9 +1676,11 @@ class ArtVerseMangaAgentHttpAgent extends HttpAgent {
         ? {
           message: this.message,
           requestId: this.requestId || input.runId,
+          ...(this.model ? { model: this.model } : {}),
         }
         : {
           answer: this.answer,
+          ...(this.model ? { model: this.model } : {}),
         }),
       signal: this.abortController.signal,
     };
@@ -1365,6 +1693,7 @@ export function runMangaAgentAgUiStream(
   requestId: string | undefined,
   onEvent: (event: MangaAgentRunEvent) => void,
   conversationId?: string,
+  model?: string,
 ): AbortController {
   const controller = new AbortController();
   const agent = new ArtVerseMangaAgentHttpAgent(
@@ -1374,6 +1703,8 @@ export function runMangaAgentAgUiStream(
     message,
     requestId,
     controller,
+    undefined,
+    model,
   );
   const subscription = agent.run({
     threadId: conversationId ? `chapter-${chapterId}-conversation-${conversationId}` : `chapter-${chapterId}`,
@@ -1387,7 +1718,7 @@ export function runMangaAgentAgUiStream(
     next: (event) => onEvent({ type: 'ag_ui_event', data: event as ArtVerseAgUiEvent }),
     error: (err) => {
       if (!controller.signal.aborted) {
-        onEvent({ type: 'error', data: { detail: err?.message || '智能体连接中断', requestId } });
+        onEvent({ type: 'error', data: { detail: err?.message || 'Agent stream disconnected', requestId } });
       }
     },
   });
@@ -1401,6 +1732,7 @@ export function resumeMangaAgentAgUiStream(
   answer: string,
   onEvent: (event: MangaAgentRunEvent) => void,
   conversationId?: string,
+  model?: string,
 ): AbortController {
   const controller = new AbortController();
   const agent = new ArtVerseMangaAgentHttpAgent(
@@ -1411,6 +1743,7 @@ export function resumeMangaAgentAgUiStream(
     requestId,
     controller,
     answer,
+    model,
   );
   const subscription = agent.run({
     threadId: conversationId ? `chapter-${chapterId}-conversation-${conversationId}` : `chapter-${chapterId}`,
@@ -1424,7 +1757,7 @@ export function resumeMangaAgentAgUiStream(
     next: (event) => onEvent({ type: 'ag_ui_event', data: event as ArtVerseAgUiEvent }),
     error: (err) => {
       if (!controller.signal.aborted) {
-        onEvent({ type: 'error', data: { detail: err?.message || '智能体连接中断', requestId } });
+        onEvent({ type: 'error', data: { detail: err?.message || 'Agent stream disconnected', requestId } });
       }
     },
   });
@@ -1453,7 +1786,7 @@ function startMangaAgentEventStream(
       }
       const reader = res.body?.getReader();
       if (!reader) {
-        onEvent({ type: 'error', data: { detail: '智能体连接不可用', requestId } });
+        onEvent({ type: 'error', data: { detail: 'Agent stream is unavailable', requestId } });
         return;
       }
       const decoder = new TextDecoder();
@@ -1502,7 +1835,7 @@ function startMangaAgentEventStream(
     })
     .catch((err) => {
       if (err.name !== 'AbortError') {
-        onEvent({ type: 'error', data: { detail: err.message || '智能体连接中断', requestId } });
+        onEvent({ type: 'error', data: { detail: err.message || 'Agent stream disconnected', requestId } });
       }
     });
 

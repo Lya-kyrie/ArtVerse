@@ -9,11 +9,12 @@ import com.artverse.application.CharacterProfileService;
 import com.artverse.application.MangaAgentConversationService;
 import com.artverse.application.MangaAgentRunEventPublisher;
 import com.artverse.application.MangaAgentRunService;
+import com.artverse.application.UserProviderConfig;
 import com.artverse.domain.Chapter;
 import com.artverse.domain.MangaAgentConversation;
 import com.artverse.domain.MangaAgentMessage;
-import com.artverse.domain.MangaImage;
 import com.artverse.domain.MangaAgentRun;
+import com.artverse.domain.MangaImage;
 import com.artverse.domain.MessageRole;
 import com.artverse.domain.Story;
 import com.artverse.domain.User;
@@ -53,6 +54,14 @@ public class MangaWorkflowOrchestrator {
     public Map<String, Object> runWithToolState(MangaAgentConversation conversation, String message,
                                                 UUID effectiveRequestId, MangaWorkflowRoute route,
                                                 AgentRunToolStatus.RunState toolState) {
+        return runWithToolState(conversation, message, effectiveRequestId, route, toolState,
+                requireLlmConfig(conversation.getUser()));
+    }
+
+    public Map<String, Object> runWithToolState(MangaAgentConversation conversation, String message,
+                                                UUID effectiveRequestId, MangaWorkflowRoute route,
+                                                AgentRunToolStatus.RunState toolState,
+                                                UserProviderConfig llmConfig) {
         if (message == null || message.isBlank()) {
             throw new com.artverse.common.BusinessException(400, "Message cannot be empty");
         }
@@ -63,8 +72,7 @@ public class MangaWorkflowOrchestrator {
 
         User user = conversation.getUser();
         Chapter chapter = conversation.getChapter();
-        String deepseekApiKey = requireDeepseekApiKey(user);
-        AgentModelSpec modelSpec = agentModelSpecFactory.deepSeek(deepseekApiKey);
+        AgentModelSpec modelSpec = agentModelSpecFactory.fromProviderConfig(llmConfig);
         return generationGuardService.executeMangaAgentRun(
                 user.getId(),
                 chapter.getStory().getId(),
@@ -73,17 +81,17 @@ public class MangaWorkflowOrchestrator {
                 modelSpec.provider(),
                 modelSpec.model(),
                 AgentModelSpecFactory.shortHash(modelSpec.baseUrl()),
-                () -> runWorkflowLeader(conversation, message, effectiveRequestId, deepseekApiKey, modelSpec, toolState)
+                () -> runWorkflowLeader(conversation, message, effectiveRequestId, llmConfig.apiKey(), modelSpec, toolState)
         );
     }
 
     private Map<String, Object> runWorkflowLeader(MangaAgentConversation conversation, String message,
-                                                  UUID effectiveRequestId, String deepseekApiKey,
+                                                  UUID effectiveRequestId, String apiKey,
                                                   AgentModelSpec modelSpec, AgentRunToolStatus.RunState toolState) {
         MangaWorkflowContextSnapshot workflowContext = assembleContext(conversation, message);
         log.info("Workflow route for request {} -> DIRECTOR", effectiveRequestId);
         MangaWorkflowExecutionContext context = executionContext(
-                conversation, message, effectiveRequestId, deepseekApiKey, modelSpec, toolState, workflowContext);
+                conversation, message, effectiveRequestId, apiKey, modelSpec, toolState, workflowContext);
         return nodeRegistry.handlerFor(MangaWorkflowRoute.DIRECTOR).run(context);
     }
 
@@ -91,6 +99,14 @@ public class MangaWorkflowOrchestrator {
                                 MangaWorkflowRoute route,
                                 AgentRunToolStatus.RunState toolState, MangaAgentRunEventPublisher.RunEventSink sink,
                                 AtomicReference<MangaAgentRun> runRef) {
+        runStreamLeader(conversation, message, effectiveRequestId, route, toolState, sink, runRef,
+                requireLlmConfig(conversation.getUser()));
+    }
+
+    public void runStreamLeader(MangaAgentConversation conversation, String message, UUID effectiveRequestId,
+                                MangaWorkflowRoute route,
+                                AgentRunToolStatus.RunState toolState, MangaAgentRunEventPublisher.RunEventSink sink,
+                                AtomicReference<MangaAgentRun> runRef, UserProviderConfig llmConfig) {
         if (message == null || message.isBlank()) {
             throw new com.artverse.common.BusinessException(400, "Message cannot be empty");
         }
@@ -100,7 +116,7 @@ public class MangaWorkflowOrchestrator {
         Long chapterId = chapter.getId();
         MangaAgentRun run = mangaAgentRunService.startOrReuse(conversation, effectiveRequestId, message, MangaWorkflowRoute.DIRECTOR);
         runRef.set(run);
-        sink.sendStatus(run, "智能体开始处理当前章节", effectiveRequestId);
+        sink.sendStatus(run, "Agent started processing the current chapter", effectiveRequestId);
 
         if (mangaAgentConversationService.findAssistantReply(conversation, effectiveRequestId).isPresent()) {
             Map<String, Object> result = runWithToolState(conversation, message, effectiveRequestId, toolState);
@@ -109,8 +125,7 @@ public class MangaWorkflowOrchestrator {
             return;
         }
 
-        String deepseekApiKey = requireDeepseekApiKey(user);
-        AgentModelSpec modelSpec = agentModelSpecFactory.deepSeek(deepseekApiKey);
+        AgentModelSpec modelSpec = agentModelSpecFactory.fromProviderConfig(llmConfig);
         Map<String, Object> result = generationGuardService.executeMangaAgentRun(
                 user.getId(),
                 chapterId,
@@ -120,7 +135,7 @@ public class MangaWorkflowOrchestrator {
                 modelSpec.model(),
                 AgentModelSpecFactory.shortHash(modelSpec.baseUrl()),
                 () -> runWorkflowStream(conversation, message, effectiveRequestId, sink, toolState,
-                        deepseekApiKey, modelSpec, run)
+                        llmConfig.apiKey(), modelSpec, run)
         );
 
         completeRun(run, sink, chapterId, user, effectiveRequestId, result);
@@ -130,16 +145,16 @@ public class MangaWorkflowOrchestrator {
                                                  UUID effectiveRequestId,
                                                  MangaAgentRunEventPublisher.RunEventSink sink,
                                                  AgentRunToolStatus.RunState toolState,
-                                                 String deepseekApiKey, AgentModelSpec modelSpec,
+                                                 String apiKey, AgentModelSpec modelSpec,
                                                  MangaAgentRun run) {
         MangaWorkflowContextSnapshot workflowContext = assembleContext(conversation, message);
         MangaWorkflowExecutionContext context = executionContext(
-                conversation, message, effectiveRequestId, deepseekApiKey, modelSpec, toolState, workflowContext);
+                conversation, message, effectiveRequestId, apiKey, modelSpec, toolState, workflowContext);
 
         sink.sendRunEvent(run, AgentRunEvent.step(
                 MangaWorkflowNode.COLLECTING_CONTEXT.name(),
                 "running",
-                "正在收集上下文信息",
+                "Collecting chapter context",
                 Map.of(
                         "storyTitle", workflowContext.storyTitle(),
                         "chapterDisplayName", workflowContext.chapterDisplayName(),
@@ -156,7 +171,7 @@ public class MangaWorkflowOrchestrator {
         sink.sendRunEvent(run, AgentRunEvent.step(
                 MangaWorkflowNode.EVALUATING.name(),
                 "running",
-                "正在评估生成结果",
+                "Evaluating generated result",
                 Map.of("degraded", Boolean.TRUE.equals(response.get("agent_final_response_degraded")))
         ));
         return response;
@@ -178,16 +193,16 @@ public class MangaWorkflowOrchestrator {
         sink.sendDone(run, reply, requestId);
     }
 
-    public String requireDeepseekApiKey(User user) {
-        String deepseekApiKey = apiKeyService.getDecryptedKey(user, "deepseek");
-        if (deepseekApiKey == null || deepseekApiKey.isBlank()) {
-            throw new com.artverse.common.BusinessException(400, "请先在设置中配置 DeepSeek API Key 后再使用漫画智能体");
-        }
-        return deepseekApiKey;
+    public UserProviderConfig requireLlmConfig(User user) {
+        return apiKeyService.requireProviderConfig(
+                user,
+                ApiKeyService.SLOT_LLM,
+                "Please configure an LLM provider API key in Settings before using the manga agent."
+        );
     }
 
     private MangaWorkflowExecutionContext executionContext(MangaAgentConversation conversation, String message,
-                                                           UUID effectiveRequestId, String deepseekApiKey,
+                                                           UUID effectiveRequestId, String apiKey,
                                                            AgentModelSpec modelSpec,
                                                            AgentRunToolStatus.RunState toolState,
                                                            MangaWorkflowContextSnapshot workflowContext) {
@@ -195,7 +210,7 @@ public class MangaWorkflowOrchestrator {
                 conversation,
                 message,
                 effectiveRequestId,
-                deepseekApiKey,
+                apiKey,
                 modelSpec,
                 toolState,
                 conversation.getUser(),
@@ -256,7 +271,7 @@ public class MangaWorkflowOrchestrator {
         if (chapter.getDisplayTitle() != null && !chapter.getDisplayTitle().isBlank()) {
             return chapter.getDisplayTitle();
         }
-        return "第" + chapter.getChapterNumber() + "话";
+        return "Chapter " + chapter.getChapterNumber();
     }
 
     private String excerpt(String text, int limit) {
