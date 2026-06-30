@@ -1,4 +1,4 @@
-﻿import { useEffect, useMemo, useRef, useState } from 'react';
+﻿import { Fragment, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import {
   Archive,
   Bot,
@@ -17,9 +17,12 @@ import {
   Wrench,
 } from 'lucide-react';
 import {
+  API_KEY_CHANGE_EVENT,
   cancelMangaAgentConversationRun,
   createMangaAgentConversation,
   deleteMangaAgentConversation,
+  getPrimaryProviderModel,
+  getProviderModelOptions,
   getMangaAgentConversationMessages,
   getOpenMangaAgentConversationRun,
   listChapters,
@@ -35,7 +38,6 @@ import {
   type MangaWorkflowRoute,
   type Story,
 } from '../api';
-import MarkdownRenderer from './MarkdownRenderer';
 
 interface Message {
   role: 'user' | 'assistant' | 'system';
@@ -134,6 +136,23 @@ function toMessages(items: MangaAgentMessage[]): Message[] {
       requestId: item.requestId ?? item.request_id,
     }];
   });
+}
+
+function renderInlineMarkdown(text: string): ReactNode[] {
+  const parts = text.split(/(\*\*[^*]+\*\*|`[^`]+`)/g);
+  return parts.map((part, index) => {
+    if (part.startsWith('**') && part.endsWith('**')) {
+      return <strong key={index} className="font-semibold text-sumi">{part.slice(2, -2)}</strong>;
+    }
+    if (part.startsWith('`') && part.endsWith('`')) {
+      return <code key={index} className="rounded bg-paper-surface px-1.5 py-0.5 text-[0.9em] text-vermilion font-medium">{part.slice(1, -1)}</code>;
+    }
+    return <Fragment key={index}>{part}</Fragment>;
+  });
+}
+
+function MarkdownMessage({ content }: { content: string }) {
+  return <div className="whitespace-pre-wrap text-sm leading-7 text-sumi">{renderInlineMarkdown(content)}</div>;
 }
 
 function appendExecutionEvent(events: ExecutionEventItem[], event: ExecutionEventItem): ExecutionEventItem[] {
@@ -325,13 +344,15 @@ function executionIcon(tone: AgUiEventTone, icon: ExecutionEventItem['icon']) {
   }
 }
 
-export default function MangaAgentPage() {
+export default function MangaAgentPage({ onCreateStory }: { onCreateStory?: () => void }) {
   const [stories, setStories] = useState<Story[]>([]);
   const [chapters, setChapters] = useState<Chapter[]>([]);
   const [storyId, setStoryId] = useState('');
   const [chapterId, setChapterId] = useState('');
   const [conversations, setConversations] = useState<ConversationView[]>([]);
   const [conversationId, setConversationId] = useState('');
+  const [llmModels, setLlmModels] = useState<string[]>(() => getProviderModelOptions('llm'));
+  const [selectedLlmModel, setSelectedLlmModel] = useState(() => getPrimaryProviderModel('llm'));
   const [input, setInput] = useState('');
   const [messages, setMessages] = useState<Message[]>([]);
   const [bootLoading, setBootLoading] = useState(true);
@@ -365,6 +386,17 @@ export default function MangaAgentPage() {
   useEffect(() => { conversationIdRef.current = conversationId; }, [conversationId]);
   useEffect(() => { messagesEndRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' }); }, [messages, executionEvents, draftReply, userInputRequest, sending]);
   useEffect(() => () => { activeStreamControllerRef.current?.abort(); }, []);
+
+  useEffect(() => {
+    const syncModels = () => {
+      const options = getProviderModelOptions('llm');
+      setLlmModels(options);
+      setSelectedLlmModel((prev) => (prev && options.includes(prev) ? prev : (options[0] || '')));
+    };
+    syncModels();
+    window.addEventListener(API_KEY_CHANGE_EVENT, syncModels);
+    return () => window.removeEventListener(API_KEY_CHANGE_EVENT, syncModels);
+  }, []);
 
   useEffect(() => {
     let active = true;
@@ -716,6 +748,7 @@ export default function MangaAgentPage() {
       requestId,
       (event) => handleStreamEvent(event),
       selectedConversationId,
+      selectedLlmModel,
     );
   }
 
@@ -740,6 +773,7 @@ export default function MangaAgentPage() {
       text,
       (event) => handleStreamEvent(event),
       selectedConversationId,
+      selectedLlmModel,
     );
     setMessages((prev) => [...prev, { role: 'system', content: `已提交回答：${text}`, requestId }]);
   }
@@ -854,11 +888,19 @@ export default function MangaAgentPage() {
             { icon: <MessageSquareText size={22} />, label: 'AI 创作', desc: '对话式推进剧情' },
             { icon: <Sparkles size={22} />, label: '生成漫画', desc: '分镜转漫画图片' },
           ].map((step, i) => (
-            <div key={i} className="panel-frame flex flex-col items-center gap-2 p-5">
+            <button
+              key={i}
+              type="button"
+              onClick={onCreateStory}
+              className={
+                'panel-frame flex flex-col items-center gap-2 p-5 text-center transition-all ' +
+                'cursor-pointer hover:-translate-y-0.5 hover:border-vermilion/40 hover:bg-vermilion-light/10'
+              }
+            >
               <div className="text-vermilion">{step.icon}</div>
               <div className="text-sm font-semibold text-sumi">{step.label}</div>
               <div className="text-xs text-sumi-dim">{step.desc}</div>
-            </div>
+            </button>
           ))}
         </div>
       </div>
@@ -1017,7 +1059,7 @@ export default function MangaAgentPage() {
                 {messages.map((msg, idx) => (
                   <div key={`${msg.requestId || 'msg'}-${idx}`} className={msg.role === 'user' ? 'flex justify-end' : 'flex justify-start'}>
                     <div className={'max-w-[85%] rounded-xl px-4 py-2.5 text-sm leading-relaxed ' + (msg.role === 'user' ? 'bg-vermilion text-white' : msg.role === 'system' ? 'border border-paper-border bg-paper-surface text-sumi-dim' : 'border border-paper-border bg-paper-raised text-sumi shadow-sm')}>
-                      {msg.role === 'assistant' || msg.role === 'system' ? <MarkdownRenderer content={msg.content} /> : msg.content}
+                      {msg.role === 'assistant' || msg.role === 'system' ? <MarkdownMessage content={msg.content} /> : msg.content}
                     </div>
                   </div>
                 ))}
@@ -1067,7 +1109,7 @@ export default function MangaAgentPage() {
                 {draftReply && (
                   <div className="flex justify-start">
                     <div className="max-w-[85%] rounded-xl border border-paper-border bg-paper-raised px-4 py-2.5 text-sm leading-relaxed shadow-sm">
-                      <MarkdownRenderer content={draftReply} />
+                      <MarkdownMessage content={draftReply} />
                     </div>
                   </div>
                 )}
@@ -1112,6 +1154,20 @@ export default function MangaAgentPage() {
           </div>
 
           <div className="border-t border-paper-border p-3">
+            <div className="mb-2 flex items-center justify-between gap-2">
+              <span className="text-[11px] text-sumi-faint">模型</span>
+              <select
+                value={selectedLlmModel}
+                onChange={(e) => setSelectedLlmModel(e.target.value)}
+                disabled={sending || conversationLoading || llmModels.length === 0}
+                className="max-w-[280px] rounded-md border border-paper-border bg-paper-base px-2.5 py-1.5 text-xs text-sumi outline-none transition focus:border-vermilion disabled:opacity-40"
+              >
+                {llmModels.length === 0 ? <option value="">未配置模型</option> : null}
+                {llmModels.map((model) => (
+                  <option key={model} value={model}>{model}</option>
+                ))}
+              </select>
+            </div>
             <div className="flex gap-2.5">
               <textarea
                 value={input}
