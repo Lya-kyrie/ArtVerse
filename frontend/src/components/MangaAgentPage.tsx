@@ -626,6 +626,10 @@ export default function MangaAgentPage() {
       const list = await getMangaAgentConversationMessages(chapterNumericId, selectedConversationId);
       setMessages(toMessages(list));
       setDraftReply('');
+      // Clear runtime state after run finishes — the reply is persisted in messages,
+      // and clearing events/requestId hides the execution panel naturally.
+      setExecutionEvents([]);
+      setActiveRequestId(null);
     } catch {
       // ignore refresh failure; live state still exists
     }
