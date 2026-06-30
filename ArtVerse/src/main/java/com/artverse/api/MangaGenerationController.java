@@ -2,6 +2,7 @@ package com.artverse.api;
 
 import com.artverse.application.ApiKeyService;
 import com.artverse.application.CurrentUserService;
+import com.artverse.application.UserProviderConfig;
 import com.artverse.guard.GenerationGuardService;
 import com.artverse.application.MangaGenerationService;
 import com.artverse.domain.MangaImage;
@@ -27,10 +28,10 @@ public class MangaGenerationController {
                                           @RequestBody(required = false) Map<String, Object> body) {
         User user = currentUser();
         GenerationGuardService.MangaStreamGuard guard = generationGuardService.guardMangaStream(user.getId(), chapterId);
-        String imageApiKey = apiKeyService.getDecryptedKey(user, "image2");
+        UserProviderConfig imageConfig = apiKeyService.resolveProviderConfig(user, ApiKeyService.SLOT_IMAGE);
         String deepseekApiKey = apiKeyService.getDecryptedKey(user, "deepseek");
         Long assetGroupId = optionalLong(body == null ? null : body.get("assetGroupId"));
-        return mangaGenerationService.generateMangaStream(chapterId, assetGroupId, user.getId(), imageApiKey, deepseekApiKey,
+        return mangaGenerationService.generateMangaStream(chapterId, assetGroupId, user.getId(), imageConfig, deepseekApiKey,
                 guard.onComplete(),
                 guard.onError());
     }
@@ -40,7 +41,7 @@ public class MangaGenerationController {
                                       @PathVariable int imageNumber,
                                       @RequestBody Map<String, String> body) {
         User user = currentUser();
-        String imageApiKey = apiKeyService.getDecryptedKey(user, "image2");
+        UserProviderConfig imageConfig = apiKeyService.resolveProviderConfig(user, ApiKeyService.SLOT_IMAGE);
         String deepseekApiKey = apiKeyService.getDecryptedKey(user, "deepseek");
         String prompt = body.get("prompt");
         Map<String, Object> result = generationGuardService.executeImageRegeneration(
@@ -48,7 +49,7 @@ public class MangaGenerationController {
                 chapterId,
                 imageNumber,
                 prompt,
-                () -> mangaImageToMap(mangaGenerationService.regenerateImage(chapterId, imageNumber, prompt, imageApiKey, deepseekApiKey))
+                () -> mangaImageToMap(mangaGenerationService.regenerateImage(chapterId, imageNumber, prompt, imageConfig, deepseekApiKey))
         );
         return mapToMangaImage(result);
     }

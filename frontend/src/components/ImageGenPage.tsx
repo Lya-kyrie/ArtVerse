@@ -582,7 +582,7 @@ export default function ImageGenPage() {
         ta.select();
         try { document.execCommand('copy'); } catch {}
         document.body.removeChild(ta);
-        setCopiedId(recordId);
+        setCopiedId(String(recordId));
         setTimeout(() => setCopiedId(null), 1500);
       });
   }
@@ -810,6 +810,7 @@ export default function ImageGenPage() {
         promptText,
         refBase64.length > 0 ? refBase64 : undefined,
         currentConfig.resolution,
+        undefined,
         controller.signal,
       );
       // Clear abort ref if this request completed

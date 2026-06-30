@@ -100,7 +100,7 @@ class MangaGenerationServiceTest {
                 new ObjectMapper()
         );
 
-        service.generateMangaStream(7L, "image-key", null);
+        service.generateMangaStream(7L, imageConfig("image-key"), null);
 
         assertThat(image2Client.awaitRequest()).isTrue();
         ImageGenerationRequest request = image2Client.request.get();
@@ -168,7 +168,7 @@ class MangaGenerationServiceTest {
                 new ObjectMapper()
         );
 
-        service.generateMangaStream(7L, 11L, 99L, "image-key", null, () -> {}, error -> {});
+        service.generateMangaStream(7L, 11L, 99L, imageConfig("image-key"), null, () -> {}, error -> {});
 
         assertThat(image2Client.awaitRequest()).isTrue();
         ImageGenerationRequest request = image2Client.request.get();
@@ -213,7 +213,7 @@ class MangaGenerationServiceTest {
 
         MangaGenerationService service = new MangaGenerationService(
                 chapterRepository,
-                (request, apiKey) -> Mono.error(new IllegalStateException("downstream unavailable")),
+                (request, config) -> Mono.error(new IllegalStateException("downstream unavailable")),
                 imageStorageService,
                 directExecutor(),
                 characterProfileService,
@@ -222,9 +222,13 @@ class MangaGenerationServiceTest {
                 new ObjectMapper()
         );
 
-        assertThatThrownBy(() -> service.generateImageForJob(List.of(), "image-key", "test prompt", "bw"))
+        assertThatThrownBy(() -> service.generateImageForJob(List.of(), imageConfig("image-key"), "test prompt", "bw"))
                 .isInstanceOf(BusinessException.class)
                 .hasMessageContaining("Image generation timed out or failed");
+    }
+
+    private static UserProviderConfig imageConfig(String apiKey) {
+        return new UserProviderConfig("image", "image2", "Image2", apiKey, "https://api.example.com/v1", "test-model");
     }
 
     private static ExecutorService directExecutor() {
@@ -236,7 +240,7 @@ class MangaGenerationServiceTest {
         private final AtomicReference<ImageGenerationRequest> request = new AtomicReference<>();
 
         @Override
-        public Mono<GeneratedImage> generate(ImageGenerationRequest request, String apiKey) {
+        public Mono<GeneratedImage> generate(ImageGenerationRequest request, UserProviderConfig config) {
             this.request.set(request);
             latch.countDown();
             try {

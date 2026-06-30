@@ -20,6 +20,7 @@ import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.ExecutorService;
+import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.atomic.AtomicReference;
 
 @Service
@@ -139,7 +140,8 @@ public class MangaAgentService {
         AtomicReference<MangaAgentRun> runRef = new AtomicReference<>();
 
         agentConcurrencyGate.acquireOrReject();
-        executor.submit(() -> {
+        try {
+            executor.submit(() -> {
             try {
                 try (AgentRunToolStatus.RunScope ignored = agentRunToolStatus.start(
                         user.getId(),
@@ -169,6 +171,10 @@ public class MangaAgentService {
                 agentConcurrencyGate.release();
             }
         });
+        } catch (RejectedExecutionException e) {
+            agentConcurrencyGate.release();
+            throw new BusinessException(503, "Failed to submit agent task: system overloaded, please retry", "agent");
+        }
 
         return emitter;
     }
@@ -203,7 +209,8 @@ public class MangaAgentService {
         AtomicReference<MangaAgentRun> runRef = new AtomicReference<>();
 
         agentConcurrencyGate.acquireOrReject();
-        executor.submit(() -> {
+        try {
+            executor.submit(() -> {
             try {
                 try (AgentRunToolStatus.RunScope ignored = agentRunToolStatus.start(
                         user.getId(),
@@ -242,6 +249,10 @@ public class MangaAgentService {
                 agentConcurrencyGate.release();
             }
         });
+        } catch (RejectedExecutionException e) {
+            agentConcurrencyGate.release();
+            throw new BusinessException(503, "Failed to submit agent task: system overloaded, please retry", "agent");
+        }
 
         return emitter;
     }

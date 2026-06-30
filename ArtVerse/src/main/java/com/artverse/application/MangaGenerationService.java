@@ -43,13 +43,13 @@ public class MangaGenerationService {
     private final Map<Long, MangaGenerationJob> activeJobs = new ConcurrentHashMap<>();
 
     @Transactional
-    public SseEmitter generateMangaStream(Long chapterId, String imageApiKey, String deepseekApiKey) {
-        return generateMangaStream(chapterId, null, null, imageApiKey, deepseekApiKey, () -> {}, error -> {});
+    public SseEmitter generateMangaStream(Long chapterId, UserProviderConfig imageConfig, String deepseekApiKey) {
+        return generateMangaStream(chapterId, null, null, imageConfig, deepseekApiKey, () -> {}, error -> {});
     }
 
     @Transactional
     public SseEmitter generateMangaStream(Long chapterId, Long assetGroupId, Long userId,
-                                          String imageApiKey, String deepseekApiKey,
+                                          UserProviderConfig imageConfig, String deepseekApiKey,
                                           Runnable onComplete, Consumer<String> onError) {
         Chapter chapter = chapterRepository.findByIdForIdempotency(chapterId)
                 .orElseThrow(() -> new BusinessException(404, "Chapter not found"));
@@ -95,7 +95,7 @@ public class MangaGenerationService {
         try {
             GenerationContext ctx = new GenerationContext(storyId, mangaStyle, storyRefImage,
                     effectiveAssetGroupId, chapterId, colorMode, chapterRefImage, profiles);
-            executor.submit(() -> runGenerationJob(job, ctx, imageApiKey, onComplete, onError));
+            executor.submit(() -> runGenerationJob(job, ctx, imageConfig, onComplete, onError));
         } catch (RuntimeException e) {
             activeJobs.remove(chapterId);
             throw e;
@@ -105,7 +105,7 @@ public class MangaGenerationService {
     }
 
     private void runGenerationJob(MangaGenerationJob job, GenerationContext ctx,
-                                   String imageApiKey, Runnable onComplete, Consumer<String> onError) {
+                                   UserProviderConfig imageConfig, Runnable onComplete, Consumer<String> onError) {
         try {
             // Send scenes event
             job.broadcastEvent("scenes", objectMapper.writeValueAsString(Map.of("scenes", job.getScenes())));
@@ -152,7 +152,7 @@ public class MangaGenerationService {
                         if (!job.isRunning()) break;
                         try {
                             // Generate image
-                            GeneratedImage generated = generateImageForJob(imageRequestRefs, imageApiKey, prompt, ctx.colorMode());
+                            GeneratedImage generated = generateImageForJob(imageRequestRefs, imageConfig, prompt, ctx.colorMode());
 
                             // Upload to MinIO
                             MangaImage mangaImage = mangaImageStorageService.saveGeneratedPanel(
@@ -218,7 +218,7 @@ public class MangaGenerationService {
         }
     }
 
-    GeneratedImage generateImageForJob(List<Path> imageRequestRefs, String imageApiKey, String prompt, String colorMode) {
+    GeneratedImage generateImageForJob(List<Path> imageRequestRefs, UserProviderConfig imageConfig, String prompt, String colorMode) {
         ImageGenerationRequest request = new ImageGenerationRequest(
                 prompt,
                 properties.getImage().getModel(),
@@ -229,7 +229,7 @@ public class MangaGenerationService {
 
         GeneratedImage generated;
         try {
-            generated = image2Client.generate(request, imageApiKey).block(Duration.ofSeconds(600));
+            generated = image2Client.generate(request, imageConfig).block(Duration.ofSeconds(600));
         } catch (Exception e) {
             throw new BusinessException(502, "Image generation timed out or failed: " + e.getMessage());
         }
@@ -240,7 +240,7 @@ public class MangaGenerationService {
     }
 
     @Transactional
-    public MangaImage regenerateImage(Long chapterId, int imageNumber, String prompt, String imageApiKey, String deepseekApiKey) {
+    public MangaImage regenerateImage(Long chapterId, int imageNumber, String prompt, UserProviderConfig imageConfig, String deepseekApiKey) {
         Chapter chapter = chapterRepository.findByIdForIdempotency(chapterId)
                 .orElseThrow(() -> new BusinessException(404, "Chapter not found"));
 
@@ -278,7 +278,7 @@ public class MangaGenerationService {
                 scenes.isEmpty() ? List.of(prompt) : scenes, imageNumber);
 
         try {
-            GeneratedImage generated = generateImageForJob(referenceImages.requestRefs(), imageApiKey,
+            GeneratedImage generated = generateImageForJob(referenceImages.requestRefs(), imageConfig,
                     generationPrompt, colorMode);
             try {
                 return mangaImageStorageService.saveGeneratedPanel(chapterId, storyId, imageNumber,

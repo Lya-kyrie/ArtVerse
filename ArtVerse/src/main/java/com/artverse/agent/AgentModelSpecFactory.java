@@ -1,5 +1,6 @@
 package com.artverse.agent;
 
+import com.artverse.application.UserProviderConfig;
 import com.artverse.common.BusinessException;
 import com.artverse.config.ArtVerseProperties;
 import lombok.RequiredArgsConstructor;
@@ -15,6 +16,35 @@ public class AgentModelSpecFactory {
     private static final int HASH_PREFIX_LENGTH = 12;
 
     private final ArtVerseProperties properties;
+
+    /**
+     * Converts a user-saved provider configuration into the agent model spec
+     * used by the workflow engine. Resolves the effective API key: the user's
+     * own key takes precedence over the server-configured key.
+     */
+    public AgentModelSpec fromProviderConfig(UserProviderConfig config) {
+        String effectiveKey = resolveEffectiveApiKey(config.apiKey(),
+                apiKeyForProvider(config.provider()));
+        return new AgentModelSpec(
+                config.provider(),
+                config.baseUrl(),
+                config.model(),
+                shortHash(effectiveKey)
+        );
+    }
+
+    private String apiKeyForProvider(String provider) {
+        return switch (provider) {
+            case "deepseek" -> safe(properties.getDeepseek().getApiKey());
+            case "image2" -> safe(properties.getImage().getApiKey());
+            case "coze" -> safe(properties.getCoze().getApiKey());
+            default -> "";
+        };
+    }
+
+    private static String safe(String value) {
+        return value == null ? "" : value;
+    }
 
     public AgentModelSpec deepSeek(String userApiKey) {
         ArtVerseProperties.DeepSeek deepseek = properties.getDeepseek();

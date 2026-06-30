@@ -4,6 +4,7 @@ import cn.dev33.satoken.stp.StpUtil;
 import com.artverse.ai.GeneratedImage;
 import com.artverse.ai.Image2Client;
 import com.artverse.ai.ImageGenerationRequest;
+import com.artverse.application.UserProviderConfig;
 import com.artverse.common.BusinessException;
 import com.artverse.config.ArtVerseProperties;
 import com.artverse.domain.ImageGenRecord;
@@ -41,7 +42,7 @@ public class ImageGenService {
     private static final int MAX_REF_IMAGES = 3;
 
     @Transactional
-    public Map<String, Object> generate(String prompt, List<String> referenceImagesBase64, String imageApiKey) {
+    public Map<String, Object> generate(String prompt, List<String> referenceImagesBase64, UserProviderConfig imageConfig) {
         Long userId = StpUtil.getLoginIdAsLong();
         User user = userRepository.findById(userId)
                 .orElseThrow(() -> new BusinessException(401, "User not found"));
@@ -75,7 +76,7 @@ public class ImageGenService {
                     null
             );
 
-            GeneratedImage generated = image2Client.generate(request, imageApiKey).block();
+            GeneratedImage generated = image2Client.generate(request, imageConfig).block();
             if (generated == null) {
                 throw new BusinessException(502, "Image generation returned no result");
             }
