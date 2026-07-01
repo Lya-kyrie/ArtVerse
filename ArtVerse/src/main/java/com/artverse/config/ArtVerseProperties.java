@@ -145,14 +145,5 @@ public class ArtVerseProperties {
         private int circuitBreakerWaitSeconds = 30;
         private int circuitBreakerSlidingWindowSize = 20;
         private int circuitBreakerSlowCallThresholdMs = 120_000;
-
-        private AgentCache cache = new AgentCache();
-
-        @Data
-        public static class AgentCache {
-            private int maxSize = 100;
-            private int idleTimeoutMinutes = 30;
-            private int cleanupIntervalMinutes = 5;
-        }
     }
 }

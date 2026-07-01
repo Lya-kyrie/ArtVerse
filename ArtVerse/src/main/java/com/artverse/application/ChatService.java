@@ -60,22 +60,10 @@ public class ChatService {
         return chatMessageRepository.findByChapterIdOrderByCreatedAtAsc(chapterId);
     }
 
-    @Transactional
     public SseEmitter streamChat(Long chapterId, Long userId, UserProviderConfig llmConfig) {
-        Chapter chapter = chapterRepository.findById(chapterId)
-                .orElseThrow(() -> new BusinessException(404, "Chapter not found"));
-
-        // Build context from all chapters up to current
-        List<Chapter> chapters = chapterRepository.findByStoryIdUpToChapter(
-                chapter.getStory().getId(), chapter.getChapterNumber());
-
-        List<AgentMessage> contextMessages = new ArrayList<>();
-        for (Chapter ch : chapters) {
-            List<ChatMessage> msgs = chatMessageRepository.findByChapterIdOrderByCreatedAtAsc(ch.getId());
-            for (ChatMessage m : msgs) {
-                contextMessages.add(new AgentMessage(m.getRole().name().toLowerCase(), m.getContent()));
-            }
-        }
+        StreamContext ctx = loadStreamContext(chapterId);
+        Chapter chapter = ctx.chapter();
+        List<AgentMessage> contextMessages = ctx.contextMessages();
 
         SseEmitter emitter = new SseEmitter(0L); // no timeout
         StringBuilder accumulated = new StringBuilder();
@@ -181,4 +169,25 @@ public class ChatService {
 
         return emitter;
     }
+
+    @Transactional(readOnly = true)
+    private StreamContext loadStreamContext(Long chapterId) {
+        Chapter chapter = chapterRepository.findById(chapterId)
+                .orElseThrow(() -> new BusinessException(404, "Chapter not found"));
+
+        List<Chapter> chapters = chapterRepository.findByStoryIdUpToChapter(
+                chapter.getStory().getId(), chapter.getChapterNumber());
+
+        List<AgentMessage> contextMessages = new ArrayList<>();
+        for (Chapter ch : chapters) {
+            List<ChatMessage> msgs = chatMessageRepository.findByChapterIdOrderByCreatedAtAsc(ch.getId());
+            for (ChatMessage m : msgs) {
+                contextMessages.add(new AgentMessage(m.getRole().name().toLowerCase(), m.getContent()));
+            }
+        }
+
+        return new StreamContext(chapter, contextMessages);
+    }
+
+    private record StreamContext(Chapter chapter, List<AgentMessage> contextMessages) {}
 }

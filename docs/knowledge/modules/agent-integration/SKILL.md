@@ -20,7 +20,7 @@ Bridges ArtVerse business logic to the AgentScope Java v2 SDK (`agentscope-core`
 |-------|------|
 | `AgentScopeAgentFactory` | Creates/caches `HarnessAgent` instances per user/story/chapter/conversation/model/prompt. Registers tool groups. |
 | `AgentScopeRuntimeContextFactory` | Creates AgentScope v2 `RuntimeContext` with `MangaAgentRuntimeContext` |
-| `AgentScopeHitlSuspendMiddleware` | Detects `ask_user` tool completion → triggers agent interrupt |
+
 | `AgentModelSpecFactory` | Creates `AgentModelSpec` from config + user API key |
 
 ## Code Map — Workspace
