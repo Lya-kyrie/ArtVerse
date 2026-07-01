@@ -50,6 +50,7 @@ import ImageEditor from './ImageEditor';
 
 interface Props {
   onSelectStory: (story: Story) => void;
+  createStorySignal?: number;
 }
 
 export default function HomePage({ onSelectStory }: Props) {

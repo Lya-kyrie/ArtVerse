@@ -1,5 +1,6 @@
 package com.artverse.ai;
 
+import com.artverse.application.UserProviderConfig;
 import com.artverse.common.BusinessException;
 import com.artverse.config.ArtVerseProperties;
 import com.fasterxml.jackson.databind.JsonNode;
@@ -48,18 +49,6 @@ public class WebClientImage2Client implements Image2Client {
     private WebClient webClient;
     private ConnectionProvider connectionProvider;
 
-    /**
-     * Initializes a shared {@link WebClient} backed by a Reactor Netty connection pool.
-     *
-     * <p>The underlying {@link HttpClient} is configured to:
-     * <ul>
-     *   <li>Use the JVM's built-in DNS resolver (avoids Netty async DNS failures on Windows)</li>
-     *   <li>Force HTTP/1.1 protocol (avoids HTTP/2 compatibility issues with some proxies)</li>
-     *   <li>Use JDK SSL provider — requires JVM flag {@code -Dio.netty.handler.ssl.noOpenSsl=true}
-     *       to force JDK SSL over OpenSSL (avoids TLS renegotiation issues with some proxies)</li>
-     *   <li>Reuse connections via a shared pool (50 max, 60s idle timeout)</li>
-     * </ul>
-     */
     @PostConstruct
     public void init() {
         this.connectionProvider = ConnectionProvider.builder("image2-pool")
@@ -73,13 +62,12 @@ public class WebClientImage2Client implements Image2Client {
                 .option(io.netty.channel.ChannelOption.CONNECT_TIMEOUT_MILLIS,
                         (int) CONNECT_TIMEOUT.toMillis());
         this.webClient = WebClient.builder()
-                .baseUrl(properties.getImage().getBaseUrl())
                 .clientConnector(new org.springframework.http.client.reactive.ReactorClientHttpConnector(httpClient))
                 .exchangeStrategies(ExchangeStrategies.builder()
                         .codecs(c -> c.defaultCodecs().maxInMemorySize(MAX_IN_MEMORY_SIZE))
                         .build())
                 .build();
-        log.info("WebClientImage2Client initialized with base URL: {}", properties.getImage().getBaseUrl());
+        log.info("WebClientImage2Client initialized");
     }
 
     @PreDestroy
@@ -91,34 +79,32 @@ public class WebClientImage2Client implements Image2Client {
     }
 
     @Override
-    public Mono<GeneratedImage> generate(ImageGenerationRequest request, String apiKey) {
-        String key = resolveApiKey(apiKey);
+    public Mono<GeneratedImage> generate(ImageGenerationRequest request, UserProviderConfig providerConfig) {
+        UserProviderConfig config = resolveConfig(providerConfig);
         boolean hasReferences = request.referenceImages() != null && !request.referenceImages().isEmpty();
-
-        return hasReferences ? generateWithReferences(request, key) : generateWithoutReferences(request, key);
+        return hasReferences ? generateWithReferences(request, config) : generateWithoutReferences(request, config);
     }
 
-    private Mono<GeneratedImage> generateWithoutReferences(ImageGenerationRequest request, String apiKey) {
+    private Mono<GeneratedImage> generateWithoutReferences(ImageGenerationRequest request, UserProviderConfig config) {
         String body = buildGenerationsRequest(request);
-
-        return webClient.post()
+        return clientFor(config).post()
                 .uri("/images/generations")
-                .header("Authorization", "Bearer " + apiKey)
+                .header("Authorization", "Bearer " + config.apiKey())
                 .contentType(MediaType.APPLICATION_JSON)
                 .bodyValue(body)
                 .retrieve()
                 .onStatus(status -> status.isError(), response -> response.createException())
                 .bodyToMono(String.class)
                 .timeout(READ_TIMEOUT)
-                .flatMap(response -> parseImageResponse(response, request.prompt()))
-                .onErrorMap(WebClientResponseException.class, this::mapHttpError);
+                .flatMap(response -> parseImageResponse(response, config))
+                .onErrorMap(WebClientResponseException.class, ex -> mapHttpError(ex, config));
     }
 
-    private Mono<GeneratedImage> generateWithReferences(ImageGenerationRequest request, String apiKey) {
+    private Mono<GeneratedImage> generateWithReferences(ImageGenerationRequest request, UserProviderConfig config) {
         MultipartBodyBuilder builder = new MultipartBodyBuilder();
         builder.part("prompt", request.prompt());
-        builder.part("model", properties.getImage().getModel());
-        builder.part("size", properties.getImage().getSize());
+        builder.part("model", request.model());
+        builder.part("size", request.size());
         builder.part("response_format", "b64_json");
 
         List<Path> refs = request.referenceImages();
@@ -130,65 +116,64 @@ public class WebClientImage2Client implements Image2Client {
             }
         }
 
-        return webClient.post()
+        return clientFor(config).post()
                 .uri("/images/edits")
-                .header("Authorization", "Bearer " + apiKey)
+                .header("Authorization", "Bearer " + config.apiKey())
                 .contentType(MediaType.MULTIPART_FORM_DATA)
                 .body(BodyInserters.fromMultipartData(builder.build()))
                 .retrieve()
                 .onStatus(status -> status.isError(), response -> response.createException())
                 .bodyToMono(String.class)
                 .timeout(READ_TIMEOUT)
-                .flatMap(response -> parseImageResponse(response, request.prompt()))
-                .onErrorMap(WebClientResponseException.class, this::mapHttpError);
+                .flatMap(response -> parseImageResponse(response, config))
+                .onErrorMap(WebClientResponseException.class, ex -> mapHttpError(ex, config));
     }
 
-    private Mono<GeneratedImage> parseImageResponse(String response, String prompt) {
+    private Mono<GeneratedImage> parseImageResponse(String response, UserProviderConfig config) {
         return Mono.fromCallable(() -> {
             try {
                 JsonNode node = objectMapper.readTree(response);
                 if (node.has("error")) {
-                    throw new BusinessException(502, "Image2 returned error: " + node.get("error").toString());
+                    throw new BusinessException(502, config.displayName() + " returned error: " + node.get("error"));
                 }
                 JsonNode data = node.path("data").path(0);
                 if (data.isMissingNode()) {
-                    throw new BusinessException(502, "Image2 returned no data item");
+                    throw new BusinessException(502, config.displayName() + " returned no data item");
                 }
 
                 byte[] imageBytes;
                 if (data.has("b64_json")) {
                     imageBytes = Base64.getDecoder().decode(data.get("b64_json").asText());
                 } else if (data.has("url")) {
-                    imageBytes = webClient.get().uri(data.get("url").asText())
+                    imageBytes = clientFor(config).get().uri(data.get("url").asText())
                             .retrieve()
                             .bodyToMono(byte[].class)
                             .timeout(READ_TIMEOUT)
                             .block();
                 } else {
-                    throw new BusinessException(502, "Image2 returned no image data");
+                    throw new BusinessException(502, config.displayName() + " returned no image data");
                 }
 
                 if (imageBytes == null || imageBytes.length == 0) {
-                    throw new BusinessException(502, "Image2 returned empty image bytes");
+                    throw new BusinessException(502, config.displayName() + " returned empty image bytes");
                 }
 
                 BufferedImage image = ImageIO.read(new ByteArrayInputStream(imageBytes));
                 if (image == null) {
-                    throw new BusinessException(502, "Invalid image format from Image2");
+                    throw new BusinessException(502, "Invalid image format from " + config.displayName());
                 }
 
                 Path tempDir = Files.createTempDirectory("artverse_img_");
                 String filename = "panel_" + UUID.randomUUID().toString().substring(0, 8) + ".png";
                 Path tempFile = tempDir.resolve(filename);
                 ImageIO.write(image, "png", tempFile.toFile());
-
                 return new GeneratedImage(tempFile, "image/png", Files.size(tempFile));
             } catch (BusinessException e) {
                 throw e;
             } catch (Exception e) {
-                log.error("Image2 response processing failed. Response first 500 chars: {}",
+                log.error("Image response processing failed. Response first 500 chars: {}",
                         response.length() > 500 ? response.substring(0, 500) : response, e);
-                throw new BusinessException(502, "Failed to process Image2 response: " + e.getMessage());
+                throw new BusinessException(502, describeImageResponseError(response, config, e));
             }
         }).subscribeOn(Schedulers.boundedElastic());
     }
@@ -196,9 +181,9 @@ public class WebClientImage2Client implements Image2Client {
     private String buildGenerationsRequest(ImageGenerationRequest request) {
         try {
             var node = objectMapper.createObjectNode();
-            node.put("model", properties.getImage().getModel());
+            node.put("model", request.model());
             node.put("prompt", request.prompt());
-            node.put("size", properties.getImage().getSize());
+            node.put("size", request.size());
             node.put("response_format", "b64_json");
             return objectMapper.writeValueAsString(node);
         } catch (Exception e) {
@@ -206,22 +191,61 @@ public class WebClientImage2Client implements Image2Client {
         }
     }
 
-    private String resolveApiKey(String requestApiKey) {
-        if (requestApiKey != null && !requestApiKey.isBlank()) {
-            return requestApiKey;
+    private UserProviderConfig resolveConfig(UserProviderConfig providerConfig) {
+        if (providerConfig == null) {
+            throw new BusinessException(400, "Image provider config is missing");
         }
-        String configKey = properties.getImage().getApiKey();
-        if (configKey != null && !configKey.isBlank()) {
-            return configKey;
+        if (providerConfig.apiKey().isBlank()) {
+            throw new BusinessException(400, "Image API key is missing. Please set it in Settings.", providerConfig.displayName());
         }
-        throw new BusinessException(400, "Image API Key is missing. Please set it in the frontend settings.", "Image");
+        return new UserProviderConfig(
+                providerConfig.slot(),
+                providerConfig.provider(),
+                providerConfig.label(),
+                providerConfig.apiKey(),
+                providerConfig.baseUrl().isBlank() ? properties.getImage().getBaseUrl() : providerConfig.baseUrl(),
+                providerConfig.primaryModel().isBlank() ? properties.getImage().getModel() : providerConfig.primaryModel()
+        );
     }
 
-    private BusinessException mapHttpError(WebClientResponseException ex) {
+    private WebClient clientFor(UserProviderConfig config) {
+        return webClient.mutate().baseUrl(config.baseUrl()).build();
+    }
+
+    private BusinessException mapHttpError(WebClientResponseException ex, UserProviderConfig config) {
         if (ex.getStatusCode().value() == 401) {
-            return new BusinessException(401, "Image2 API Key 无效或已过期，请在前端设置中更新。", "Image2");
+            return new BusinessException(401, config.displayName() + " API key is invalid or expired.", config.displayName());
+        }
+        String body = ex.getResponseBodyAsString();
+        if (looksLikeHtml(body)) {
+            return new BusinessException(ex.getStatusCode().value(),
+                    config.displayName() + " returned HTML instead of JSON for the image API. Check that Base URL points to the API root such as `https://host/v1`, not a website page or panel route.",
+                    config.displayName());
         }
         return new BusinessException(ex.getStatusCode().value(),
-                "Image2 API error (" + ex.getStatusCode() + "): " + ex.getMessage(), "Image2");
+                config.displayName() + " API error (" + ex.getStatusCode() + "): " + ex.getMessage(), config.displayName());
+    }
+
+    private String describeImageResponseError(String response, UserProviderConfig config, Exception e) {
+        if (looksLikeHtml(response)) {
+            return config.displayName() + " returned HTML instead of JSON for the image API. Check that Base URL points to the API root such as `https://host/v1`, not a website page or panel route.";
+        }
+        return "Failed to process image response from " + config.displayName() + ": " + compactMessage(response, e.getMessage());
+    }
+
+    private boolean looksLikeHtml(String response) {
+        String trimmed = response == null ? "" : response.trim();
+        return trimmed.startsWith("<!DOCTYPE html")
+                || trimmed.startsWith("<html")
+                || trimmed.startsWith("<HTML")
+                || trimmed.startsWith("<");
+    }
+
+    private String compactMessage(String response, String fallback) {
+        String trimmed = response == null ? "" : response.trim().replaceAll("\\s+", " ");
+        if (trimmed.isBlank()) {
+            return fallback == null ? "unknown error" : fallback;
+        }
+        return trimmed.length() > 180 ? trimmed.substring(0, 180) + "..." : trimmed;
     }
 }

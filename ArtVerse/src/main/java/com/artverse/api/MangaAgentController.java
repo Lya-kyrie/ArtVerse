@@ -1,8 +1,10 @@
 package com.artverse.api;
 
+import com.artverse.application.ApiKeyService;
 import com.artverse.api.dto.MangaAgentDtos;
 import com.artverse.application.CurrentUserService;
 import com.artverse.application.MangaAgentService;
+import com.artverse.application.UserProviderConfig;
 import com.artverse.domain.User;
 import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.*;
@@ -15,6 +17,7 @@ import java.util.UUID;
 @RequiredArgsConstructor
 public class MangaAgentController {
 
+    private final ApiKeyService apiKeyService;
     private final MangaAgentService mangaAgentService;
     private final CurrentUserService currentUserService;
 
@@ -75,7 +78,9 @@ public class MangaAgentController {
     public MangaAgentDtos.RunResponse run(@PathVariable Long chapterId,
                                           @RequestBody MangaAgentDtos.RunRequest body) {
         User user = currentUserService.requireCurrentUser();
-        MangaAgentService.RunResult result = mangaAgentService.run(chapterId, body.message(), body.requestId(), user);
+        MangaAgentService.RunResult result = mangaAgentService.run(
+                chapterId, body.message(), body.requestId(), user, overrideModel(requireLlmConfig(user), body.model())
+        );
         return new MangaAgentDtos.RunResponse(result.reply(), result.requestId());
     }
 
@@ -83,7 +88,9 @@ public class MangaAgentController {
     public SseEmitter runAgUi(@PathVariable Long chapterId,
                               @RequestBody MangaAgentDtos.RunRequest body) {
         User user = currentUserService.requireCurrentUser();
-        return mangaAgentService.runAgUiStream(chapterId, body.message(), body.requestId(), user);
+        return mangaAgentService.runAgUiStream(
+                chapterId, body.message(), body.requestId(), user, overrideModel(requireLlmConfig(user), body.model())
+        );
     }
 
     @PostMapping("/conversations/{conversationId}/ag-ui/run")
@@ -91,7 +98,10 @@ public class MangaAgentController {
                                           @PathVariable UUID conversationId,
                                           @RequestBody MangaAgentDtos.RunRequest body) {
         User user = currentUserService.requireCurrentUser();
-        return mangaAgentService.runAgUiStream(chapterId, conversationId, body.message(), body.requestId(), user);
+        return mangaAgentService.runAgUiStream(
+                chapterId, conversationId, body.message(), body.requestId(), user,
+                overrideModel(requireLlmConfig(user), body.model())
+        );
     }
 
     @GetMapping("/runs/open")
@@ -154,7 +164,9 @@ public class MangaAgentController {
                                              @PathVariable UUID requestId,
                                              @RequestBody MangaAgentDtos.ResumeRequest body) {
         User user = currentUserService.requireCurrentUser();
-        MangaAgentService.RunResult result = mangaAgentService.resume(chapterId, requestId, body.answer(), user);
+        MangaAgentService.RunResult result = mangaAgentService.resume(
+                chapterId, requestId, body.answer(), user, overrideModel(requireLlmConfig(user), body.model())
+        );
         return new MangaAgentDtos.RunResponse(result.reply(), result.requestId());
     }
 
@@ -163,7 +175,9 @@ public class MangaAgentController {
                                  @PathVariable UUID requestId,
                                  @RequestBody MangaAgentDtos.ResumeRequest body) {
         User user = currentUserService.requireCurrentUser();
-        return mangaAgentService.resumeAgUiStream(chapterId, requestId, body.answer(), user);
+        return mangaAgentService.resumeAgUiStream(
+                chapterId, requestId, body.answer(), user, overrideModel(requireLlmConfig(user), body.model())
+        );
     }
 
     @PostMapping("/conversations/{conversationId}/ag-ui/runs/{requestId}/resume")
@@ -172,6 +186,31 @@ public class MangaAgentController {
                                             @PathVariable UUID requestId,
                                             @RequestBody MangaAgentDtos.ResumeRequest body) {
         User user = currentUserService.requireCurrentUser();
-        return mangaAgentService.resumeAgUiStream(chapterId, conversationId, requestId, body.answer(), user);
+        return mangaAgentService.resumeAgUiStream(
+                chapterId, conversationId, requestId, body.answer(), user,
+                overrideModel(requireLlmConfig(user), body.model())
+        );
+    }
+
+    private UserProviderConfig requireLlmConfig(User user) {
+        return apiKeyService.requireProviderConfig(
+                user,
+                ApiKeyService.SLOT_LLM,
+                "Please configure an LLM provider API key in Settings before using the manga agent."
+        );
+    }
+
+    private UserProviderConfig overrideModel(UserProviderConfig config, String model) {
+        if (model == null || model.isBlank()) {
+            return config;
+        }
+        return new UserProviderConfig(
+                config.slot(),
+                config.provider(),
+                config.label(),
+                config.apiKey(),
+                config.baseUrl(),
+                model
+        );
     }
 }

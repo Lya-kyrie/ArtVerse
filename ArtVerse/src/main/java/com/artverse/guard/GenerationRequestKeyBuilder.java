@@ -20,12 +20,13 @@ public class GenerationRequestKeyBuilder {
     private final RequestCanonicalizer canonicalizer;
     private final ArtVerseProperties properties;
 
-    public Map<String, Object> imageGeneration(Long userId, String prompt, List<String> referenceImages) {
+    public Map<String, Object> imageGeneration(Long userId, String prompt, List<String> referenceImages,
+                                               String size, String model) {
         Map<String, Object> canonical = new LinkedHashMap<>();
         canonical.put("action", "image-gen");
         canonical.put("userId", userId);
-        canonical.put("model", properties.getImage().getModel());
-        canonical.put("size", properties.getImage().getSize());
+        canonical.put("model", model == null || model.isBlank() ? properties.getImage().getModel() : model);
+        canonical.put("size", size == null || size.isBlank() ? properties.getImage().getSize() : size);
         canonical.put("prompt", canonicalizer.normalizeText(prompt));
         canonical.put("refImages", referenceImages == null ? List.of() : referenceImages.stream()
                 .map(canonicalizer::imageHash)

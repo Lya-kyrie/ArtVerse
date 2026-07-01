@@ -19,6 +19,14 @@ Thumbs.db
 .agentscope/
 ArtVerse/.agentscope/
 
+# Local toolchains, caches, and scratch workspaces
+work/
+**/.m2/
+**/.gradle/
+**/.tmp/
+tmp/
+temp/
+
 # Temporary logs and generated debug files
 *.log
 frontend/build-*.txt

@@ -23,8 +23,20 @@ public class UserApiKey {
     @Column(nullable = false, length = 30)
     private String provider;
 
+    @Column(nullable = false, length = 30)
+    private String slot;
+
+    @Column(length = 100)
+    private String label;
+
     @Column(name = "api_key", nullable = false, length = 500)
     private String apiKey;
+
+    @Column(name = "base_url", length = 500)
+    private String baseUrl;
+
+    @Column(length = 100)
+    private String model;
 
     @Column(name = "created_at", nullable = false, updatable = false)
     private OffsetDateTime createdAt;

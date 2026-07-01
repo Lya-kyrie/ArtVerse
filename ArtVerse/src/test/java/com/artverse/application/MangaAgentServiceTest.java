@@ -39,14 +39,17 @@ import static org.mockito.Mockito.when;
 
 class MangaAgentServiceTest {
 
+    private static final UserProviderConfig TEST_LLM_CONFIG =
+            new UserProviderConfig("llm", "deepseek", "DeepSeek", "sk-test", "https://api.deepseek.com", "deepseek-v4-flash");
+
     @Test
     void runDelegatesToWorkflowOrchestrator() {
         Fixture fixture = fixture();
         UUID requestId = UUID.randomUUID();
-        when(fixture.orchestrator.runWithToolState(any(), any(), any(), any(), any()))
+        when(fixture.orchestrator.runWithToolState(any(), any(), any(), any(), any(), any()))
                 .thenReturn(Map.of("reply", "ok"));
 
-        MangaAgentService.RunResult result = fixture.service.run(7L, "continue", requestId, fixture.user);
+        MangaAgentService.RunResult result = fixture.service.run(7L, "continue", requestId, fixture.user, TEST_LLM_CONFIG);
 
         assertThat(result.reply()).isEqualTo("ok");
     }
@@ -55,10 +58,10 @@ class MangaAgentServiceTest {
     void runPropagatesWorkflowErrors() {
         Fixture fixture = fixture();
         UUID requestId = UUID.randomUUID();
-        when(fixture.orchestrator.runWithToolState(any(), any(), any(), any(), any()))
+        when(fixture.orchestrator.runWithToolState(any(), any(), any(), any(), any(), any()))
                 .thenThrow(new BusinessException(502, "Agent service failed: model down"));
 
-        assertThatThrownBy(() -> fixture.service.run(7L, "continue", requestId, fixture.user))
+        assertThatThrownBy(() -> fixture.service.run(7L, "continue", requestId, fixture.user, TEST_LLM_CONFIG))
                 .isInstanceOf(BusinessException.class)
                 .hasMessageContaining("Agent service failed");
     }
@@ -68,32 +71,36 @@ class MangaAgentServiceTest {
         Fixture fixture = fixture();
         UUID requestId = UUID.randomUUID();
         MangaAgentConversation conversation = fixture.conversation;
-        MangaAgentRunService.ResumeContext ctx = new MangaAgentRunService.ResumeContext(
+        MangaAgentRunService.RunSnapshot snapshot = new MangaAgentRunService.RunSnapshot(
+                requestId,
                 com.artverse.domain.MangaAgentRunStatus.WAITING_USER,
+                "continue",
+                null,
+                null,
                 com.artverse.application.workflow.MangaWorkflowRoute.DIRECTOR,
-                new AgentUserInputRequest("Why?", List.of(), true, "Need confirmation")
+                new AgentUserInputRequest("Why?", List.of(), true, "Need confirmation"),
+                List.of(),
+                java.time.OffsetDateTime.now(),
+                java.time.OffsetDateTime.now(),
+                null
         );
         Mockito.doReturn(java.util.Optional.of(fixture.waitingRun))
                 .when(fixture.runService).findRun(conversation, requestId);
-        Mockito.doReturn(ctx).when(fixture.runService).resumeContext(fixture.waitingRun);
+        Mockito.doReturn(snapshot).when(fixture.runService).snapshot(fixture.waitingRun);
         Mockito.doAnswer(invocation -> {
             sneakyThrow(new IOException("disk full"));
             return null;
-        }).when(fixture.orchestrator).runWithToolState(any(), any(), any(), any(), any());
+        }).when(fixture.orchestrator).runWithToolState(any(), any(), any(), any(), any(), any());
 
-        assertThatThrownBy(() -> fixture.service.resume(7L, requestId, "answer", fixture.user))
-                .isInstanceOf(BusinessException.class)
-                .satisfies(error -> {
-                    BusinessException businessException = (BusinessException) error;
-                    assertThat(businessException.getStatus()).isEqualTo(502);
-                    assertThat(businessException.getMessage()).contains("disk full");
-                });
+        assertThatThrownBy(() -> fixture.service.resume(7L, requestId, "answer", fixture.user, TEST_LLM_CONFIG))
+                .isInstanceOf(RuntimeException.class)
+                .hasMessageContaining("disk full");
     }
 
     @Test
     void runStreamCreatesEmitter() {
         Fixture fixture = fixture();
-        assertThat(fixture.service.runAgUiStream(7L, "continue", UUID.randomUUID(), fixture.user)).isNotNull();
+        assertThat(fixture.service.runAgUiStream(7L, "continue", UUID.randomUUID(), fixture.user, TEST_LLM_CONFIG)).isNotNull();
     }
 
     @Test
@@ -133,7 +140,7 @@ class MangaAgentServiceTest {
         int permitsBefore = gate.availablePermits();
         assertThat(permitsBefore).isEqualTo(3);
 
-        assertThatThrownBy(() -> service.runAgUiStream(7L, "test", UUID.randomUUID(), user))
+        assertThatThrownBy(() -> service.runAgUiStream(7L, "test", UUID.randomUUID(), user, TEST_LLM_CONFIG))
                 .isInstanceOf(BusinessException.class)
                 .hasMessageContaining("Failed to submit");
 

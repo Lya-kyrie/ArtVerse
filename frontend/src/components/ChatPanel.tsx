@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState } from 'react';
 import { Send, Image, Square, MessageSquare, FileText, Save } from 'lucide-react';
-import { chatStream, importNovel, type Chapter } from '../api';
+import { API_KEY_CHANGE_EVENT, chatStream, getPrimaryProviderModel, getProviderModelOptions, importNovel, type Chapter } from '../api';
 import MarkdownRenderer from './MarkdownRenderer';
+import ModelSwitcher from './ModelSwitcher';
 
 type Mode = 'chat' | 'import';
 const MAX_IMPORT_CHARS = 50000;
@@ -19,6 +20,7 @@ export default function ChatPanel({ chapter, onMessageSent, onChapterRefresh, on
   const [streaming, setStreaming] = useState(false);
   const [streamContent, setStreamContent] = useState('');
   const [mode, setMode] = useState<Mode>('chat');
+  const [selectedLlmModel, setSelectedLlmModel] = useState(() => getPrimaryProviderModel('llm'));
   const [importText, setImportText] = useState('');
   const [importing, setImporting] = useState(false);
   const [importError, setImportError] = useState('');
@@ -87,6 +89,16 @@ export default function ChatPanel({ chapter, onMessageSent, onChapterRefresh, on
     return () => el.removeEventListener('scroll', handleScroll);
   }, []);
 
+  useEffect(() => {
+    const syncModels = () => {
+      const options = getProviderModelOptions('llm');
+      setSelectedLlmModel((prev) => (prev && options.includes(prev) ? prev : (options[0] || '')));
+    };
+    syncModels();
+    window.addEventListener(API_KEY_CHANGE_EVENT, syncModels);
+    return () => window.removeEventListener(API_KEY_CHANGE_EVENT, syncModels);
+  }, []);
+
   const handleSend = () => {
     if (!input.trim() || !chapter || streaming || isImportLocked) return;
     const userMsg = { role: 'user', content: input.trim() };
@@ -120,6 +132,7 @@ export default function ChatPanel({ chapter, onMessageSent, onChapterRefresh, on
         setStreamContent('');
         setStreaming(false);
       },
+      selectedLlmModel,
     );
   };
 
@@ -315,6 +328,14 @@ export default function ChatPanel({ chapter, onMessageSent, onChapterRefresh, on
 
           {/* Input */}
           <div className="px-3 py-3 border-t border-paper-border">
+            <div className="mb-2 flex justify-end">
+              <ModelSwitcher
+                capability="llm"
+                selectedModel={selectedLlmModel}
+                onSelect={setSelectedLlmModel}
+                disabled={streaming || isImportLocked}
+              />
+            </div>
             <div className="flex items-end gap-2 bg-paper-surface rounded-lg px-3 py-2 border border-paper-border focus-within:border-vermilion transition-colors">
               <textarea
                 ref={textareaRef}

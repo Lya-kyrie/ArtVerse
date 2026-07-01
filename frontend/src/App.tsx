@@ -1,9 +1,8 @@
-import { useEffect, useState } from 'react';
+﻿import { useEffect, useState } from 'react';
 import {
   BookOpenText,
   ChevronLeft,
   ChevronRight,
-  ExternalLink,
   FileText,
   Globe,
   Image,
@@ -17,7 +16,6 @@ import {
   Plus,
   Sparkles,
   Trash2,
-  X,
 } from 'lucide-react';
 import ChatPanel from './components/ChatPanel';
 import MangaPanel from './components/MangaPanel';
@@ -27,23 +25,18 @@ import LoginPage from './components/LoginPage';
 import SquarePage from './components/SquarePage';
 import ImageGenPage from './components/ImageGenPage';
 import MyWorksPage from './components/MyWorksPage';
+import ApiSettingsPage from './components/ApiSettingsPage';
 import {
   listChapters,
   createNextChapter,
   deleteChapter,
   getChapter,
   type Chapter,
-  getApiKeySettings,
-  saveApiKeySettings,
-  clearApiKeySettings,
-  saveUserApiKey,
-  DEEPSEEK_USAGE_URL,
-  IMAGE2_CONSOLE_URL,
   isAuthenticated,
   logoutUser,
 } from './api';
 
-type View = 'home' | 'square' | 'workspace' | 'editor' | 'imagegen' | 'myworks';
+type View = 'home' | 'square' | 'workspace' | 'editor' | 'imagegen' | 'myworks' | 'settings';
 type MobileTab = 'chat' | 'manga';
 
 const LS_STORY_ID = 'lorevista.currentStoryId';
@@ -87,94 +80,17 @@ function clearWorkspaceState() {
   localStorage.removeItem(LS_CHAPTER_ID);
   localStorage.removeItem(LS_CHAPTER_IDX);
 }
-
-function ApiKeySettingsModal({ open, onClose }: { open: boolean; onClose: () => void }) {
-  const [dk, setDk] = useState('');
-  const [ik, setIk] = useState('');
-  const [ck, setCk] = useState('');
-
-  useEffect(() => {
-    if (!open) return;
-    const s = getApiKeySettings();
-    setDk(s.deepseekApiKey);
-    setIk(s.imageApiKey);
-    setCk(s.cozeApiKey);
-  }, [open]);
-
-  if (!open) return null;
-
-  const handleSave = async () => {
-    saveApiKeySettings({ deepseekApiKey: dk, imageApiKey: ik, cozeApiKey: ck });
-    const sync = async (p: string, k: string) => {
-      if (!k) return;
-      try {
-        await saveUserApiKey(p, k);
-      } catch {
-        return;
-      }
-    };
-    await Promise.all([sync('deepseek', dk), sync('image2', ik), sync('coze', ck)]);
-    onClose();
-  };
-
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-sumi/40 backdrop-blur-sm" onClick={onClose}>
-      <div className="m-4 w-full max-w-md space-y-5 rounded-2xl border border-paper-border bg-paper-raised p-6 shadow-modal animate-fade-in" onClick={(e) => e.stopPropagation()}>
-        <div className="flex items-center justify-between">
-          <h2 className="flex items-center gap-2 text-lg font-semibold text-sumi">
-            <KeyRound size={18} className="text-kinpaku" />
-            API 密钥
-          </h2>
-          <button onClick={onClose} className="text-sumi-faint hover:text-sumi-dim transition-colors" aria-label="关闭">
-            <X size={18} />
-          </button>
-        </div>
-        <div className="space-y-4">
-          <div>
-            <label className="mb-1 block text-sm text-sumi-dim">DeepSeek 密钥</label>
-            <input type="password" value={dk} onChange={(e) => setDk(e.target.value)} placeholder="sk-..." className="w-full rounded-md border border-paper-border bg-paper-base px-3 py-2 text-sm text-sumi placeholder-sumi-faint focus:border-vermilion focus:outline-none transition-colors" />
-            <a href={DEEPSEEK_USAGE_URL} target="_blank" rel="noopener" className="mt-1 inline-flex items-center gap-1 text-xs text-aizuri hover:text-aizuri/80 transition-colors">
-              <ExternalLink size={10} />
-              获取密钥
-            </a>
-          </div>
-          <div>
-            <label className="mb-1 block text-sm text-sumi-dim">绘图密钥</label>
-            <input type="password" value={ik} onChange={(e) => setIk(e.target.value)} placeholder="sk-..." className="w-full rounded-md border border-paper-border bg-paper-base px-3 py-2 text-sm text-sumi placeholder-sumi-faint focus:border-vermilion focus:outline-none transition-colors" />
-            <a href={IMAGE2_CONSOLE_URL} target="_blank" rel="noopener" className="mt-1 inline-flex items-center gap-1 text-xs text-aizuri hover:text-aizuri/80 transition-colors">
-              <ExternalLink size={10} />
-              获取密钥
-            </a>
-          </div>
-          <div>
-            <label className="mb-1 block text-sm text-sumi-dim">Coze 密钥</label>
-            <input type="password" value={ck} onChange={(e) => setCk(e.target.value)} placeholder="pat-..." className="w-full rounded-md border border-paper-border bg-paper-base px-3 py-2 text-sm text-sumi placeholder-sumi-faint focus:border-vermilion focus:outline-none transition-colors" />
-          </div>
-        </div>
-        <div className="flex items-center justify-between pt-2">
-          <button onClick={() => { if (!confirm('确定清空所有密钥吗？')) return; clearApiKeySettings(); setDk(''); setIk(''); setCk(''); }} disabled={!dk && !ik && !ck} className="text-xs text-vermilion hover:text-vermilion-hover disabled:opacity-30 transition-colors">
-            清空全部
-          </button>
-          <div className="flex gap-2">
-            <button onClick={onClose} className="px-4 py-2 text-sm text-sumi-dim hover:text-sumi transition-colors">取消</button>
-            <button onClick={handleSave} className="rounded-md bg-vermilion px-4 py-2 text-sm font-medium text-white hover:bg-vermilion-hover transition-colors">保存</button>
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-}
-
 export default function App() {
   const isMobile = useIsMobile();
   const [authenticated, setAuthenticated] = useState(false);
   const [authCheck, setAuthCheck] = useState(false);
   const [view, setView] = useState<View>('home');
   const [sidebarOpen, setSidebarOpen] = useState(!isMobile);
-  const [settingsOpen, setSettingsOpen] = useState(false);
   const [loginOpen, setLoginOpen] = useState(false);
-  const [loginMessage, setLoginMessage] = useState('请先登录后使用该功能');
+  const [loginMessage, setLoginMessage] = useState('请先登录后再使用该功能');
   const [pendingView, setPendingView] = useState<View | null>(null);
+  const [pendingCreateStory, setPendingCreateStory] = useState(false);
+  const [workspaceCreateSignal, setWorkspaceCreateSignal] = useState(0);
   const [activeStoryId, setActiveStoryId] = useState<number | null>(null);
   const [currentIdx, setCurrentIdx] = useState(0);
   const [chapters, setChapters] = useState<Chapter[]>([]);
@@ -190,7 +106,7 @@ export default function App() {
   useEffect(() => {
     const handleExpired = () => {
       setAuthenticated(false);
-      setLoginMessage('登录状态已过期，请重新登录');
+      setLoginMessage('登录已过期，请重新登录');
       setPendingView(view === 'square' ? null : view);
       setLoginOpen(true);
       clearWorkspaceState();
@@ -291,7 +207,7 @@ export default function App() {
 
   const handleDelete = async () => {
     if (!currentChapter || chapters.length <= 1 || !activeStoryId) return;
-    if (!confirm('确定删除本话吗？')) return;
+    if (!confirm('确定删除这一章吗？')) return;
     try {
       await deleteChapter(currentChapter.id);
       const chs = await listChapters(activeStoryId);
@@ -305,7 +221,7 @@ export default function App() {
   };
 
   const requireLogin = (target?: View) => {
-    setLoginMessage('请先登录后使用该功能');
+    setLoginMessage('请先登录后再使用该功能');
     setPendingView(target || null);
     setLoginOpen(true);
   };
@@ -323,18 +239,26 @@ export default function App() {
     setAuthenticated(true);
     setLoginOpen(false);
     clearWorkspaceState();
+    if (pendingCreateStory) {
+      setWorkspaceCreateSignal((prev) => prev + 1);
+      setPendingCreateStory(false);
+    }
     if (pendingView) {
       setView(pendingView);
       setPendingView(null);
     }
   };
 
-  const openSettings = () => {
+  const openWorkspaceCreateStory = () => {
     if (!authenticated) {
-      requireLogin();
+      setPendingCreateStory(true);
+      requireLogin('workspace');
       return;
     }
-    setSettingsOpen(true);
+    setPendingCreateStory(false);
+    if (view === 'editor') unloadEditor();
+    setWorkspaceCreateSignal((prev) => prev + 1);
+    setView('workspace');
   };
 
   const navItem = (icon: React.ReactNode, label: string, target: View) => (
@@ -361,25 +285,22 @@ export default function App() {
               ArtVerse
             </span>
           )}
-          <button onClick={() => setSidebarOpen(!sidebarOpen)} className="ml-auto text-sumi-faint hover:text-sumi-dim transition-colors" aria-label="切换侧边栏">
+          <button onClick={() => setSidebarOpen(!sidebarOpen)} className='ml-auto text-sumi-faint hover:text-sumi-dim transition-colors' aria-label='Toggle sidebar'>
             {sidebarOpen ? <PanelLeftClose size={16} /> : <PanelLeftOpen size={16} />}
           </button>
         </div>
         {sidebarOpen && <div className="brush-divider mx-3 mt-0" />}
         <nav className="flex flex-1 flex-col gap-0.5 px-2 py-3">
-          {navItem(<Sparkles size={18} />, '创作工坊', 'home')}
-          {navItem(<Globe size={18} />, '发现作品', 'square')}
-          {navItem(<BookOpenText size={18} />, '我的故事', 'workspace')}
-          {navItem(<FileText size={18} />, '章节管理', 'myworks')}
-          {navItem(<Paintbrush size={18} />, '生图工坊', 'imagegen')}
+          {navItem(<Sparkles size={18} />, '创作助手', 'home')}
+          {navItem(<Globe size={18} />, '作品广场', 'square')}
+          {navItem(<BookOpenText size={18} />, '故事工作区', 'workspace')}
+          {navItem(<FileText size={18} />, '作品管理', 'myworks')}
+          {navItem(<Paintbrush size={18} />, 'AI 生图', 'imagegen')}
         </nav>
         <div className="flex flex-col gap-0.5 border-t border-paper-border px-2 py-3">
           {authenticated ? (
             <>
-              <button onClick={openSettings} className="flex w-full items-center gap-3 rounded-md px-3 py-2.5 text-sm font-medium text-sumi-dim hover:bg-paper-base hover:text-sumi transition-colors">
-                <KeyRound size={18} />
-                {sidebarOpen && <span>API 密钥</span>}
-              </button>
+              {navItem(<KeyRound size={18} />, 'API 设置', 'settings')}
               <button onClick={() => { logoutUser(); setAuthenticated(false); unloadEditor(); clearWorkspaceState(); setView('home'); }} className="flex w-full items-center gap-3 rounded-md px-3 py-2.5 text-sm font-medium text-sumi-dim hover:bg-vermilion-light/30 hover:text-vermilion transition-colors">
                 <LogOut size={18} />
                 {sidebarOpen && <span>退出登录</span>}
@@ -395,18 +316,19 @@ export default function App() {
       </aside>
 
       <div className="flex min-h-0 flex-1 flex-col">
-        {view === 'home' && <MangaAgentPage />}
+        {view === 'home' && <MangaAgentPage onCreateStory={openWorkspaceCreateStory} />}
         {view === 'square' && <SquarePage />}
-        {view === 'workspace' && <HomePage onSelectStory={(story) => loadEditor(story.id)} />}
+        {view === 'workspace' && <HomePage onSelectStory={(story) => loadEditor(story.id)} createStorySignal={workspaceCreateSignal} />}
         {view === 'imagegen' && <ImageGenPage />}
         {view === 'myworks' && <MyWorksPage />}
+        {view === 'settings' && <ApiSettingsPage />}
 
         {view === 'editor' && activeStoryId && (
           <div className="flex min-h-0 flex-1 flex-col">
             <div className="flex h-12 shrink-0 items-center justify-between border-b border-paper-border bg-paper-surface/90 px-3 backdrop-blur-md">
               <button onClick={() => { unloadEditor(); setView('workspace'); }} className="flex items-center gap-1.5 text-sm text-sumi-dim hover:text-vermilion transition-colors">
                 <ChevronLeft size={16} />
-                返回故事
+                返回故事列表
               </button>
               <div className="flex items-center gap-2">
                 {chapters.length > 0 && (
@@ -416,7 +338,7 @@ export default function App() {
                     className="rounded-md border border-paper-border bg-paper-base px-2 py-1 text-xs text-sumi focus:border-vermilion focus:outline-none transition-colors"
                   >
                     {chapters.map((ch, i) => (
-                      <option key={ch.id} value={i}>第 {ch.chapter_number} 话</option>
+                      <option key={ch.id} value={i}>第 {ch.chapter_number} 章</option>
                     ))}
                   </select>
                 )}
@@ -428,8 +350,7 @@ export default function App() {
                 <div className="flex gap-1">
                   {chapters.map((ch: Chapter, idx: number) => (
                     <button key={ch.id} onClick={() => setChapterByIndex(idx)} className={'shrink-0 rounded-full border px-3 py-1.5 text-xs transition-all duration-200 ' + (ch.id === currentChapter?.id ? 'border-vermilion bg-vermilion-light/50 text-vermilion font-medium' : 'border-paper-border bg-paper-base text-sumi-dim hover:text-sumi')}>
-                      第 {ch.chapter_number} 话
-                    </button>
+                      第 {ch.chapter_number} 章                    </button>
                   ))}
                 </div>
               </div>
@@ -439,12 +360,10 @@ export default function App() {
               <div className="flex border-b border-paper-border bg-paper-surface">
                 <button onClick={() => setMobileTab('chat')} className={'flex flex-1 items-center justify-center gap-1.5 py-2.5 text-xs font-medium transition-colors ' + (mobileTab === 'chat' ? 'border-b-2 border-vermilion text-vermilion' : 'text-sumi-dim hover:text-sumi')}>
                   <MessageSquare size={14} />
-                  对话
-                </button>
+                  对话创作                </button>
                 <button onClick={() => setMobileTab('manga')} className={'flex flex-1 items-center justify-center gap-1.5 py-2.5 text-xs font-medium transition-colors ' + (mobileTab === 'manga' ? 'border-b-2 border-vermilion text-vermilion' : 'text-sumi-dim hover:text-sumi')}>
                   <Image size={14} />
-                  漫画
-                </button>
+                  漫画分镜                </button>
               </div>
             )}
 
@@ -471,25 +390,23 @@ export default function App() {
             <footer className="flex h-14 shrink-0 items-center justify-center gap-2 border-t border-paper-border bg-paper-surface/90 px-2 backdrop-blur-md md:gap-4">
               <button onClick={handlePrevChapter} disabled={currentIdx === 0} className="flex items-center gap-1 rounded-md border border-paper-border bg-paper-base px-3 py-2 text-sm font-medium text-sumi-dim disabled:cursor-not-allowed disabled:opacity-30 hover:border-sumi-faint hover:text-sumi transition-colors">
                 <ChevronLeft size={16} />
-                {!isMobile && '上一话'}
+                {!isMobile && '上一章'}
               </button>
-              <button onClick={handleDelete} disabled={!currentChapter || chapters.length <= 1} className="flex items-center gap-1.5 rounded-md border border-vermilion/20 bg-vermilion-light/20 px-3 py-2 text-sm font-medium text-vermilion disabled:cursor-not-allowed disabled:opacity-30 hover:bg-vermilion-light/40 transition-colors" aria-label="删除本话">
+              <button onClick={handleDelete} disabled={!currentChapter || chapters.length <= 1} className='flex items-center gap-1.5 rounded-md border border-vermilion/20 bg-vermilion-light/20 px-3 py-2 text-sm font-medium text-vermilion disabled:cursor-not-allowed disabled:opacity-30 hover:bg-vermilion-light/40 transition-colors' aria-label='Delete chapter'>
                 <Trash2 size={14} />
               </button>
               <div className="flex items-center gap-1">
                 {chapters.map((ch: Chapter, i: number) => (
-                  <button key={ch.id} onClick={() => setChapterByIndex(i)} className={'h-2 w-2 rounded-full transition-all duration-200 ' + (i === currentIdx ? 'bg-vermilion scale-125' : 'bg-sumi-faint/30 hover:bg-sumi-faint/60')} aria-label={`切换到第 ${ch.chapter_number} 话`} />
+                  <button key={ch.id} onClick={() => setChapterByIndex(i)} className={'h-2 w-2 rounded-full transition-all duration-200 ' + (i === currentIdx ? 'bg-vermilion scale-125' : 'bg-sumi-faint/30 hover:bg-sumi-faint/60')} aria-label={'切换到第 ' + ch.chapter_number + ' 章'} />
                 ))}
               </div>
               <button onClick={handleNextChapter} disabled={creatingChapter} className="flex items-center gap-1 rounded-md bg-vermilion px-3 py-2 text-sm font-medium text-white disabled:cursor-not-allowed disabled:opacity-40 hover:bg-vermilion-hover transition-colors md:px-5">
-                {currentIdx === chapters.length - 1 ? (<><Plus size={16} />{creatingChapter ? '创建中...' : isMobile ? '新建' : '下一话（新建）'}</>) : (<><span>{!isMobile && '下一话'}</span><ChevronRight size={16} /></>)}
+                {currentIdx === chapters.length - 1 ? (<><Plus size={16} />{creatingChapter ? '创建中…' : isMobile ? '新建' : '下一章（新建）'}</>) : (<><span>{!isMobile && '下一章'}</span><ChevronRight size={16} /></>)}
               </button>
             </footer>
           </div>
         )}
       </div>
-
-      <ApiKeySettingsModal open={settingsOpen} onClose={() => setSettingsOpen(false)} />
 
       {loginOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-sumi/30 backdrop-blur-sm" onClick={() => setLoginOpen(false)}>
@@ -501,3 +418,4 @@ export default function App() {
     </div>
   );
 }
+

@@ -8,6 +8,6 @@ import java.util.Optional;
 
 public interface UserApiKeyRepository extends JpaRepository<UserApiKey, Long> {
     List<UserApiKey> findByUserId(Long userId);
-    Optional<UserApiKey> findByUserIdAndProvider(Long userId, String provider);
-    void deleteByUserIdAndProvider(Long userId, String provider);
+    Optional<UserApiKey> findByUserIdAndSlot(Long userId, String slot);
+    void deleteByUserIdAndSlot(Long userId, String slot);
 }
