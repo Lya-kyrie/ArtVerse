@@ -433,6 +433,34 @@ function isConfigMeaningful(config: Partial<ProviderEndpointConfig> | undefined)
   );
 }
 
+function normalizeProviderConfigValue(value: string | null | undefined): string {
+  return String(value || '').trim().replace(/\/+$/, '');
+}
+
+function findMatchingProviderEntryId(
+  settings: CapabilityProviderSettings,
+  remoteConfig: Partial<ProviderEndpointConfig>,
+): string | null {
+  const remotePresetId = String(remoteConfig.presetId || '');
+  const remoteBaseUrl = normalizeProviderConfigValue(remoteConfig.baseUrl);
+  const remoteLabel = normalizeProviderConfigValue(remoteConfig.label);
+  const remoteModels = parseProviderModels(remoteConfig.model).join('\n');
+
+  const exactMatch = Object.entries(settings.entries).find(([, entry]) =>
+    entry.presetId === remotePresetId
+    && normalizeProviderConfigValue(entry.baseUrl) === remoteBaseUrl
+    && normalizeProviderConfigValue(entry.label) === remoteLabel
+    && parseProviderModels(entry.selectedModels).join('\n') === remoteModels,
+  );
+  if (exactMatch) return exactMatch[0];
+
+  const relaxedMatch = Object.entries(settings.entries).find(([, entry]) =>
+    entry.presetId === remotePresetId
+    && normalizeProviderConfigValue(entry.baseUrl) === remoteBaseUrl,
+  );
+  return relaxedMatch?.[0] || null;
+}
+
 function mergeRemoteProviderConfig(
   current: CapabilityProviderSettings,
   capability: ApiCapability,
@@ -440,21 +468,22 @@ function mergeRemoteProviderConfig(
 ): CapabilityProviderSettings {
   if (!isConfigMeaningful(remoteConfig)) return current;
   const next = JSON.parse(JSON.stringify(current)) as CapabilityProviderSettings;
-  const activeEntry = next.entries[next.activePresetId] || getFirstEntry(next);
-  const remotePresetId = String(remoteConfig.presetId || '');
-  const activeMatchesRemote = activeEntry?.presetId === remotePresetId
-    && activeEntry?.baseUrl === String(remoteConfig.baseUrl || activeEntry.baseUrl);
+  const matchingEntryId = findMatchingProviderEntryId(next, remoteConfig);
+  const activeEntryId = matchingEntryId || next.activePresetId;
+  const activeEntry = next.entries[activeEntryId] || getFirstEntry(next);
 
-  if (activeEntry && activeMatchesRemote) {
+  if (activeEntry) {
     activeEntry.label = String(remoteConfig.label || activeEntry.label);
     activeEntry.baseUrl = String(remoteConfig.baseUrl || activeEntry.baseUrl);
     activeEntry.selectedModels = parseProviderModels(remoteConfig.model).length > 0
       ? parseProviderModels(remoteConfig.model)
       : activeEntry.selectedModels;
     activeEntry.availableModels = Array.from(new Set([...activeEntry.availableModels, ...activeEntry.selectedModels]));
+    next.activePresetId = activeEntryId;
     return next;
   }
 
+  const remotePresetId = String(remoteConfig.presetId || '');
   const entryId = createEntryKey(capability, remotePresetId || 'custom');
   next.entries[entryId] = createMigratedEntry(capability, remoteConfig, '');
   next.activePresetId = entryId;
