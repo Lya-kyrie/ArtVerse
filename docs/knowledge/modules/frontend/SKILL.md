@@ -64,3 +64,9 @@ The frontend consumes AG-UI events via `@ag-ui/core` and `@ag-ui/client`. Live e
 - Left sidebar must expose conversation history — switching conversation loads its messages + open run.
 - The execution panel is the single place for agent progress — no competing progress widget.
 - Chinese-only labels in Manga Agent UI.
+
+## Recent UI Notes
+
+- `App.tsx` now includes a dedicated `settings` view. API settings no longer open as a modal; they render as a first-class page on the right content area like the other navigation targets.
+- `ChatPanel.tsx` reads the configured LLM model list from provider settings and sends the selected model with story-chat requests.
+- `ImageGenPage.tsx` reads the configured image model list from provider settings and sends the selected model with image-generation requests.

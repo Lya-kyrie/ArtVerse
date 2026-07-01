@@ -23,6 +23,7 @@ public class ArtVerseProperties {
     private Image image = new Image();
     private Minio minio = new Minio();
     private Coze coze = new Coze();
+    private Flyway flyway = new Flyway();
     private RateLimit rateLimit = new RateLimit();
     private SingleFlight singleFlight = new SingleFlight();
     private Idempotency idempotency = new Idempotency();
@@ -97,6 +98,11 @@ public class ArtVerseProperties {
         private String baseUrl = "https://api.coze.cn";
         private String apiKey = "";
         private String workflowId = "7645642109203103763";
+    }
+
+    @Data
+    public static class Flyway {
+        private boolean autoRepairChecksumMismatch = true;
     }
 
     @Data

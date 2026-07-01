@@ -18,12 +18,16 @@ import {
   Check,
 } from 'lucide-react';
 import {
+  API_KEY_CHANGE_EVENT,
   deleteImageGenRecord,
   generateImage,
+  getPrimaryProviderModel,
+  getProviderModelOptions,
   imageGenUrl,
   listImageGenHistory,
   type ImageGenRecord,
 } from '../api';
+import ModelSwitcher from './ModelSwitcher';
 
 interface Message {
   id: string;
@@ -242,6 +246,8 @@ function Composer({
   onSend,
   onConfigChange,
   onPasteImage,
+  selectedModel,
+  onSelectModel,
 }: {
   compact?: boolean;
   refFiles: RefFile[];
@@ -255,6 +261,8 @@ function Composer({
   onSend: () => void;
   onConfigChange: (config: GenConfig) => void;
   onPasteImage?: (file: File) => void;
+  selectedModel: string;
+  onSelectModel: (model: string) => void;
 }) {
   const [configOpen, setConfigOpen] = useState(false);
   const [pasteToast, setPasteToast] = useState(false);
@@ -352,6 +360,13 @@ function Composer({
               />
             )}
           </div>
+
+          <ModelSwitcher
+            capability="image"
+            selectedModel={selectedModel}
+            onSelect={onSelectModel}
+            disabled={generating}
+          />
 
           <button
             type="button"
@@ -507,6 +522,7 @@ export default function ImageGenPage() {
   const [refFiles, setRefFiles] = useState<RefFile[]>([]);
   const [generatingThemes, setGeneratingThemes] = useState<Record<string, boolean>>({});
   const [config, setConfig] = useState<GenConfig>(DEFAULT_CONFIG);
+  const [selectedImageModel, setSelectedImageModel] = useState(() => getPrimaryProviderModel('image'));
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [canvasOpen, setCanvasOpen] = useState(() => {
@@ -537,6 +553,16 @@ export default function ImageGenPage() {
     lastX: number;
     currentWidth: number;
   }>({ isDragging: false, lastX: 0, currentWidth: 0 });
+
+  useEffect(() => {
+    const syncModels = () => {
+      const options = getProviderModelOptions('image');
+      setSelectedImageModel((prev) => (prev && options.includes(prev) ? prev : (options[0] || '')));
+    };
+    syncModels();
+    window.addEventListener(API_KEY_CHANGE_EVENT, syncModels);
+    return () => window.removeEventListener(API_KEY_CHANGE_EVENT, syncModels);
+  }, []);
 
   function copyImageToClipboard(imageUrl: string, recordId: number) {
     const fullUrl = imageUrl.startsWith('http') ? imageUrl : window.location.origin + imageUrl;
@@ -810,7 +836,7 @@ export default function ImageGenPage() {
         promptText,
         refBase64.length > 0 ? refBase64 : undefined,
         currentConfig.resolution,
-        undefined,
+        selectedImageModel,
         controller.signal,
       );
       // Clear abort ref if this request completed
@@ -1096,6 +1122,8 @@ export default function ImageGenPage() {
                 onSend={handleSend}
                 onConfigChange={setConfig}
                 onPasteImage={handlePasteImage}
+                selectedModel={selectedImageModel}
+                onSelectModel={setSelectedImageModel}
               />
             </div>
           </div>
@@ -1263,6 +1291,8 @@ export default function ImageGenPage() {
                 onSend={handleSend}
                 onConfigChange={setConfig}
                 onPasteImage={handlePasteImage}
+                selectedModel={selectedImageModel}
+                onSelectModel={setSelectedImageModel}
               />
             </div>
           </div>

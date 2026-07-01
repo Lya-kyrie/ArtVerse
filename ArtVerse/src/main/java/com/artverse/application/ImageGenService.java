@@ -42,10 +42,12 @@ public class ImageGenService {
     private static final int MAX_REF_IMAGES = 3;
 
     @Transactional
-    public Map<String, Object> generate(String prompt, List<String> referenceImagesBase64, UserProviderConfig imageConfig) {
+    public Map<String, Object> generate(String prompt, List<String> referenceImagesBase64, UserProviderConfig imageConfig, String sizeOverride) {
         Long userId = StpUtil.getLoginIdAsLong();
         User user = userRepository.findById(userId)
                 .orElseThrow(() -> new BusinessException(401, "User not found"));
+        String effectiveModel = imageConfig.primaryModel().isBlank() ? properties.getImage().getModel() : imageConfig.primaryModel();
+        String effectiveSize = sizeOverride == null || sizeOverride.isBlank() ? properties.getImage().getSize() : sizeOverride;
 
         if (referenceImagesBase64 != null && referenceImagesBase64.size() > MAX_REF_IMAGES) {
             throw new BusinessException(400, "Maximum " + MAX_REF_IMAGES + " reference images allowed");
@@ -70,8 +72,8 @@ public class ImageGenService {
 
             ImageGenerationRequest request = new ImageGenerationRequest(
                     prompt,
-                    properties.getImage().getModel(),
-                    properties.getImage().getSize(),
+                    effectiveModel,
+                    effectiveSize,
                     refFiles.isEmpty() ? null : refFiles,
                     null
             );
@@ -92,8 +94,8 @@ public class ImageGenService {
             record.setUser(user);
             record.setPrompt(prompt);
             record.setImagePath(objectKey);
-            record.setModel(properties.getImage().getModel());
-            record.setSize(properties.getImage().getSize());
+            record.setModel(effectiveModel);
+            record.setSize(effectiveSize);
             record = recordRepository.save(record);
 
             Map<String, Object> result = new LinkedHashMap<>();

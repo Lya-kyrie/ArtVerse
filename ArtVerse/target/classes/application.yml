@@ -1,5 +1,5 @@
 server:
-  port: 8000
+  port: 8080
 
 spring:
   datasource:
@@ -68,6 +68,8 @@ artverse:
     base-url: https://api.coze.cn
     api-key: ""
     workflow-id: "7645642109203103763"
+  flyway:
+    auto-repair-checksum-mismatch: true
   minio:
     endpoint: http://localhost:9000
     bucket: artverse-manga
@@ -86,6 +88,16 @@ artverse:
     # 幂等（单飞模式）默认值
     enabled: true
     default-ttl-seconds: 30
+  agent:
+    max-concurrent-runs: 8
+    max-retries: 2
+    retry-min-backoff-ms: 1000
+    retry-max-backoff-ms: 10000
+    retry-multiplier: 2.0
+    circuit-breaker-failure-threshold: 5
+    circuit-breaker-wait-seconds: 30
+    circuit-breaker-sliding-window-size: 20
+    circuit-breaker-slow-call-threshold-ms: 120000
 
 # Sa-Token 配置（替代 Spring Security + JWT）
 sa-token:
@@ -120,3 +132,13 @@ sa-token:
   redis:
     is-read: true
     is-write: true
+
+# === Actuator ===
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,metrics,circuitbreakers,retries
+  endpoint:
+    health:
+      show-details: always
