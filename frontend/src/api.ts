@@ -148,6 +148,16 @@ export interface ProviderPresetConfig {
   availableModels: string[];
 }
 
+export interface ProviderModelOption {
+  value: string;
+  model: string;
+  entryId: string;
+  providerLabel: string;
+  providerPresetId: string;
+  apiKey: string;
+  baseUrl: string;
+}
+
 export interface CapabilityProviderSettings {
   activePresetId: string;
   entries: Record<string, ProviderPresetConfig>;
@@ -183,6 +193,8 @@ const DEFAULT_ACTIVE_PRESET: Record<ApiCapability, string> = {
   image: 'image2',
   workflow: 'coze',
 };
+
+const MODEL_SELECTION_SEPARATOR = '::';
 
 function readStorageWithLegacy(primaryKey: string, legacyKey?: string): string {
   return localStorage.getItem(primaryKey) || (legacyKey ? localStorage.getItem(legacyKey) : '') || '';
@@ -276,19 +288,28 @@ function normalizePresetConfig(
   raw: Partial<ProviderPresetConfig> | null | undefined,
   fallback: ProviderPresetConfig,
 ): ProviderPresetConfig {
+  const hasSelectedModels = !!raw && Object.prototype.hasOwnProperty.call(raw, 'selectedModels');
+  const hasAvailableModels = !!raw && Object.prototype.hasOwnProperty.call(raw, 'availableModels');
   const selectedModels = parseProviderModels(raw?.selectedModels);
-  const availableModels = Array.from(new Set([
-    ...parseProviderModels(raw?.availableModels),
-    ...selectedModels,
-    ...fallback.availableModels,
-  ]));
+  const availableModels = Array.from(new Set(
+    hasAvailableModels || hasSelectedModels
+      ? [
+        ...parseProviderModels(raw?.availableModels),
+        ...selectedModels,
+      ]
+      : [
+        ...parseProviderModels(raw?.availableModels),
+        ...selectedModels,
+        ...fallback.availableModels,
+      ],
+  ));
   return {
     presetId: String(raw?.presetId || fallback.presetId),
     label: String(raw?.label || fallback.label),
     mode: raw?.mode === 'custom' ? 'custom' : 'official',
     apiKey: String(raw?.apiKey || ''),
     baseUrl: String(raw?.baseUrl || fallback.baseUrl),
-    selectedModels: selectedModels.length > 0 ? selectedModels : [...fallback.selectedModels],
+    selectedModels: hasSelectedModels ? selectedModels : (selectedModels.length > 0 ? selectedModels : [...fallback.selectedModels]),
     availableModels,
   };
 }
@@ -380,6 +401,24 @@ function createEntryKey(capability: ApiCapability, presetId: string): string {
 function getFirstEntry(settings: CapabilityProviderSettings): ProviderPresetConfig | null {
   const firstEntryId = Object.keys(settings.entries)[0];
   return firstEntryId ? settings.entries[firstEntryId] : null;
+}
+
+function isConfiguredProviderEntry(capability: ApiCapability, entry: ProviderPresetConfig): boolean {
+  const template = getProviderTemplate(capability, entry.presetId);
+  const trimmedKey = entry.apiKey.trim();
+  const trimmedLabel = entry.label.trim();
+  const trimmedBaseUrl = entry.baseUrl.trim();
+  const templateModels = parseProviderModels(template.models);
+  const selectedModels = parseProviderModels(entry.selectedModels);
+  const availableModels = parseProviderModels(entry.availableModels);
+
+  if (trimmedKey) return true;
+  if (trimmedLabel && trimmedLabel !== template.label) return true;
+  if (trimmedBaseUrl && trimmedBaseUrl !== template.baseUrl) return true;
+  if (entry.mode !== (entry.presetId === 'custom' ? 'custom' : 'official')) return true;
+  if (selectedModels.join('\n') !== templateModels.join('\n')) return true;
+  if (availableModels.join('\n') !== templateModels.join('\n')) return true;
+  return false;
 }
 
 function isConfigMeaningful(config: Partial<ProviderEndpointConfig> | undefined): boolean {
@@ -511,12 +550,83 @@ export function getActiveProviderPreset(settings: ApiKeySettings, capability: Ap
     || createDefaultCapabilitySettings(capability).entries[createDefaultEntryKey(capability)];
 }
 
+function encodeProviderModelSelection(entryId: string, model: string): string {
+  return `${entryId}${MODEL_SELECTION_SEPARATOR}${model}`;
+}
+
+function decodeProviderModelSelection(value: string): { entryId: string; model: string } {
+  const idx = value.indexOf(MODEL_SELECTION_SEPARATOR);
+  if (idx < 0) {
+    return { entryId: '', model: value };
+  }
+  return {
+    entryId: value.slice(0, idx),
+    model: value.slice(idx + MODEL_SELECTION_SEPARATOR.length),
+  };
+}
+
+export function getProviderModelSelections(capability: ApiCapability): ProviderModelOption[] {
+  const settings = getApiKeySettings();
+  return Object.entries(settings.providers[capability].entries)
+    .filter(([, entry]) => isConfiguredProviderEntry(capability, entry))
+    .flatMap(([entryId, entry]) =>
+      entry.selectedModels.map((model) => ({
+      value: encodeProviderModelSelection(entryId, model),
+      model,
+      entryId,
+      providerLabel: entry.label || getProviderTemplate(capability, entry.presetId).label,
+      providerPresetId: entry.presetId,
+      apiKey: entry.apiKey,
+      baseUrl: entry.baseUrl,
+    })),
+    );
+}
+
+export function getProviderModelSelectionMeta(
+  capability: ApiCapability,
+  selection: string,
+): ProviderModelOption | null {
+  if (!selection) return null;
+  const options = getProviderModelSelections(capability);
+  const exact = options.find((option) => option.value === selection);
+  if (exact) return exact;
+  const decoded = decodeProviderModelSelection(selection);
+  return options.find((option) =>
+    option.model === decoded.model && (!decoded.entryId || option.entryId === decoded.entryId),
+  ) || null;
+}
+
 export function getProviderModelOptions(capability: ApiCapability): string[] {
-  return getActiveProviderPreset(getApiKeySettings(), capability).selectedModels;
+  return getProviderModelSelections(capability).map((option) => option.value);
 }
 
 export function getPrimaryProviderModel(capability: ApiCapability): string {
-  return getProviderModelOptions(capability)[0] || '';
+  const settings = getApiKeySettings();
+  const activeEntryId = settings.providers[capability].activePresetId;
+  const options = getProviderModelSelections(capability);
+  return options.find((option) => option.entryId === activeEntryId)?.value
+    || options[0]?.value
+    || '';
+}
+
+export function getProviderRequestPayload(
+  capability: ApiCapability,
+  selection?: string,
+): Record<string, string> {
+  if (!selection) return {};
+  const option = getProviderModelSelectionMeta(capability, selection);
+  if (option) {
+    return {
+      model: option.model,
+      provider: option.providerPresetId,
+      label: option.providerLabel,
+      api_key: option.apiKey,
+      apiKey: option.apiKey,
+      base_url: option.baseUrl,
+      baseUrl: option.baseUrl,
+    };
+  }
+  return { model: decodeProviderModelSelection(selection).model };
 }
 
 export function toProviderEndpointConfig(preset: ProviderPresetConfig): ProviderEndpointConfig {
@@ -883,7 +993,7 @@ export function chatStream(
   authFetch(`${BASE}/api/chapters/${chapterId}/chat`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ message: content, ...(model ? { model } : {}) }),
+    body: JSON.stringify({ message: content, ...getProviderRequestPayload('llm', model) }),
     signal: controller.signal,
   })
     .then(async (res) => {
@@ -1529,7 +1639,7 @@ export interface ImageGenRecord { id: number; prompt: string; image_url: string;
 export async function generateImage(prompt: string, referenceImages?: string[], size?: string, model?: string, signal?: AbortSignal): Promise<ImageGenRecord> {
   const res = await authFetch(BASE+'/api/image-gen/generate', {
     method: 'POST', headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ prompt, reference_images: referenceImages || [], ...(size ? { size } : {}), ...(model ? { model } : {}) }),
+    body: JSON.stringify({ prompt, reference_images: referenceImages || [], ...(size ? { size } : {}), ...getProviderRequestPayload('image', model) }),
     signal,
   });
   if (!res.ok) throw new Error(parseApiError(await res.text()));
@@ -1771,11 +1881,12 @@ export async function runMangaAgent(
   message: string,
   requestId?: string,
   route?: MangaWorkflowRoute,
+  model?: string,
 ): Promise<{ reply: string; request_id?: string; requestId?: string }> {
   const res = await authFetch(`${BASE}/api/chapters/${chapterId}/manga-agent/run`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ message, requestId, route }),
+    body: JSON.stringify({ message, requestId, route, ...getProviderRequestPayload('llm', model) }),
   });
   if (!res.ok) throw new Error(parseApiError(await res.text()));
   return res.json();
@@ -1822,6 +1933,7 @@ class ArtVerseMangaAgentHttpAgent extends HttpAgent {
   }
 
   protected override requestInit(input: RunAgentInput): RequestInit {
+    const providerPayload = getProviderRequestPayload('llm', this.model);
     return {
       method: 'POST',
       headers: {
@@ -1833,11 +1945,11 @@ class ArtVerseMangaAgentHttpAgent extends HttpAgent {
         ? {
           message: this.message,
           requestId: this.requestId || input.runId,
-          ...(this.model ? { model: this.model } : {}),
+          ...providerPayload,
         }
         : {
           answer: this.answer,
-          ...(this.model ? { model: this.model } : {}),
+          ...providerPayload,
         }),
       signal: this.abortController.signal,
     };

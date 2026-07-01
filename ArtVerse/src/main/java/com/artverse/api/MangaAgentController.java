@@ -79,7 +79,7 @@ public class MangaAgentController {
                                           @RequestBody MangaAgentDtos.RunRequest body) {
         User user = currentUserService.requireCurrentUser();
         MangaAgentService.RunResult result = mangaAgentService.run(
-                chapterId, body.message(), body.requestId(), user, overrideModel(requireLlmConfig(user), body.model())
+                chapterId, body.message(), body.requestId(), user, requireLlmConfig(user, body)
         );
         return new MangaAgentDtos.RunResponse(result.reply(), result.requestId());
     }
@@ -89,7 +89,7 @@ public class MangaAgentController {
                               @RequestBody MangaAgentDtos.RunRequest body) {
         User user = currentUserService.requireCurrentUser();
         return mangaAgentService.runAgUiStream(
-                chapterId, body.message(), body.requestId(), user, overrideModel(requireLlmConfig(user), body.model())
+                chapterId, body.message(), body.requestId(), user, requireLlmConfig(user, body)
         );
     }
 
@@ -100,7 +100,7 @@ public class MangaAgentController {
         User user = currentUserService.requireCurrentUser();
         return mangaAgentService.runAgUiStream(
                 chapterId, conversationId, body.message(), body.requestId(), user,
-                overrideModel(requireLlmConfig(user), body.model())
+                requireLlmConfig(user, body)
         );
     }
 
@@ -165,7 +165,7 @@ public class MangaAgentController {
                                              @RequestBody MangaAgentDtos.ResumeRequest body) {
         User user = currentUserService.requireCurrentUser();
         MangaAgentService.RunResult result = mangaAgentService.resume(
-                chapterId, requestId, body.answer(), user, overrideModel(requireLlmConfig(user), body.model())
+                chapterId, requestId, body.answer(), user, requireLlmConfig(user, body)
         );
         return new MangaAgentDtos.RunResponse(result.reply(), result.requestId());
     }
@@ -176,7 +176,7 @@ public class MangaAgentController {
                                  @RequestBody MangaAgentDtos.ResumeRequest body) {
         User user = currentUserService.requireCurrentUser();
         return mangaAgentService.resumeAgUiStream(
-                chapterId, requestId, body.answer(), user, overrideModel(requireLlmConfig(user), body.model())
+                chapterId, requestId, body.answer(), user, requireLlmConfig(user, body)
         );
     }
 
@@ -188,7 +188,7 @@ public class MangaAgentController {
         User user = currentUserService.requireCurrentUser();
         return mangaAgentService.resumeAgUiStream(
                 chapterId, conversationId, requestId, body.answer(), user,
-                overrideModel(requireLlmConfig(user), body.model())
+                requireLlmConfig(user, body)
         );
     }
 
@@ -200,17 +200,33 @@ public class MangaAgentController {
         );
     }
 
-    private UserProviderConfig overrideModel(UserProviderConfig config, String model) {
-        if (model == null || model.isBlank()) {
-            return config;
-        }
-        return new UserProviderConfig(
-                config.slot(),
-                config.provider(),
-                config.label(),
-                config.apiKey(),
-                config.baseUrl(),
-                model
+    private UserProviderConfig requireLlmConfig(User user, MangaAgentDtos.RunRequest body) {
+        return apiKeyService.requireProviderConfig(
+                user,
+                new UserProviderConfig(
+                        ApiKeyService.SLOT_LLM,
+                        body.provider(),
+                        body.label(),
+                        body.apiKey(),
+                        body.baseUrl(),
+                        body.model()
+                ),
+                "Please configure an LLM provider API key in Settings before using the manga agent."
+        );
+    }
+
+    private UserProviderConfig requireLlmConfig(User user, MangaAgentDtos.ResumeRequest body) {
+        return apiKeyService.requireProviderConfig(
+                user,
+                new UserProviderConfig(
+                        ApiKeyService.SLOT_LLM,
+                        body.provider(),
+                        body.label(),
+                        body.apiKey(),
+                        body.baseUrl(),
+                        body.model()
+                ),
+                "Please configure an LLM provider API key in Settings before using the manga agent."
         );
     }
 }

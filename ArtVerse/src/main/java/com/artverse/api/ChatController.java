@@ -26,17 +26,13 @@ public class ChatController {
     public SseEmitter chat(@PathVariable Long chapterId,
                            @RequestBody Map<String, String> body) {
         String content = body.get("message");
-        String model = body.get("model");
         chatService.saveUserMessage(chapterId, content);
 
         User user = currentUserService.requireCurrentUser();
-        UserProviderConfig llmConfig = overrideModel(
-                apiKeyService.requireProviderConfig(
-                        user,
-                        ApiKeyService.SLOT_LLM,
-                        "Please configure an LLM provider API key in Settings before using story chat."
-                ),
-                model
+        UserProviderConfig llmConfig = apiKeyService.requireProviderConfig(
+                user,
+                requestConfig(body),
+                "Please configure an LLM provider API key in Settings before using story chat."
         );
         return chatService.streamChat(chapterId, user.getId(), llmConfig);
     }
@@ -46,17 +42,21 @@ public class ChatController {
         return chatService.getMessages(chapterId);
     }
 
-    private UserProviderConfig overrideModel(UserProviderConfig config, String model) {
-        if (model == null || model.isBlank()) {
-            return config;
-        }
+    private UserProviderConfig requestConfig(Map<String, String> body) {
         return new UserProviderConfig(
-                config.slot(),
-                config.provider(),
-                config.label(),
-                config.apiKey(),
-                config.baseUrl(),
-                model
+                ApiKeyService.SLOT_LLM,
+                body.get("provider"),
+                body.get("label"),
+                firstNonBlank(body.get("api_key"), body.get("apiKey")),
+                firstNonBlank(body.get("base_url"), body.get("baseUrl")),
+                body.get("model")
         );
+    }
+
+    private String firstNonBlank(String first, String second) {
+        if (first != null && !first.isBlank()) {
+            return first;
+        }
+        return second;
     }
 }

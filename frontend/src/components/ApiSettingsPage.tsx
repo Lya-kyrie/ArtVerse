@@ -4,6 +4,7 @@ import {
   clearApiKeySettings,
   discoverProviderModels,
   getApiKeySettings,
+  getProviderModelSelections,
   getUserProviderConfigs,
   mergeServerProviderConfigs,
   saveApiKeySettings,
@@ -59,10 +60,6 @@ const CAPABILITY_CARDS: Array<{ capability: ApiCapability; title: string; descri
   { capability: 'workflow', title: '工作流 / Agent', description: '统一管理 Coze、Dify 或自定义工作流。', icon: <Workflow size={16} className="text-kinpaku" /> },
 ];
 
-function cloneSettings(settings: ApiKeySettings): ApiKeySettings {
-  return JSON.parse(JSON.stringify(settings)) as ApiKeySettings;
-}
-
 function createEntryId(capability: ApiCapability): string {
   return `${capability}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 }
@@ -79,8 +76,8 @@ function createEntryFromPreset(capability: ApiCapability, presetId: string): Pro
     mode: preset.id === 'custom' ? 'custom' : 'official',
     apiKey: '',
     baseUrl: preset.baseUrl,
-    selectedModels: [...preset.models],
-    availableModels: [...preset.models],
+    selectedModels: [],
+    availableModels: [],
   };
 }
 
@@ -126,11 +123,24 @@ function updateEntry(
 }
 
 function sortEntries(provider: CapabilityProviderSettings): Array<[string, ProviderPresetConfig]> {
-  return Object.entries(provider.entries).sort(([leftId], [rightId]) => {
-    if (leftId === provider.activePresetId) return -1;
-    if (rightId === provider.activePresetId) return 1;
-    return leftId.localeCompare(rightId);
-  });
+  return Object.entries(provider.entries).sort(([leftId], [rightId]) => leftId.localeCompare(rightId));
+}
+
+function isConfiguredEntry(capability: ApiCapability, entry: ProviderPresetConfig): boolean {
+  const template = getPresetTemplate(capability, entry.presetId);
+  const selectedModels = [...entry.selectedModels].sort().join('\n');
+  const templateModels = [...template.models].sort().join('\n');
+  const availableModels = [...entry.availableModels].sort().join('\n');
+  const templateAvailable = [...template.models].sort().join('\n');
+
+  return Boolean(
+    entry.apiKey.trim()
+    || (entry.label.trim() && entry.label.trim() !== template.label)
+    || (entry.baseUrl.trim() && entry.baseUrl.trim() !== template.baseUrl)
+    || entry.mode !== (entry.presetId === 'custom' ? 'custom' : 'official')
+    || selectedModels !== templateModels
+    || availableModels !== templateAvailable,
+  );
 }
 
 function ModelChecklist({
@@ -145,17 +155,20 @@ function ModelChecklist({
   if (models.length === 0) {
     return <div className="rounded-xl border border-dashed border-paper-border bg-white/70 px-3 py-4 text-sm text-sumi-faint">还没有可选模型，先填写 Base URL 和 Key 后再拉取模型。</div>;
   }
+
   return (
-    <div className="grid max-h-60 gap-2 overflow-y-auto rounded-xl border border-paper-border bg-white/80 p-2.5">
-      {models.map((modelId) => {
-        const checked = selectedModels.includes(modelId);
-        return (
-          <label key={modelId} className={'flex cursor-pointer items-center gap-3 rounded-xl border px-3 py-2 transition-colors ' + (checked ? 'border-vermilion/30 bg-vermilion-light/20 text-vermilion' : 'border-paper-border bg-paper-base text-sumi hover:border-sumi-faint')}>
-            <input type="checkbox" checked={checked} onChange={() => onToggle(modelId)} className="h-4 w-4 rounded border-paper-border text-vermilion focus:ring-vermilion" />
-            <span className="break-all text-sm">{modelId}</span>
-          </label>
-        );
-      })}
+    <div className="max-h-60 overflow-y-auto rounded-xl border border-paper-border bg-white/80 p-2.5">
+      <div className="grid gap-2">
+        {models.map((modelId) => {
+          const checked = selectedModels.includes(modelId);
+          return (
+            <label key={modelId} className={'flex cursor-pointer items-center gap-3 rounded-xl border px-3 py-2 transition-colors ' + (checked ? 'border-vermilion/30 bg-vermilion-light/20 text-vermilion' : 'border-paper-border bg-paper-base text-sumi hover:border-sumi-faint')}>
+              <input type="checkbox" checked={checked} onChange={() => onToggle(modelId)} className="h-4 w-4 rounded border-paper-border text-vermilion focus:ring-vermilion" />
+              <span className="break-all text-sm">{modelId}</span>
+            </label>
+          );
+        })}
+      </div>
     </div>
   );
 }
@@ -163,30 +176,23 @@ function ModelChecklist({
 function ApiEntryCard({
   capability,
   entry,
-  active,
   onEdit,
   onDelete,
-  onActivate,
 }: {
   capability: ApiCapability;
   entry: ProviderPresetConfig;
-  active: boolean;
   onEdit: () => void;
   onDelete: () => void;
-  onActivate: () => void;
 }) {
   const preset = getPresetTemplate(capability, entry.presetId);
   return (
-    <div className={'rounded-2xl border p-3 transition-colors ' + (active ? 'border-vermilion/30 bg-vermilion-light/10' : 'border-paper-border bg-white/80')}>
+    <div className="rounded-2xl border border-paper-border bg-white/80 p-3 transition-colors">
       <div className="flex items-start justify-between gap-3">
-        <button type="button" onClick={onActivate} className="min-w-0 flex-1 text-left">
-          <div className="flex items-center gap-2">
-            <div className="truncate text-sm font-medium text-sumi">{entry.label || '未命名 API'}</div>
-            {active ? <span className="rounded-full border border-vermilion/20 bg-white px-2 py-0.5 text-[10px] text-vermilion">当前使用</span> : null}
-          </div>
+        <div className="min-w-0 flex-1 text-left">
+          <div className="truncate text-sm font-medium text-sumi">{entry.label || '未命名 API'}</div>
           <div className="mt-1 truncate text-xs text-sumi-dim">{preset.label}</div>
           <div className="mt-1 truncate text-[11px] text-sumi-faint">{entry.baseUrl || '未填写 Base URL'}</div>
-        </button>
+        </div>
         <div className="flex items-center gap-1">
           <button type="button" onClick={onEdit} className="rounded-lg border border-paper-border bg-paper-base p-2 text-sumi-dim transition-colors hover:border-vermilion/40 hover:text-vermilion" aria-label="编辑 API">
             <Pencil size={14} />
@@ -196,6 +202,29 @@ function ApiEntryCard({
           </button>
         </div>
       </div>
+    </div>
+  );
+}
+
+function EmptyApiState({
+  onCreate,
+}: {
+  onCreate: () => void;
+}) {
+  return (
+    <div className="flex min-h-[260px] flex-1 flex-col items-center justify-center rounded-2xl border border-dashed border-paper-border bg-white/55 px-6 py-8 text-center">
+      <div className="text-sm font-medium text-sumi">还没有添加 API</div>
+      <p className="mt-2 max-w-[240px] text-xs leading-6 text-sumi-dim">
+        先添加一条新的配置，这一块后面就会在这里显示你已经保存的 API 列表。
+      </p>
+      <button
+        type="button"
+        onClick={onCreate}
+        className="mt-4 inline-flex items-center gap-1 rounded-xl border border-paper-border bg-paper-base px-3 py-2 text-xs text-sumi-dim transition-colors hover:border-vermilion/40 hover:text-vermilion"
+      >
+        <Plus size={14} />
+        添加新 API
+      </button>
     </div>
   );
 }
@@ -233,6 +262,18 @@ export default function ApiSettingsPage() {
     workflow: sortEntries(settings.providers.workflow),
   }), [settings]);
 
+  const visibleEntries = useMemo(() => ({
+    llm: currentEntries.llm.filter(([, entry]) => isConfiguredEntry('llm', entry)),
+    image: currentEntries.image.filter(([, entry]) => isConfiguredEntry('image', entry)),
+    workflow: currentEntries.workflow.filter(([, entry]) => isConfiguredEntry('workflow', entry)),
+  }), [currentEntries]);
+
+  const selectedModelCounts = useMemo(() => ({
+    llm: getProviderModelSelections('llm').length,
+    image: getProviderModelSelections('image').length,
+    workflow: getProviderModelSelections('workflow').length,
+  }), [settings]);
+
   const openNewEditor = (capability: ApiCapability) => {
     const entryId = createEntryId(capability);
     setSettings((prev) => updateCapability(prev, capability, (current) => ({
@@ -260,7 +301,7 @@ export default function ApiSettingsPage() {
     if (editor.mode === 'edit' && editor.isNew && editor.entryId) {
       setSettings((prev) => updateCapability(prev, capability, (current) => {
         const nextEntries = { ...current.entries };
-        delete nextEntries[editor.entryId!];
+        delete nextEntries[editor.entryId];
         return {
           ...current,
           entries: nextEntries,
@@ -297,15 +338,6 @@ export default function ApiSettingsPage() {
     }
   };
 
-  const activateEntry = (capability: ApiCapability, entryId: string) => {
-    const nextSettings = updateCapability(settings, capability, (current) => ({
-      ...current,
-      activePresetId: entryId,
-    }));
-    setSettings(nextSettings);
-    saveApiKeySettings(nextSettings);
-  };
-
   const handlePresetChange = (capability: ApiCapability, entryId: string, presetId: string) => {
     const template = getPresetTemplate(capability, presetId);
     setSettings((prev) => {
@@ -319,8 +351,8 @@ export default function ApiSettingsPage() {
         label: nextLabel,
         mode: template.id === 'custom' ? 'custom' : 'official',
         baseUrl: template.baseUrl,
-        availableModels: Array.from(new Set([...template.models, ...currentEntry.availableModels, ...currentEntry.selectedModels])),
-        selectedModels: currentEntry.selectedModels.length > 0 ? currentEntry.selectedModels : [...template.models],
+        availableModels: Array.from(new Set([...currentEntry.availableModels, ...currentEntry.selectedModels])),
+        selectedModels: currentEntry.selectedModels,
       });
     });
   };
@@ -361,12 +393,7 @@ export default function ApiSettingsPage() {
     setSaving((prev) => ({ ...prev, [capability]: true }));
     setError('');
     try {
-      const nextSettings = updateCapability(settings, capability, (current) => ({
-        ...current,
-        activePresetId: entryId,
-      }));
-      setSettings(nextSettings);
-      saveApiKeySettings(nextSettings);
+      saveApiKeySettings(settings);
       await saveUserProviderConfig(capability, toProviderEndpointConfig(entry));
       setEditors((prev) => ({
         ...prev,
@@ -388,172 +415,181 @@ export default function ApiSettingsPage() {
           </div>
           <div>
             <h1 className="font-display text-lg font-semibold text-sumi">API 设置</h1>
-            <p className="text-xs text-sumi-dim">每一块都可以单独维护多条 API，并指定当前实际使用的一条。</p>
+            <p className="text-xs text-sumi-dim">每一块都可以维护多条 API 供应商配置；对话页会汇总这些配置里勾选过的模型。</p>
           </div>
         </div>
       </header>
 
       <div className="min-h-0 flex-1 overflow-y-auto px-5 py-5">
-        {loadingRemote ? <div className="rounded-xl border border-paper-border bg-paper-surface px-4 py-3 text-sm text-sumi-dim">正在读取后端已保存的 API 配置...</div> : null}
-        {error ? <div className="mt-4 rounded-xl border border-vermilion/20 bg-vermilion-light/20 px-4 py-3 text-sm text-vermilion">{error}</div> : null}
+        <div className="flex min-h-full flex-col">
+          {loadingRemote ? <div className="rounded-xl border border-paper-border bg-paper-surface px-4 py-3 text-sm text-sumi-dim">正在读取后端已保存的 API 配置...</div> : null}
+          {error ? <div className="mt-4 rounded-xl border border-vermilion/20 bg-vermilion-light/20 px-4 py-3 text-sm text-vermilion">{error}</div> : null}
 
-        <div className="mt-5 grid gap-4 xl:grid-cols-3">
-          {CAPABILITY_CARDS.map(({ capability, title, description, icon }) => {
-            const provider = settings.providers[capability];
-            const editor = editors[capability];
-            const editingEntry = editor.mode === 'edit' ? getEntry(settings, capability, editor.entryId) : null;
-            const supportsModelSelection = capability !== 'workflow';
+          <div className="mt-5 grid flex-1 auto-rows-fr gap-4 xl:grid-cols-3">
+            {CAPABILITY_CARDS.map(({ capability, title, description, icon }) => {
+              const editor = editors[capability];
+              const editingEntry = editor.mode === 'edit' ? getEntry(settings, capability, editor.entryId) : null;
+              const supportsModelSelection = capability !== 'workflow';
 
-            return (
-              <div key={capability} className="rounded-2xl border border-paper-border bg-paper-surface p-4 shadow-sm">
-                <div className="mb-4 flex items-start justify-between gap-3">
-                  <div>
-                    <div className="flex items-center gap-2 text-sm font-medium text-sumi">{icon}{title}</div>
-                    <p className="mt-1 text-xs leading-5 text-sumi-dim">{description}</p>
-                  </div>
-                  {editor.mode === 'list' ? (
-                    <button type="button" onClick={() => openNewEditor(capability)} className="inline-flex items-center gap-1 rounded-xl border border-paper-border bg-white/80 px-3 py-2 text-xs text-sumi-dim transition-colors hover:border-vermilion/40 hover:text-vermilion">
-                      <Plus size={14} />
-                      添加新 API
-                    </button>
-                  ) : null}
-                </div>
-
-                {editor.mode === 'list' ? (
-                  <div className="space-y-3">
-                    {currentEntries[capability].map(([entryId, entry]) => (
-                      <ApiEntryCard
-                        key={entryId}
-                        capability={capability}
-                        entry={entry}
-                        active={provider.activePresetId === entryId}
-                        onActivate={() => activateEntry(capability, entryId)}
-                        onEdit={() => openEditor(capability, entryId)}
-                        onDelete={() => handleDelete(capability, entryId)}
-                      />
-                    ))}
-                  </div>
-                ) : editingEntry ? (
-                  <div className="space-y-4">
-                    <div className="flex items-center justify-between gap-3">
-                      <button type="button" onClick={() => closeEditor(capability)} className="inline-flex items-center gap-1 text-xs text-sumi-dim transition-colors hover:text-sumi">
-                        <ArrowLeft size={14} />
-                        返回列表
+              return (
+                <div key={capability} className="flex h-full min-h-[370px] flex-col rounded-2xl border border-paper-border bg-paper-surface p-4 shadow-sm">
+                  <div className="mb-4 flex items-start justify-between gap-3">
+                    <div>
+                      <div className="flex items-center gap-2 text-sm font-medium text-sumi">{icon}{title}</div>
+                      <p className="mt-1 text-xs leading-5 text-sumi-dim">{description}</p>
+                    </div>
+                    {editor.mode === 'list' ? (
+                      <button type="button" onClick={() => openNewEditor(capability)} className="inline-flex items-center gap-1 rounded-xl border border-paper-border bg-white/80 px-3 py-2 text-xs text-sumi-dim transition-colors hover:border-vermilion/40 hover:text-vermilion">
+                        <Plus size={14} />
+                        添加新 API
                       </button>
-                      <button type="button" onClick={() => saveCapabilityEntry(capability, editor.entryId!)} disabled={saving[capability]} className="inline-flex items-center gap-1 rounded-xl bg-vermilion px-3 py-2 text-xs font-medium text-white transition-colors hover:bg-vermilion-hover disabled:opacity-50">
-                        <Save size={14} />
-                        {saving[capability] ? '保存中...' : '保存并设为当前'}
-                      </button>
-                    </div>
-
-                    <div>
-                      <label className="mb-1 block text-[11px] font-medium uppercase tracking-[0.18em] text-sumi-faint">重命名此 API 名字</label>
-                      <input
-                        type="text"
-                        value={editingEntry.label}
-                        onChange={(e) => setSettings((prev) => updateEntry(prev, capability, editor.entryId!, { label: e.target.value }))}
-                        placeholder="例如：主力 OpenAI / 备用 DeepSeek"
-                        className="w-full rounded-xl border border-paper-border bg-white/85 px-3 py-2 text-sm text-sumi placeholder-sumi-faint transition-colors focus:border-vermilion focus:outline-none"
-                      />
-                    </div>
-
-                    <div>
-                      <label className="mb-1 block text-[11px] font-medium uppercase tracking-[0.18em] text-sumi-faint">服务类型</label>
-                      <select
-                        value={editingEntry.presetId}
-                        onChange={(e) => handlePresetChange(capability, editor.entryId!, e.target.value)}
-                        className="w-full rounded-xl border border-paper-border bg-white/85 px-3 py-2 text-sm text-sumi transition-colors focus:border-vermilion focus:outline-none"
-                      >
-                        {PROVIDER_PRESETS[capability].map((preset) => (
-                          <option key={preset.id} value={preset.id}>{preset.label}</option>
-                        ))}
-                      </select>
-                    </div>
-
-                    <div>
-                      <label className="mb-1 block text-[11px] font-medium uppercase tracking-[0.18em] text-sumi-faint">接入方式</label>
-                      <div className="grid grid-cols-2 gap-2">
-                        {(['official', 'custom'] as const).map((mode) => (
-                          <button
-                            key={mode}
-                            type="button"
-                            onClick={() => setSettings((prev) => updateEntry(prev, capability, editor.entryId!, { mode }))}
-                            className={'rounded-xl border px-3 py-2 text-sm transition-colors ' + (editingEntry.mode === mode ? 'border-vermilion bg-vermilion-light/20 text-vermilion' : 'border-paper-border bg-white/80 text-sumi-dim hover:text-sumi')}
-                          >
-                            {mode === 'official' ? '官方 API' : '自定义 API'}
-                          </button>
-                        ))}
-                      </div>
-                    </div>
-
-                    <div>
-                      <label className="mb-1 block text-[11px] font-medium uppercase tracking-[0.18em] text-sumi-faint">API Key</label>
-                      <input
-                        type="password"
-                        value={editingEntry.apiKey}
-                        onChange={(e) => setSettings((prev) => updateEntry(prev, capability, editor.entryId!, { apiKey: e.target.value }))}
-                        placeholder="sk-... / pat-..."
-                        className="w-full rounded-xl border border-paper-border bg-white/85 px-3 py-2 text-sm text-sumi placeholder-sumi-faint transition-colors focus:border-vermilion focus:outline-none"
-                      />
-                    </div>
-
-                    <div>
-                      <label className="mb-1 block text-[11px] font-medium uppercase tracking-[0.18em] text-sumi-faint">Base URL</label>
-                      <input
-                        type="text"
-                        value={editingEntry.baseUrl}
-                        onChange={(e) => setSettings((prev) => updateEntry(prev, capability, editor.entryId!, { baseUrl: e.target.value }))}
-                        placeholder="https://api.example.com/v1"
-                        className="w-full rounded-xl border border-paper-border bg-white/85 px-3 py-2 text-sm text-sumi placeholder-sumi-faint transition-colors focus:border-vermilion focus:outline-none"
-                      />
-                    </div>
-
-                    {supportsModelSelection ? (
-                      <div className="rounded-2xl border border-paper-border bg-white/70 p-3">
-                        <div className="mb-3 flex items-center justify-between gap-3">
-                          <div>
-                            <label className="block text-[11px] font-medium uppercase tracking-[0.18em] text-sumi-faint">模型列表</label>
-                            <div className="mt-1 text-xs text-sumi-dim">先拉取可用模型，再勾选这条 API 要使用的模型。</div>
-                          </div>
-                          <button
-                            type="button"
-                            onClick={() => loadModels(capability, editor.entryId!)}
-                            disabled={loadingModels[`${capability}:${editor.entryId}`]}
-                            className="rounded-lg border border-paper-border bg-paper-base px-3 py-2 text-xs text-sumi-dim transition-colors hover:border-vermilion/40 hover:text-sumi disabled:opacity-50"
-                          >
-                            {loadingModels[`${capability}:${editor.entryId}`] ? '拉取中...' : '拉取模型'}
-                          </button>
-                        </div>
-                        <ModelChecklist
-                          models={editingEntry.availableModels}
-                          selectedModels={editingEntry.selectedModels}
-                          onToggle={(modelId) => toggleModel(capability, editor.entryId!, modelId)}
-                        />
-                      </div>
-                    ) : (
-                      <div className="rounded-2xl border border-paper-border bg-white/70 px-3 py-3 text-xs leading-6 text-sumi-dim">
-                        工作流类配置只保存 API Key 和 Base URL。具体 workflow / agent 由对应服务端配置决定，这里不展示模型列表。
-                      </div>
-                    )}
-
-                    {getPresetTemplate(capability, editingEntry.presetId).docsUrl ? (
-                      <div className="flex justify-end">
-                        <a
-                          href={getPresetTemplate(capability, editingEntry.presetId).docsUrl}
-                          target="_blank"
-                          rel="noopener"
-                          className="inline-flex items-center gap-1 text-xs text-aizuri transition-colors hover:text-aizuri/80"
-                        >
-                          <ExternalLink size={10} />
-                          文档
-                        </a>
-                      </div>
                     ) : null}
                   </div>
-                ) : null}
-              </div>
-            );
-          })}
+
+                  {editor.mode === 'list' ? (
+                    <div className="flex flex-1 flex-col">
+                      {visibleEntries[capability].length > 0 ? (
+                        <div className="space-y-3">
+                          <div className="rounded-xl border border-paper-border/80 bg-white/60 px-3 py-2 text-xs leading-6 text-sumi-dim">
+                            已添加 {visibleEntries[capability].length} 个 API 供应商
+                            {supportsModelSelection ? `，当前会向对话页汇总 ${selectedModelCounts[capability]} 个已勾选模型。` : '。'}
+                          </div>
+                          {visibleEntries[capability].map(([entryId, entry]) => (
+                            <ApiEntryCard
+                              key={entryId}
+                              capability={capability}
+                              entry={entry}
+                              onEdit={() => openEditor(capability, entryId)}
+                              onDelete={() => handleDelete(capability, entryId)}
+                            />
+                          ))}
+                        </div>
+                      ) : (
+                        <EmptyApiState onCreate={() => openNewEditor(capability)} />
+                      )}
+                    </div>
+                  ) : editingEntry ? (
+                    <div className="space-y-4">
+                      <div className="flex items-center justify-between gap-3">
+                        <button type="button" onClick={() => closeEditor(capability)} className="inline-flex items-center gap-1 text-xs text-sumi-dim transition-colors hover:text-sumi">
+                          <ArrowLeft size={14} />
+                          返回列表
+                        </button>
+                        <button type="button" onClick={() => saveCapabilityEntry(capability, editor.entryId!)} disabled={saving[capability]} className="inline-flex items-center gap-1 rounded-xl bg-vermilion px-3 py-2 text-xs font-medium text-white transition-colors hover:bg-vermilion-hover disabled:opacity-50">
+                          <Save size={14} />
+                          {saving[capability] ? '保存中...' : '保存'}
+                        </button>
+                      </div>
+
+                      <div>
+                        <label className="mb-1 block text-[11px] font-medium uppercase tracking-[0.18em] text-sumi-faint">重命名此 API</label>
+                        <input
+                          type="text"
+                          value={editingEntry.label}
+                          onChange={(e) => setSettings((prev) => updateEntry(prev, capability, editor.entryId!, { label: e.target.value }))}
+                          placeholder="例如：主力 OpenAI / 备用 DeepSeek"
+                          className="w-full rounded-xl border border-paper-border bg-white/85 px-3 py-2 text-sm text-sumi placeholder-sumi-faint transition-colors focus:border-vermilion focus:outline-none"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="mb-1 block text-[11px] font-medium uppercase tracking-[0.18em] text-sumi-faint">服务类型</label>
+                        <select
+                          value={editingEntry.presetId}
+                          onChange={(e) => handlePresetChange(capability, editor.entryId!, e.target.value)}
+                          className="w-full rounded-xl border border-paper-border bg-white/85 px-3 py-2 text-sm text-sumi transition-colors focus:border-vermilion focus:outline-none"
+                        >
+                          {PROVIDER_PRESETS[capability].map((preset) => (
+                            <option key={preset.id} value={preset.id}>{preset.label}</option>
+                          ))}
+                        </select>
+                      </div>
+
+                      <div>
+                        <label className="mb-1 block text-[11px] font-medium uppercase tracking-[0.18em] text-sumi-faint">接入方式</label>
+                        <div className="grid grid-cols-2 gap-2">
+                          {(['official', 'custom'] as const).map((mode) => (
+                            <button
+                              key={mode}
+                              type="button"
+                              onClick={() => setSettings((prev) => updateEntry(prev, capability, editor.entryId!, { mode }))}
+                              className={'rounded-xl border px-3 py-2 text-sm transition-colors ' + (editingEntry.mode === mode ? 'border-vermilion bg-vermilion-light/20 text-vermilion' : 'border-paper-border bg-white/80 text-sumi-dim hover:text-sumi')}
+                            >
+                              {mode === 'official' ? '官方 API' : '自定义 API'}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+
+                      <div>
+                        <label className="mb-1 block text-[11px] font-medium uppercase tracking-[0.18em] text-sumi-faint">API Key</label>
+                        <input
+                          type="password"
+                          value={editingEntry.apiKey}
+                          onChange={(e) => setSettings((prev) => updateEntry(prev, capability, editor.entryId!, { apiKey: e.target.value }))}
+                          placeholder="sk-... / pat-..."
+                          className="w-full rounded-xl border border-paper-border bg-white/85 px-3 py-2 text-sm text-sumi placeholder-sumi-faint transition-colors focus:border-vermilion focus:outline-none"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="mb-1 block text-[11px] font-medium uppercase tracking-[0.18em] text-sumi-faint">Base URL</label>
+                        <input
+                          type="text"
+                          value={editingEntry.baseUrl}
+                          onChange={(e) => setSettings((prev) => updateEntry(prev, capability, editor.entryId!, { baseUrl: e.target.value }))}
+                          placeholder="https://api.example.com/v1"
+                          className="w-full rounded-xl border border-paper-border bg-white/85 px-3 py-2 text-sm text-sumi placeholder-sumi-faint transition-colors focus:border-vermilion focus:outline-none"
+                        />
+                      </div>
+
+                      {supportsModelSelection ? (
+                        <div className="rounded-2xl border border-paper-border bg-white/70 p-3">
+                          <div className="mb-3 flex items-center justify-between gap-3">
+                            <div>
+                              <label className="block text-[11px] font-medium uppercase tracking-[0.18em] text-sumi-faint">模型列表</label>
+                              <div className="mt-1 text-xs text-sumi-dim">先拉取可用模型，再勾选这条 API 要使用的模型。</div>
+                            </div>
+                            <button
+                              type="button"
+                              onClick={() => loadModels(capability, editor.entryId!)}
+                              disabled={loadingModels[`${capability}:${editor.entryId}`]}
+                              className="rounded-lg border border-paper-border bg-paper-base px-3 py-2 text-xs text-sumi-dim transition-colors hover:border-vermilion/40 hover:text-sumi disabled:opacity-50"
+                            >
+                              {loadingModels[`${capability}:${editor.entryId}`] ? '拉取中...' : '拉取模型'}
+                            </button>
+                          </div>
+                          <ModelChecklist
+                            models={editingEntry.availableModels}
+                            selectedModels={editingEntry.selectedModels}
+                            onToggle={(modelId) => toggleModel(capability, editor.entryId!, modelId)}
+                          />
+                        </div>
+                      ) : (
+                        <div className="rounded-2xl border border-paper-border bg-white/70 px-3 py-3 text-xs leading-6 text-sumi-dim">
+                          工作流类配置只保存 API Key 和 Base URL。具体 workflow / agent 由对应服务端配置决定，这里不展示模型列表。
+                        </div>
+                      )}
+
+                      {getPresetTemplate(capability, editingEntry.presetId).docsUrl ? (
+                        <div className="flex justify-end">
+                          <a
+                            href={getPresetTemplate(capability, editingEntry.presetId).docsUrl}
+                            target="_blank"
+                            rel="noopener"
+                            className="inline-flex items-center gap-1 text-xs text-aizuri transition-colors hover:text-aizuri/80"
+                          >
+                            <ExternalLink size={10} />
+                            文档
+                          </a>
+                        </div>
+                      ) : null}
+                    </div>
+                  ) : null}
+                </div>
+              );
+            })}
+          </div>
         </div>
       </div>
 
@@ -569,7 +605,7 @@ export default function ApiSettingsPage() {
         >
           Clear All
         </button>
-        <div className="text-xs text-sumi-faint">列表中点击卡片即可切换本地当前使用的 API；编辑页点击保存会同步到后端。</div>
+        <div className="text-xs text-sumi-faint">这里保存的是多个 API 供应商配置；对话页会汇总这些配置里勾选过的模型。</div>
       </div>
     </div>
   );
