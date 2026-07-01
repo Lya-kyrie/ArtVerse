@@ -15,13 +15,13 @@ public final class MangaAgentDtos {
     private MangaAgentDtos() {
     }
 
-    public record RunRequest(String message, UUID requestId, String model) {
+    public record RunRequest(String message, UUID requestId, String model, String provider, String label, String apiKey, String baseUrl) {
     }
 
     public record RunResponse(String reply, UUID requestId) {
     }
 
-    public record ResumeRequest(String answer, String model) {
+    public record ResumeRequest(String answer, String model, String provider, String label, String apiKey, String baseUrl) {
     }
 
     public record OpenRunResponse(RunStateResponse run) {

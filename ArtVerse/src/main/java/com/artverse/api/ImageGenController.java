@@ -26,13 +26,13 @@ public class ImageGenController {
     public Map<String, Object> generate(@RequestBody Map<String, Object> body) {
         String prompt = body.get("prompt") != null ? body.get("prompt").toString() : "";
         String size = body.get("size") != null ? body.get("size").toString() : "";
-        String model = body.get("model") != null ? body.get("model").toString() : "";
         @SuppressWarnings("unchecked")
         List<String> referenceImages = (List<String>) body.get("reference_images");
         User user = currentUser();
-        UserProviderConfig imageConfig = overrideModel(
-                apiKeyService.resolveProviderConfig(user, ApiKeyService.SLOT_IMAGE),
-                model
+        UserProviderConfig imageConfig = apiKeyService.requireProviderConfig(
+                user,
+                requestConfig(body),
+                "Please configure an image provider API key in Settings before using image generation."
         );
         return generationGuardService.executeImageGeneration(
                 user.getId(),
@@ -59,17 +59,25 @@ public class ImageGenController {
         return currentUserService.requireCurrentUser();
     }
 
-    private UserProviderConfig overrideModel(UserProviderConfig config, String model) {
-        if (model == null || model.isBlank()) {
-            return config;
-        }
+    private UserProviderConfig requestConfig(Map<String, Object> body) {
         return new UserProviderConfig(
-                config.slot(),
-                config.provider(),
-                config.label(),
-                config.apiKey(),
-                config.baseUrl(),
-                model
+                ApiKeyService.SLOT_IMAGE,
+                stringValue(body.get("provider")),
+                stringValue(body.get("label")),
+                firstNonBlank(stringValue(body.get("api_key")), stringValue(body.get("apiKey"))),
+                firstNonBlank(stringValue(body.get("base_url")), stringValue(body.get("baseUrl"))),
+                stringValue(body.get("model"))
         );
+    }
+
+    private String stringValue(Object value) {
+        return value == null ? "" : value.toString();
+    }
+
+    private String firstNonBlank(String first, String second) {
+        if (first != null && !first.isBlank()) {
+            return first;
+        }
+        return second;
     }
 }
