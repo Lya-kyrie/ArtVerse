@@ -16,11 +16,12 @@ public class GenerationGuardService {
     private final MangaGenerationConcurrencyGate mangaGenerationConcurrencyGate;
 
     public Map<String, Object> executeImageGeneration(Long userId, String prompt, java.util.List<String> referenceImages,
+                                                      String size, String model,
                                                       Callable<Map<String, Object>> leader) {
         return idempotencyService.executeHttp(
                 "image-gen",
                 userKey(userId),
-                keyBuilder.imageGeneration(userId, prompt, referenceImages),
+                keyBuilder.imageGeneration(userId, prompt, referenceImages, size, model),
                 leader
         );
     }

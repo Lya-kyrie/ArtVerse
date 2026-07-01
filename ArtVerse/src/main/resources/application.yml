@@ -68,6 +68,8 @@ artverse:
     base-url: https://api.coze.cn
     api-key: ""
     workflow-id: "7645642109203103763"
+  flyway:
+    auto-repair-checksum-mismatch: true
   minio:
     endpoint: http://localhost:9000
     bucket: artverse-manga

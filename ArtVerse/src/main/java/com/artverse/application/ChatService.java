@@ -3,7 +3,6 @@ package com.artverse.application;
 import com.artverse.agent.*;
 import com.artverse.agent.gateway.AgentScopeHarnessAgentGateway;
 import com.artverse.common.BusinessException;
-import com.artverse.config.ArtVerseProperties;
 import com.artverse.domain.*;
 import com.artverse.persistence.ChapterRepository;
 import com.artverse.persistence.ChatMessageRepository;
@@ -29,7 +28,6 @@ public class ChatService {
     private final ChatMessageRepository chatMessageRepository;
     private final AgentScopeHarnessAgentGateway harnessAgentGateway;
     private final AgentModelSpecFactory agentModelSpecFactory;
-    private final ArtVerseProperties properties;
     private final ObjectMapper objectMapper;
 
     @Transactional
@@ -63,7 +61,7 @@ public class ChatService {
     }
 
     @Transactional
-    public SseEmitter streamChat(Long chapterId, String userContent, Long userId, String userApiKey) {
+    public SseEmitter streamChat(Long chapterId, Long userId, UserProviderConfig llmConfig) {
         Chapter chapter = chapterRepository.findById(chapterId)
                 .orElseThrow(() -> new BusinessException(404, "Chapter not found"));
 
@@ -89,8 +87,8 @@ public class ChatService {
                 AgentTaskType.CHAT,
                 contextMessages,
                 Map.of(),
-                agentModelSpecFactory.deepSeek(userApiKey),
-                userApiKey
+                agentModelSpecFactory.fromProviderConfig(llmConfig),
+                llmConfig.apiKey()
         );
 
         Disposable subscription = harnessAgentGateway.streamChat(request)

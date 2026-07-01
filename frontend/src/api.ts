@@ -150,7 +150,7 @@ export interface ProviderPresetConfig {
 
 export interface CapabilityProviderSettings {
   activePresetId: string;
-  presets: Record<string, ProviderPresetConfig>;
+  entries: Record<string, ProviderPresetConfig>;
 }
 
 export interface ApiKeySettings {
@@ -221,26 +221,44 @@ function createDefaultPresetConfig(
   };
 }
 
+function createDefaultEntryKey(capability: ApiCapability): string {
+  return `${capability}-default`;
+}
+
+function getProviderTemplate(
+  capability: ApiCapability,
+  presetId: string,
+): { presetId: string; label: string; baseUrl: string; models: string[] } {
+  return DEFAULT_PROVIDER_LIBRARY[capability].find((preset) => preset.presetId === presetId)
+    || {
+      presetId: 'custom',
+      label: capability === 'llm'
+        ? 'Custom OpenAI-Compatible'
+        : capability === 'image'
+          ? 'Custom Image Gateway'
+          : 'Custom Workflow Gateway',
+      baseUrl: capability === 'llm'
+        ? 'https://your-gateway.example.com/v1'
+        : capability === 'image'
+          ? 'https://your-image-gateway.example.com/v1'
+          : 'https://your-workflow.example.com/v1',
+      models: [capability === 'workflow' ? 'workflow-or-agent' : 'your-model-name'],
+    };
+}
+
 function createDefaultCapabilitySettings(capability: ApiCapability): CapabilityProviderSettings {
-  const presets = Object.fromEntries(
-    DEFAULT_PROVIDER_LIBRARY[capability].map((preset) => [
-      preset.presetId,
-      createDefaultPresetConfig(preset.presetId, preset.label, preset.baseUrl, preset.models),
-    ]),
-  ) as Record<string, ProviderPresetConfig>;
-  presets.custom = createDefaultPresetConfig(
-    'custom',
-    capability === 'llm' ? 'Custom OpenAI-Compatible' : capability === 'image' ? 'Custom Image Gateway' : 'Custom Workflow Gateway',
-    capability === 'llm'
-      ? 'https://your-gateway.example.com/v1'
-      : capability === 'image'
-        ? 'https://your-image-gateway.example.com/v1'
-        : 'https://your-workflow.example.com/v1',
-    [capability === 'workflow' ? 'workflow-or-agent' : 'your-model-name'],
-  );
+  const defaultPreset = getProviderTemplate(capability, DEFAULT_ACTIVE_PRESET[capability]);
+  const defaultEntryKey = createDefaultEntryKey(capability);
   return {
-    activePresetId: DEFAULT_ACTIVE_PRESET[capability],
-    presets,
+    activePresetId: defaultEntryKey,
+    entries: {
+      [defaultEntryKey]: createDefaultPresetConfig(
+        defaultPreset.presetId,
+        defaultPreset.label,
+        defaultPreset.baseUrl,
+        defaultPreset.models,
+      ),
+    },
   };
 }
 
@@ -280,21 +298,144 @@ function normalizeCapabilitySettings(
   raw: Partial<CapabilityProviderSettings> | null | undefined,
 ): CapabilityProviderSettings {
   const fallback = createDefaultCapabilitySettings(capability);
-  const presets = { ...fallback.presets };
-  Object.entries(raw?.presets || {}).forEach(([presetId, preset]) => {
-    const typedPreset = preset as Partial<ProviderPresetConfig>;
-    const presetFallback = presets[presetId] || createDefaultPresetConfig(
-      presetId,
-      String(typedPreset.label || presetId),
-      String(typedPreset.baseUrl || ''),
-      parseProviderModels(typedPreset.selectedModels),
-    );
-    presets[presetId] = normalizePresetConfig(typedPreset, presetFallback);
-  });
+  const entries: Record<string, ProviderPresetConfig> = {};
+  const rawEntries = raw?.entries && typeof raw.entries === 'object' ? raw.entries : null;
+  const legacyPresetsSource = raw as Partial<CapabilityProviderSettings> & { presets?: Record<string, Partial<ProviderPresetConfig>> };
+  const legacyPresets = !rawEntries && legacyPresetsSource?.presets && typeof legacyPresetsSource.presets === 'object'
+    ? legacyPresetsSource.presets
+    : null;
+
+  if (rawEntries) {
+    Object.entries(rawEntries).forEach(([entryId, preset]) => {
+      const typedPreset = preset as Partial<ProviderPresetConfig>;
+      const template = getProviderTemplate(capability, String(typedPreset.presetId || 'custom'));
+      const entryFallback = createDefaultPresetConfig(
+        template.presetId,
+        String(typedPreset.label || template.label),
+        String(typedPreset.baseUrl || template.baseUrl),
+        parseProviderModels(typedPreset.selectedModels).length > 0
+          ? parseProviderModels(typedPreset.selectedModels)
+          : template.models,
+      );
+      entries[entryId] = normalizePresetConfig(typedPreset, entryFallback);
+    });
+  } else if (legacyPresets) {
+    const legacyActiveId = String(raw?.activePresetId || '');
+    Object.entries(legacyPresets).forEach(([legacyId, preset]) => {
+      const typedPreset = preset as Partial<ProviderPresetConfig>;
+      const template = getProviderTemplate(capability, legacyId);
+      const entryFallback = createDefaultPresetConfig(
+        template.presetId,
+        template.label,
+        template.baseUrl,
+        template.models,
+      );
+      const normalized = normalizePresetConfig(typedPreset, entryFallback);
+      const changed = normalized.apiKey.trim()
+        || normalized.baseUrl !== entryFallback.baseUrl
+        || normalized.label !== entryFallback.label
+        || normalized.mode !== entryFallback.mode
+        || normalized.selectedModels.join('\n') !== entryFallback.selectedModels.join('\n');
+      if (changed || legacyId === legacyActiveId) {
+        entries[legacyId] = normalized;
+      }
+    });
+  }
+
+  if (Object.keys(entries).length === 0) {
+    return fallback;
+  }
+
   const activePresetId = String(raw?.activePresetId || fallback.activePresetId);
   return {
-    activePresetId: presets[activePresetId] ? activePresetId : fallback.activePresetId,
-    presets,
+    activePresetId: entries[activePresetId] ? activePresetId : Object.keys(entries)[0],
+    entries,
+  };
+}
+
+function createMigratedEntry(
+  capability: ApiCapability,
+  legacy: Partial<ProviderEndpointConfig>,
+  fallbackApiKey: string,
+): ProviderPresetConfig {
+  const presetId = String(legacy.presetId || DEFAULT_ACTIVE_PRESET[capability]);
+  const template = getProviderTemplate(capability, presetId);
+  const preset = createDefaultPresetConfig(
+    template.presetId,
+    String(legacy.label || template.label),
+    String(legacy.baseUrl || template.baseUrl),
+    parseProviderModels(legacy.model).length > 0 ? parseProviderModels(legacy.model) : template.models,
+  );
+  preset.apiKey = String(legacy.apiKey || fallbackApiKey);
+  preset.selectedModels = parseProviderModels(legacy.model).length > 0 ? parseProviderModels(legacy.model) : preset.selectedModels;
+  preset.availableModels = Array.from(new Set([...preset.availableModels, ...preset.selectedModels]));
+  preset.mode = presetId === 'custom' || preset.baseUrl !== template.baseUrl ? 'custom' : 'official';
+  return preset;
+}
+
+function createEntryKey(capability: ApiCapability, presetId: string): string {
+  return `${capability}-${presetId}-${Math.random().toString(36).slice(2, 8)}`;
+}
+
+function getFirstEntry(settings: CapabilityProviderSettings): ProviderPresetConfig | null {
+  const firstEntryId = Object.keys(settings.entries)[0];
+  return firstEntryId ? settings.entries[firstEntryId] : null;
+}
+
+function isConfigMeaningful(config: Partial<ProviderEndpointConfig> | undefined): boolean {
+  return !!(
+    config
+    && (
+      String(config.apiKey || '').trim()
+      || String(config.baseUrl || '').trim()
+      || parseProviderModels(config.model).length > 0
+      || String(config.label || '').trim()
+    )
+  );
+}
+
+function mergeRemoteProviderConfig(
+  current: CapabilityProviderSettings,
+  capability: ApiCapability,
+  remoteConfig: Partial<ProviderEndpointConfig>,
+): CapabilityProviderSettings {
+  if (!isConfigMeaningful(remoteConfig)) return current;
+  const next = JSON.parse(JSON.stringify(current)) as CapabilityProviderSettings;
+  const activeEntry = next.entries[next.activePresetId] || getFirstEntry(next);
+  const remotePresetId = String(remoteConfig.presetId || '');
+  const activeMatchesRemote = activeEntry?.presetId === remotePresetId
+    && activeEntry?.baseUrl === String(remoteConfig.baseUrl || activeEntry.baseUrl);
+
+  if (activeEntry && activeMatchesRemote) {
+    activeEntry.label = String(remoteConfig.label || activeEntry.label);
+    activeEntry.baseUrl = String(remoteConfig.baseUrl || activeEntry.baseUrl);
+    activeEntry.selectedModels = parseProviderModels(remoteConfig.model).length > 0
+      ? parseProviderModels(remoteConfig.model)
+      : activeEntry.selectedModels;
+    activeEntry.availableModels = Array.from(new Set([...activeEntry.availableModels, ...activeEntry.selectedModels]));
+    return next;
+  }
+
+  const entryId = createEntryKey(capability, remotePresetId || 'custom');
+  next.entries[entryId] = createMigratedEntry(capability, remoteConfig, '');
+  next.activePresetId = entryId;
+  return next;
+}
+
+function getMeaningfulEntryIds(settings: CapabilityProviderSettings): string[] {
+  return Object.keys(settings.entries);
+}
+
+function sanitizeCapabilitySettings(
+  capability: ApiCapability,
+  settings: CapabilityProviderSettings,
+): CapabilityProviderSettings {
+  const normalized = normalizeCapabilitySettings(capability, settings);
+  const meaningfulIds = getMeaningfulEntryIds(normalized);
+  if (meaningfulIds.length === 0) return createDefaultCapabilitySettings(capability);
+  return {
+    activePresetId: meaningfulIds.includes(normalized.activePresetId) ? normalized.activePresetId : meaningfulIds[0],
+    entries: Object.fromEntries(meaningfulIds.map((entryId) => [entryId, normalized.entries[entryId]])),
   };
 }
 
@@ -314,20 +455,34 @@ function migrateLegacySettings(): ApiKeySettings {
   };
   (['llm', 'image', 'workflow'] as ApiCapability[]).forEach((capability) => {
     const legacy = storedProviders[capability];
-    if (!legacy) return;
-    const presetId = String(legacy.presetId || settings.providers[capability].activePresetId);
-    const activePresetId = settings.providers[capability].presets[presetId] ? presetId : 'custom';
-    const preset = settings.providers[capability].presets[activePresetId];
-    const defaultPreset = settings.providers[capability].presets[preset.presetId];
-    settings.providers[capability].activePresetId = activePresetId;
-    preset.label = String(legacy.label || preset.label);
-    preset.apiKey = String(legacy.apiKey || fallbackKeys[capability]);
-    preset.baseUrl = String(legacy.baseUrl || preset.baseUrl);
-    preset.selectedModels = parseProviderModels(legacy.model);
-    preset.availableModels = Array.from(new Set([...preset.availableModels, ...preset.selectedModels]));
-    preset.mode = activePresetId === 'custom' || preset.baseUrl !== defaultPreset.baseUrl ? 'custom' : 'official';
+    if (legacy) {
+      const entryId = createDefaultEntryKey(capability);
+      settings.providers[capability] = {
+        activePresetId: entryId,
+        entries: {
+          [entryId]: createMigratedEntry(capability, legacy, fallbackKeys[capability]),
+        },
+      };
+    } else if (fallbackKeys[capability]) {
+      const entryId = createDefaultEntryKey(capability);
+      const activeEntry = settings.providers[capability].entries[entryId];
+      activeEntry.apiKey = fallbackKeys[capability];
+    }
   });
   return settings;
+}
+
+export function mergeServerProviderConfigs(
+  local: ApiKeySettings,
+  remote: Partial<Record<ApiCapability, ProviderEndpointConfig>>,
+): ApiKeySettings {
+  const next = JSON.parse(JSON.stringify(local)) as ApiKeySettings;
+  (['llm', 'image', 'workflow'] as ApiCapability[]).forEach((capability) => {
+    const remoteConfig = remote[capability];
+    if (!remoteConfig) return;
+    next.providers[capability] = mergeRemoteProviderConfig(next.providers[capability], capability, remoteConfig);
+  });
+  return next;
 }
 
 export function getApiKeySettings(): ApiKeySettings {
@@ -351,7 +506,9 @@ export function getApiKeySettings(): ApiKeySettings {
 
 export function getActiveProviderPreset(settings: ApiKeySettings, capability: ApiCapability): ProviderPresetConfig {
   const capabilitySettings = settings.providers[capability];
-  return capabilitySettings.presets[capabilitySettings.activePresetId] || capabilitySettings.presets.custom;
+  return capabilitySettings.entries[capabilitySettings.activePresetId]
+    || getFirstEntry(capabilitySettings)
+    || createDefaultCapabilitySettings(capability).entries[createDefaultEntryKey(capability)];
 }
 
 export function getProviderModelOptions(capability: ApiCapability): string[] {
@@ -375,9 +532,9 @@ export function toProviderEndpointConfig(preset: ProviderPresetConfig): Provider
 export function saveApiKeySettings(settings: ApiKeySettings): void {
   const normalized: ApiKeySettings = {
     providers: {
-      llm: normalizeCapabilitySettings('llm', settings.providers.llm),
-      image: normalizeCapabilitySettings('image', settings.providers.image),
-      workflow: normalizeCapabilitySettings('workflow', settings.providers.workflow),
+      llm: sanitizeCapabilitySettings('llm', settings.providers.llm),
+      image: sanitizeCapabilitySettings('image', settings.providers.image),
+      workflow: sanitizeCapabilitySettings('workflow', settings.providers.workflow),
     },
   };
   localStorage.setItem(LS_PROVIDER_SETTINGS, JSON.stringify(normalized));
