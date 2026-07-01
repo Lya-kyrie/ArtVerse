@@ -1,16 +1,12 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+﻿import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Check, ChevronDown, Search, Sparkles } from 'lucide-react';
 import {
   API_KEY_CHANGE_EVENT,
-  getActiveProviderPreset,
-  getApiKeySettings,
-  getProviderModelOptions,
+  getProviderModelSelectionMeta,
+  getProviderModelSelections,
   type ApiCapability,
+  type ProviderModelOption,
 } from '../api';
-
-/* ------------------------------------------------------------------ */
-/*  Types                                                              */
-/* ------------------------------------------------------------------ */
 
 interface ModelSwitcherProps {
   capability: ApiCapability;
@@ -27,28 +23,24 @@ interface ProviderMeta {
 
 interface GroupedModels {
   provider: ProviderMeta;
-  models: string[];
+  models: ProviderModelOption[];
 }
 
-/* ------------------------------------------------------------------ */
-/*  Provider detection                                                 */
-/* ------------------------------------------------------------------ */
-
 const PROVIDER_PATTERNS: Array<{ test: (id: string) => boolean; label: string; emoji: string; color: string }> = [
-  { test: (id) => id.startsWith('deepseek'),            label: 'DeepSeek',    emoji: '🐋', color: 'bg-blue-100 text-blue-700' },
-  { test: (id) => /^gpt-|^o[134]-|^chatgpt/.test(id),   label: 'OpenAI',      emoji: '⚡', color: 'bg-emerald-100 text-emerald-700' },
-  { test: (id) => id.startsWith('claude'),               label: 'Claude',      emoji: '🧠', color: 'bg-amber-100 text-amber-700' },
-  { test: (id) => id.startsWith('gemini'),               label: 'Gemini',      emoji: '💎', color: 'bg-sky-100 text-sky-700' },
-  { test: (id) => id.startsWith('doubao'),               label: '豆包',         emoji: '🫘', color: 'bg-teal-100 text-teal-700' },
-  { test: (id) => id.startsWith('qwen'),                 label: 'Qwen',        emoji: '🏔️', color: 'bg-purple-100 text-purple-700' },
-  { test: (id) => id.startsWith('grok'),                 label: 'Grok',        emoji: '🚀', color: 'bg-indigo-100 text-indigo-700' },
-  { test: (id) => id.startsWith('glm'),                  label: 'GLM',         emoji: '🌐', color: 'bg-cyan-100 text-cyan-700' },
-  { test: (id) => id.startsWith('kimi'),                 label: 'Kimi',        emoji: '🌙', color: 'bg-violet-100 text-violet-700' },
-  { test: (id) => /minimax|abab/.test(id),               label: 'MiniMax',     emoji: '🔮', color: 'bg-fuchsia-100 text-fuchsia-700' },
-  { test: (id) => /seedance|jimeng/.test(id),            label: 'Jimeng',      emoji: '🎬', color: 'bg-rose-100 text-rose-700' },
-  { test: (id) => /flux|stable|schnell/.test(id),        label: 'Stability',   emoji: '🖼️', color: 'bg-lime-100 text-lime-700' },
-  { test: (id) => /black-forest|midjourney/.test(id),    label: 'Image',       emoji: '🎨', color: 'bg-pink-100 text-pink-700' },
-  { test: (id) => id.includes('/'),                      label: 'OpenRouter',  emoji: '🔗', color: 'bg-orange-100 text-orange-700' },
+  { test: (id) => id.startsWith('deepseek'), label: 'DeepSeek', emoji: 'D', color: 'bg-blue-100 text-blue-700' },
+  { test: (id) => /^gpt-|^o[134]-|^chatgpt/.test(id), label: 'OpenAI', emoji: 'O', color: 'bg-emerald-100 text-emerald-700' },
+  { test: (id) => id.startsWith('claude'), label: 'Claude', emoji: 'C', color: 'bg-amber-100 text-amber-700' },
+  { test: (id) => id.startsWith('gemini'), label: 'Gemini', emoji: 'G', color: 'bg-sky-100 text-sky-700' },
+  { test: (id) => id.startsWith('doubao'), label: 'Doubao', emoji: 'B', color: 'bg-teal-100 text-teal-700' },
+  { test: (id) => id.startsWith('qwen'), label: 'Qwen', emoji: 'Q', color: 'bg-purple-100 text-purple-700' },
+  { test: (id) => id.startsWith('grok'), label: 'Grok', emoji: 'X', color: 'bg-indigo-100 text-indigo-700' },
+  { test: (id) => id.startsWith('glm'), label: 'GLM', emoji: 'Z', color: 'bg-cyan-100 text-cyan-700' },
+  { test: (id) => id.startsWith('kimi'), label: 'Kimi', emoji: 'K', color: 'bg-violet-100 text-violet-700' },
+  { test: (id) => /minimax|abab/.test(id), label: 'MiniMax', emoji: 'M', color: 'bg-fuchsia-100 text-fuchsia-700' },
+  { test: (id) => /seedance|jimeng/.test(id), label: 'Jimeng', emoji: 'J', color: 'bg-rose-100 text-rose-700' },
+  { test: (id) => /flux|stable|schnell/.test(id), label: 'Stability', emoji: 'S', color: 'bg-lime-100 text-lime-700' },
+  { test: (id) => /black-forest|midjourney/.test(id), label: 'Image', emoji: 'I', color: 'bg-pink-100 text-pink-700' },
+  { test: (id) => id.includes('/'), label: 'OpenRouter', emoji: 'R', color: 'bg-orange-100 text-orange-700' },
 ];
 
 function detectProvider(modelId: string): ProviderMeta {
@@ -58,34 +50,29 @@ function detectProvider(modelId: string): ProviderMeta {
       return { label: pattern.label, emoji: pattern.emoji, color: pattern.color };
     }
   }
-  return { label: 'Custom', emoji: '🤖', color: 'bg-gray-100 text-gray-700' };
+  return { label: 'Custom', emoji: 'U', color: 'bg-gray-100 text-gray-700' };
 }
-
-/* ------------------------------------------------------------------ */
-/*  Component                                                          */
-/* ------------------------------------------------------------------ */
 
 export default function ModelSwitcher({ capability, selectedModel, onSelect, disabled }: ModelSwitcherProps) {
   const [open, setOpen] = useState(false);
   const [search, setSearch] = useState('');
-  const [models, setModels] = useState<string[]>(() => getProviderModelOptions(capability));
+  const [models, setModels] = useState<ProviderModelOption[]>(() => getProviderModelSelections(capability));
   const [focusedIndex, setFocusedIndex] = useState(-1);
   const containerRef = useRef<HTMLDivElement | null>(null);
   const searchInputRef = useRef<HTMLInputElement | null>(null);
-  const listRef = useRef<HTMLDivElement | null>(null);
-
-  /* ---- data ---------------------------------------------------- */
 
   useEffect(() => {
-    const sync = () => setModels(getProviderModelOptions(capability));
+    const sync = () => setModels(getProviderModelSelections(capability));
     sync();
     window.addEventListener(API_KEY_CHANGE_EVENT, sync);
     return () => window.removeEventListener(API_KEY_CHANGE_EVENT, sync);
   }, [capability]);
 
-  /* ---- open / close -------------------------------------------- */
-
-  const close = useCallback(() => { setOpen(false); setSearch(''); setFocusedIndex(-1); }, []);
+  const close = useCallback(() => {
+    setOpen(false);
+    setSearch('');
+    setFocusedIndex(-1);
+  }, []);
 
   useEffect(() => {
     if (!open) return;
@@ -97,103 +84,90 @@ export default function ModelSwitcher({ capability, selectedModel, onSelect, dis
   }, [open, close]);
 
   useEffect(() => {
-    if (open) {
-      const timer = setTimeout(() => searchInputRef.current?.focus(), 80);
-      return () => clearTimeout(timer);
-    }
+    if (!open) return;
+    const timer = setTimeout(() => searchInputRef.current?.focus(), 80);
+    return () => clearTimeout(timer);
   }, [open]);
-
-  /* ---- filtered & grouped -------------------------------------- */
 
   const filteredModels = useMemo(() => {
     if (!search.trim()) return models;
     const q = search.toLowerCase();
-    return models.filter((id) => {
-      if (id.toLowerCase().includes(q)) return true;
-      return detectProvider(id).label.toLowerCase().includes(q);
+    return models.filter((option) => {
+      if (option.model.toLowerCase().includes(q)) return true;
+      if (option.providerLabel.toLowerCase().includes(q)) return true;
+      return detectProvider(option.providerPresetId).label.toLowerCase().includes(q);
     });
   }, [models, search]);
 
   const groupedModels = useMemo<GroupedModels[]>(() => {
     const groups: Record<string, GroupedModels> = {};
-    for (const model of filteredModels) {
-      const provider = detectProvider(model);
-      if (!groups[provider.label]) {
-        groups[provider.label] = { provider, models: [] };
+    for (const option of filteredModels) {
+      const providerLabel = option.providerLabel;
+      const providerMeta = detectProvider(option.providerPresetId);
+      if (!groups[providerLabel]) {
+        groups[providerLabel] = {
+          provider: { ...providerMeta, label: providerLabel },
+          models: [],
+        };
       }
-      groups[provider.label].models.push(model);
+      groups[providerLabel].models.push(option);
     }
-    // stable sort by provider label
     return Object.values(groups).sort((a, b) => a.provider.label.localeCompare(b.provider.label));
   }, [filteredModels]);
 
   const flatModelList = useMemo(
-    () => groupedModels.flatMap((g) => g.models),
+    () => groupedModels.flatMap((group) => group.models.map((option) => option.value)),
     [groupedModels],
   );
-
-  /* ---- helpers ------------------------------------------------ */
 
   const updateSearch = useCallback((value: string) => {
     setSearch(value);
     setFocusedIndex(-1);
   }, []);
 
-  /* Scroll focused item into view */
-  useEffect(() => {
-    if (focusedIndex < 0 || !listRef.current) return;
-    const focusedEl = listRef.current.children[focusedIndex] as HTMLElement | undefined;
-    focusedEl?.scrollIntoView({ block: 'nearest' });
-  }, [focusedIndex]);
-
-  /* ---- derived display values ---------------------------------- */
-
-  const selectedProvider = useMemo(() => detectProvider(selectedModel), [selectedModel]);
-
-  const providerLabel = useMemo(() => {
-    try { return getActiveProviderPreset(getApiKeySettings(), capability).label; }
-    catch { return selectedProvider.label; }
-  }, [capability, selectedProvider.label]);
-
-  const triggerLabel = selectedModel ? selectedProvider.label : null;
-
-  /* ---- keyboard navigation ------------------------------------- */
+  const selectedOption = useMemo(
+    () => getProviderModelSelectionMeta(capability, selectedModel),
+    [capability, selectedModel],
+  );
+  const selectedProvider = useMemo(
+    () => detectProvider(selectedOption?.providerPresetId || selectedModel),
+    [selectedOption?.providerPresetId, selectedModel],
+  );
+  const providerLabel = selectedOption?.providerLabel || selectedProvider.label;
+  const triggerLabel = selectedModel ? providerLabel : null;
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (!open) return;
 
     switch (e.key) {
-      case 'ArrowDown': {
+      case 'ArrowDown':
         e.preventDefault();
         setFocusedIndex((prev) => (prev + 1 < flatModelList.length ? prev + 1 : 0));
         break;
-      }
-      case 'ArrowUp': {
+      case 'ArrowUp':
         e.preventDefault();
         setFocusedIndex((prev) => (prev - 1 >= 0 ? prev - 1 : flatModelList.length - 1));
         break;
-      }
-      case 'Enter': {
+      case 'Enter':
         e.preventDefault();
         if (focusedIndex >= 0 && focusedIndex < flatModelList.length) {
           onSelect(flatModelList[focusedIndex]);
           close();
         }
         break;
-      }
-      case 'Escape': {
+      case 'Escape':
         e.preventDefault();
         close();
         break;
-      }
     }
   };
 
-  /* ---- search input keydown (Enter selects first match) --------- */
   const handleSearchKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === 'Escape') { close(); return; }
+    if (e.key === 'Escape') {
+      close();
+      return;
+    }
     if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
-      // Move focus from search input to list
       handleKeyDown(e);
       return;
     }
@@ -209,15 +183,14 @@ export default function ModelSwitcher({ capability, selectedModel, onSelect, dis
     }
   };
 
-  /* ---- render -------------------------------------------------- */
-
   return (
     <div ref={containerRef} className="relative inline-flex items-center" onKeyDown={handleKeyDown}>
-      {/* ── Trigger ── */}
       <button
         type="button"
         disabled={disabled}
-        onClick={() => { if (!disabled) setOpen((prev) => !prev); }}
+        onClick={() => {
+          if (!disabled) setOpen((prev) => !prev);
+        }}
         className={
           'inline-flex h-7 items-center gap-1.5 rounded-lg border px-2 text-sm font-medium transition-all duration-200 ' +
           (open
@@ -225,7 +198,7 @@ export default function ModelSwitcher({ capability, selectedModel, onSelect, dis
             : 'border-paper-border bg-paper-surface/80 text-sumi-dim hover:border-sumi-faint/40 hover:bg-paper-base hover:text-sumi') +
           (disabled ? ' cursor-not-allowed opacity-50' : ' cursor-pointer')
         }
-        title={selectedModel ? `${selectedModel}\n${providerLabel}` : '选择模型'}
+        title={selectedModel ? `${selectedOption?.model || selectedModel}\n${providerLabel}` : '选择模型'}
       >
         {triggerLabel ? (
           <>
@@ -244,10 +217,8 @@ export default function ModelSwitcher({ capability, selectedModel, onSelect, dis
         />
       </button>
 
-      {/* ── Dropdown ── */}
       {open && (
         <div className="absolute right-0 bottom-[calc(100%+6px)] z-30 flex w-[300px] flex-col overflow-hidden rounded-xl border border-paper-border/80 bg-paper-raised shadow-lg animate-fade-in">
-          {/* Search */}
           <div className="flex items-center gap-2 border-b border-paper-border/60 px-3 py-2.5">
             <Search size={14} className="shrink-0 text-sumi-faint" />
             <input
@@ -266,13 +237,12 @@ export default function ModelSwitcher({ capability, selectedModel, onSelect, dis
                 className="rounded p-0.5 text-sumi-faint hover:text-sumi-dim transition-colors"
                 aria-label="清除搜索"
               >
-                <span className="text-[11px]">✕</span>
+                <span className="text-[11px]">×</span>
               </button>
             )}
           </div>
 
-          {/* Model list */}
-          <div ref={listRef} className="max-h-[280px] overflow-y-auto overscroll-contain p-2">
+          <div className="max-h-[280px] overflow-y-auto overscroll-contain p-2">
             {groupedModels.length === 0 ? (
               <div className="flex flex-col items-center gap-2 px-4 py-10 text-center">
                 <Search size={20} className="text-sumi-faint/30" />
@@ -292,7 +262,6 @@ export default function ModelSwitcher({ capability, selectedModel, onSelect, dis
             ) : (
               groupedModels.map((group) => (
                 <div key={group.provider.label} className="mb-0.5 last:mb-0">
-                  {/* Group header */}
                   <div className="flex items-center gap-1.5 px-2 py-1.5">
                     <span
                       className={`flex h-5 w-5 shrink-0 items-center justify-center rounded text-[11px] leading-none ${group.provider.color}`}
@@ -305,16 +274,18 @@ export default function ModelSwitcher({ capability, selectedModel, onSelect, dis
                     </span>
                     <span className="text-[10px] text-sumi-faint/50">{group.models.length}</span>
                   </div>
-                  {/* Group items */}
-                  {group.models.map((modelId) => {
-                    const selected = modelId === selectedModel;
-                    const flatIdx = flatModelList.indexOf(modelId);
+                  {group.models.map((option) => {
+                    const selected = option.value === selectedModel;
+                    const flatIdx = flatModelList.indexOf(option.value);
                     const focused = flatIdx === focusedIndex;
                     return (
                       <button
-                        key={modelId}
+                        key={option.value}
                         type="button"
-                        onClick={() => { onSelect(modelId); close(); }}
+                        onClick={() => {
+                          onSelect(option.value);
+                          close();
+                        }}
                         onMouseEnter={() => setFocusedIndex(flatIdx)}
                         className={
                           'flex w-full items-center gap-2.5 rounded-lg px-3 py-2 text-left transition-colors duration-100 ' +
@@ -325,7 +296,7 @@ export default function ModelSwitcher({ capability, selectedModel, onSelect, dis
                               : 'text-sumi hover:bg-paper-surface')
                         }
                       >
-                        <span className="truncate text-[13px] font-medium">{modelId}</span>
+                        <span className="truncate text-[13px] font-medium">{option.model}</span>
                         {selected && <Check size={14} className="ml-auto shrink-0 text-vermilion" />}
                       </button>
                     );

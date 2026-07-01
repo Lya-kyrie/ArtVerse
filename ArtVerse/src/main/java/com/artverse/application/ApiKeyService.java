@@ -121,6 +121,27 @@ public class ApiKeyService {
         return config;
     }
 
+    public UserProviderConfig requireProviderConfig(User user, UserProviderConfig override, String message) {
+        UserProviderConfig config = resolveProviderConfig(user, override);
+        if (config.apiKey().isBlank()) {
+            throw new BusinessException(400, message);
+        }
+        return config;
+    }
+
+    public UserProviderConfig resolveProviderConfig(User user, UserProviderConfig override) {
+        String normalizedSlot = requireSupportedSlot(override.slot());
+        UserProviderConfig base = resolveProviderConfig(user, normalizedSlot);
+        return new UserProviderConfig(
+                normalizedSlot,
+                blankToDefault(override.provider(), base.provider()),
+                blankToDefault(override.label(), base.label()),
+                blankToDefault(override.apiKey(), base.apiKey()),
+                blankToDefault(override.baseUrl(), base.baseUrl()),
+                blankToDefault(override.model(), base.model())
+        );
+    }
+
     @Transactional
     public void deleteKey(User user, String provider) {
         repository.deleteByUserIdAndSlot(user.getId(), slotFromLegacyProvider(provider));
