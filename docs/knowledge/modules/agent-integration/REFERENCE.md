@@ -22,7 +22,7 @@ AgentScopeAgentFactory
   → AgentWorkspaceService           (workspace path)
   → MangaAgentPromptProvider        (system prompt)
   → AgentModelSpecFactory           (model spec)
-  → AgentScopeHitlSuspendMiddleware  (HITL detection)
+
   → AgentScope v2 SDK:
       HarnessAgent, RuntimeContext, Toolkit, OpenAIChatModel, CompactionConfig
   → application/tools:
@@ -62,7 +62,7 @@ All classes depend on `io.agentscope.*` (v2.0.0-RC3):
 | `core.message.Msg`, `MsgRole` | `AgentScopeHarnessAgentGateway` |
 | `core.event.*` | `AgentScopeEventMapper`, `MangaDirectorAgentNode` |
 | `core.tool.Toolkit`, `Tool` | `AgentScopeAgentFactory`, `MangaContextTools`, etc. |
-| `core.middleware.MiddlewareBase` | `AgentScopeHitlSuspendMiddleware` |
+
 | `harness.agent.HarnessAgent` | `AgentScopeAgentFactory`, `AgentScopeHarnessAgentGateway` |
 | `harness.agent.memory.compaction.CompactionConfig` | `AgentScopeConfig` |
 

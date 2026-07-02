@@ -27,11 +27,9 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 
-import jakarta.annotation.PostConstruct;
-import jakarta.annotation.PreDestroy;
-
 import java.nio.file.Path;
 import java.util.List;
+import java.util.concurrent.ConcurrentHashMap;
 
 @Slf4j
 @Component
@@ -56,30 +54,13 @@ public class AgentScopeAgentFactory {
     private final AgentToolAuditService agentToolAuditService;
     private final AgentRunToolStatus agentRunToolStatus;
     private final AgentStateStore agentStateStore;
-    private AgentCache<HarnessAgent> agentCache;
-
-    @PostConstruct
-    public void init() {
-        ArtVerseProperties.Agent.AgentCache cacheProps = properties.getAgent().getCache();
-        this.agentCache = new AgentCache<>(
-                cacheProps.getMaxSize(),
-                cacheProps.getIdleTimeoutMinutes(),
-                cacheProps.getCleanupIntervalMinutes()
-        );
-    }
-
-    @PreDestroy
-    public void destroy() {
-        if (agentCache != null) {
-            agentCache.destroy();
-        }
-    }
+    private final ConcurrentHashMap<String, HarnessAgent> agents = new ConcurrentHashMap<>();
 
     public HarnessAgent getOrCreate(AgentRunRequest request) {
         Path requestWorkspace = agentWorkspaceService.workspaceFor(request);
         String agentKey = buildAgentCacheKey(request, defaultModelSpec(request.userApiKey()), requestWorkspace,
                 promptProvider.promptVersionFor(request.taskType()));
-        return agentCache.getOrCreate(agentKey, k -> buildAgent(request, requestWorkspace));
+        return agents.computeIfAbsent(agentKey, k -> buildAgent(request, requestWorkspace));
     }
 
     private HarnessAgent buildAgent(AgentRunRequest request, Path requestWorkspace) {
@@ -97,7 +78,6 @@ public class AgentScopeAgentFactory {
                 .enablePendingToolRecovery(true)
                 .disableShellTool()
                 .disableFilesystemTools()
-                .middleware(new AgentScopeHitlSuspendMiddleware())
                 .build();
         configureTools(agent.getToolkit());
         return agent;
@@ -139,15 +119,35 @@ public class AgentScopeAgentFactory {
 
     private Model resolveModel(String userApiKey, AgentModelSpec modelSpec) {
         if (userApiKey != null && !userApiKey.isBlank()) {
-            log.info("Using user-provided DeepSeek API key for model");
-            return OpenAIChatModel.builder()
-                    .apiKey(userApiKey)
-                    .modelName(modelSpec.model())
-                    .baseUrl(modelSpec.baseUrl())
-                    .stream(true)
-                    .build();
+            log.info("Using user-provided {} API key for model: {}", modelSpec.provider(), modelSpec.model());
+            return buildChatModel(userApiKey, modelSpec);
         }
         return model;
+    }
+
+    /**
+     * Build a chat model for the given provider.
+     * All currently supported providers (deepseek, openai, openroute) use the
+     * OpenAI-compatible protocol. Non-compatible providers can be added here.
+     */
+    private OpenAIChatModel buildChatModel(String userApiKey, AgentModelSpec modelSpec) {
+        return switch (modelSpec.provider()) {
+            case "deepseek", "openai", "openroute" ->
+                    OpenAIChatModel.builder()
+                            .apiKey(userApiKey)
+                            .modelName(modelSpec.model())
+                            .baseUrl(modelSpec.baseUrl())
+                            .stream(true)
+                            .build();
+            default ->
+                    // Unknown providers default to OpenAI-compatible protocol
+                    OpenAIChatModel.builder()
+                            .apiKey(userApiKey)
+                            .modelName(modelSpec.model())
+                            .baseUrl(modelSpec.baseUrl())
+                            .stream(true)
+                            .build();
+        };
     }
 
     private AgentModelSpec defaultModelSpec(String userApiKey) {

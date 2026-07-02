@@ -27,12 +27,12 @@ public class NovelService {
     private final AgentModelSpecFactory agentModelSpecFactory;
     private final ArtVerseProperties properties;
 
-    @Transactional(readOnly = true)
+    @Transactional
     public String generateNovel(Long chapterId) {
         return generateNovel(chapterId, null, null);
     }
 
-    @Transactional(readOnly = true)
+    @Transactional
     public String generateNovel(Long chapterId, Long userId, String userApiKey) {
         Chapter chapter = chapterRepository.findById(chapterId)
                 .orElseThrow(() -> new BusinessException(404, "Chapter not found"));

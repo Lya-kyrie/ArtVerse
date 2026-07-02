@@ -32,7 +32,7 @@ Image generation is not performed by the Manga Agent. The agent prepares or refi
 - Story knowledge sync: `ArtVerse/src/main/java/com/artverse/agent/AgentWorkspaceSyncService.java`.
 - Runtime workspace files: `ArtVerse/src/main/java/com/artverse/agent/AgentWorkspaceService.java`.
 - Agent tools and typed runtime context: `ArtVerse/src/main/java/com/artverse/application/tools/`, `ArtVerse/src/main/java/com/artverse/agent/MangaAgentRuntimeContext.java`.
-- AgentScope HITL suspend middleware (replaces deprecated Hook): ArtVerse/src/main/java/com/artverse/agent/gateway/AgentScopeHitlSuspendMiddleware.java.
+
 - AgentScope event mapping: inlined into MangaDirectorAgentNode as mapAgentScopeEvent() private method.
 - AgentScope v2 migration plan: `docs/knowledge/modules/manga-agent/agentscope-v2-refactor-plan.md`.
 - Frontend API and stream parser: `frontend/src/api.ts`.
