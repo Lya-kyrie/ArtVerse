@@ -279,6 +279,7 @@ public class MangaAgentConversationService {
                 - Do not directly claim that images have been generated. Image generation is a long-running SSE task handled by the existing Generate Manga action.
                 - After storyboard is ready, clearly tell the user that they can click Generate Manga, or ask you to refine scenes.
                 - Keep business actions explicit and summarize what changed.
+                - When summarizing storyboard scenes or chapter data in conversation, use Markdown formatting: headings (##), bullet lists (-), bold (**), and GFM pipe-delimited tables (|col|col|) so the output renders clearly for the user.
                 """.formatted(
                 user.getId(),
                 chapter.getStory().getTitle(),

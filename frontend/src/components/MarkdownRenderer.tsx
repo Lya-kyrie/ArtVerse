@@ -132,11 +132,99 @@ class TailwindRenderer extends Renderer {
 }
 
 // ---------------------------------------------------------------------------
+// Convert space-aligned tabular text to GFM pipe tables
+//
+// AI responses often contain pseudo-tables where columns are separated by
+// 2+ spaces or tabs instead of GFM pipe delimiters.  This preprocessor
+// detects consecutive lines with consistent column counts and rewrites
+// them as GFM tables so the marked parser renders them as proper <table>.
+//
+// Heuristic:
+//  - 2+ consecutive lines each containing >= 2 column separators
+//    (2+ spaces or a tab) that produce the same column count.
+//  - Lines that already start with |, empty lines, markdown headings,
+//    list items, and blockquotes act as block separators.
+// ---------------------------------------------------------------------------
+
+function convertSpaceAlignedTables(src: string): string {
+  const lines = src.split('\n');
+  const result: string[] = [];
+  let blockLines: string[] = [];
+  let blockCols = 0;
+
+  function flush() {
+    if (blockLines.length >= 2 && blockCols >= 2) {
+      const gfmRows: string[] = [];
+      for (const line of blockLines) {
+        const cells = line.split(/\s{2,}|\t|　+/).map(c => c.trim()).filter(c => c !== '');
+        while (cells.length < blockCols) cells.push('');
+        gfmRows.push('| ' + cells.slice(0, blockCols).join(' | ') + ' |');
+      }
+      // Insert GFM alignment row after the header (first row)
+      const sep = '|' + Array(blockCols).fill(' --- ').join('|') + '|';
+      gfmRows.splice(1, 0, sep);
+      result.push(...gfmRows);
+    } else {
+      result.push(...blockLines);
+    }
+    blockLines = [];
+    blockCols = 0;
+  }
+
+  for (const line of lines) {
+    const trimmed = line.trim();
+
+    // Empty line → flush pending table block
+    if (trimmed === '') {
+      flush();
+      result.push(line);
+      continue;
+    }
+
+    // Already a GFM table row → don't touch
+    if (trimmed.startsWith('|')) {
+      flush();
+      result.push(line);
+      continue;
+    }
+
+    // Markdown structural tokens → flush before them
+    if (/^\s*(#{1,6}\s|[-*+]\s|\d+\.\s|[>])/.test(line)) {
+      flush();
+      result.push(line);
+      continue;
+    }
+
+    // Count columns separated by 2+ spaces, a tab, or full-width space(s)
+    const cells = line.split(/\s{2,}|\t|　+/).map(c => c.trim()).filter(c => c !== '');
+    if (cells.length >= 2) {
+      if (blockCols === 0) {
+        blockLines.push(line);
+        blockCols = cells.length;
+      } else if (cells.length === blockCols) {
+        blockLines.push(line);
+      } else {
+        flush();
+        blockLines.push(line);
+        blockCols = cells.length;
+      }
+    } else {
+      flush();
+      result.push(line);
+    }
+  }
+
+  flush();
+  return result.join('\n');
+}
+
+// ---------------------------------------------------------------------------
 // Normalize non-standard Markdown from AI output before parsing
 // ---------------------------------------------------------------------------
 
 function normalizeMarkdown(src: string): string {
-  let result = src;
+  // 0. Convert space-aligned pseudo-tables to GFM first
+  let result = convertSpaceAlignedTables(src);
 
   // 1. Ensure space after heading markers: ##text → ## text
   result = result.replace(/^(#{1,6})([^\s#])/gm, '$1 $2');

@@ -1,4 +1,4 @@
-﻿import { Fragment, useEffect, useRef, useState, type ReactNode } from 'react';
+﻿import { useEffect, useRef, useState } from 'react';
 import {
   Archive,
   Bot,
@@ -39,6 +39,7 @@ import {
   type MangaWorkflowRoute,
   type Story,
 } from '../api';
+import MarkdownRenderer from './MarkdownRenderer';
 
 interface Message {
   role: 'user' | 'assistant' | 'system';
@@ -202,23 +203,6 @@ function toMessages(items: MangaAgentMessage[]): Message[] {
       requestId: item.requestId ?? item.request_id,
     }];
   });
-}
-
-function renderInlineMarkdown(text: string): ReactNode[] {
-  const parts = text.split(/(\*\*[^*]+\*\*|`[^`]+`)/g);
-  return parts.map((part, index) => {
-    if (part.startsWith('**') && part.endsWith('**')) {
-      return <strong key={index} className="font-semibold text-sumi">{part.slice(2, -2)}</strong>;
-    }
-    if (part.startsWith('`') && part.endsWith('`')) {
-      return <code key={index} className="rounded bg-paper-surface px-1.5 py-0.5 text-[0.9em] text-vermilion font-medium">{part.slice(1, -1)}</code>;
-    }
-    return <Fragment key={index}>{part}</Fragment>;
-  });
-}
-
-function MarkdownMessage({ content }: { content: string }) {
-  return <div className="whitespace-pre-wrap text-sm leading-7 text-sumi">{renderInlineMarkdown(content)}</div>;
 }
 
 function appendExecutionEvent(events: ExecutionEventItem[], event: ExecutionEventItem): ExecutionEventItem[] {
@@ -1082,7 +1066,7 @@ export default function MangaAgentPage({ onCreateStory }: { onCreateStory?: () =
                 {messages.map((msg, idx) => (
                   <div key={`${msg.requestId || 'msg'}-${idx}`} className={msg.role === 'user' ? 'flex justify-end' : 'flex justify-start'}>
                     <div className={'max-w-[85%] rounded-xl px-4 py-2.5 text-sm leading-relaxed ' + (msg.role === 'user' ? 'bg-vermilion text-white' : msg.role === 'system' ? 'border border-paper-border bg-paper-surface text-sumi-dim' : 'border border-paper-border bg-paper-raised text-sumi shadow-sm')}>
-                      {msg.role === 'assistant' || msg.role === 'system' ? <MarkdownMessage content={msg.content} /> : msg.content}
+                      {msg.role === 'assistant' || msg.role === 'system' ? <MarkdownRenderer content={msg.content} /> : msg.content}
                     </div>
                   </div>
                 ))}
@@ -1132,7 +1116,7 @@ export default function MangaAgentPage({ onCreateStory }: { onCreateStory?: () =
                 {draftReply && (
                   <div className="flex justify-start">
                     <div className="max-w-[85%] rounded-xl border border-paper-border bg-paper-raised px-4 py-2.5 text-sm leading-relaxed shadow-sm">
-                      <MarkdownMessage content={draftReply} />
+                      <MarkdownRenderer content={draftReply} />
                     </div>
                   </div>
                 )}
