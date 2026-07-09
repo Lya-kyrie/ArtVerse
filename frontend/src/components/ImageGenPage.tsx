@@ -51,6 +51,26 @@ interface GenConfig {
   aspectRatio: string;
 }
 
+function removeMessageRound(messages: Message[], msgId: string): Message[] {
+  const index = messages.findIndex((message) => message.id === msgId);
+  if (index < 0) return messages;
+
+  const idsToRemove = new Set<string>([msgId]);
+  const current = messages[index];
+  const next = messages[index + 1];
+  const previous = messages[index - 1];
+
+  if (current?.type === 'user' && next?.type === 'ai') {
+    idsToRemove.add(next.id);
+  }
+
+  if (current?.type === 'ai' && previous?.type === 'user') {
+    idsToRemove.add(previous.id);
+  }
+
+  return messages.filter((message) => !idsToRemove.has(message.id));
+}
+
 const LS_THEMES_KEY = 'artverse.genThemes';
 const LS_ACTIVE_THEME_KEY = 'artverse.activeGenTheme';
 const LS_GEN_CONFIG_KEY = 'artverse.genConfig';
@@ -844,7 +864,16 @@ export default function ImageGenPage() {
       setThemes((prev) =>
         prev.map((t) =>
           t.id === targetThemeId
-            ? { ...t, messages: [...t.messages, { id: 'a-' + record.id, type: 'ai' as const, record }] }
+            ? {
+                ...t,
+                messages: t.messages.flatMap((message) => {
+                  if (message.id !== userMsg.id) return [message];
+                  return [
+                    { ...message, id: 'u-' + record.id },
+                    { id: 'a-' + record.id, type: 'ai' as const, record },
+                  ];
+                }),
+              }
             : t,
         ),
       );
@@ -892,7 +921,7 @@ export default function ImageGenPage() {
     setThemes((prev) =>
       prev.map((t) =>
         t.id === activeThemeId
-          ? { ...t, messages: t.messages.filter((m) => m.id !== msgId) }
+          ? { ...t, messages: removeMessageRound(t.messages, msgId) }
           : t,
       ),
     );
