@@ -27,6 +27,13 @@ import {
   listImageGenHistory,
   type ImageGenRecord,
 } from '../api';
+import {
+  cacheImage,
+  deleteCachedImage,
+  generatedImageCacheKey,
+  loadPersistentImage,
+  referenceImageCacheKey,
+} from '../imageCache';
 import ModelSwitcher from './ModelSwitcher';
 
 interface Message {
@@ -34,6 +41,7 @@ interface Message {
   type: 'user' | 'ai';
   prompt?: string;
   refThumbnails?: string[];
+  refImageKeys?: string[];
   record?: ImageGenRecord;
 }
 
@@ -115,7 +123,15 @@ function loadThemes(): GenTheme[] {
 }
 
 function saveThemes(themes: GenTheme[]) {
-  localStorage.setItem(LS_THEMES_KEY, JSON.stringify(themes));
+  const persistedThemes = themes.map((theme) => ({
+    ...theme,
+    messages: theme.messages.map((message) => {
+      const persistedMessage = { ...message };
+      delete persistedMessage.refThumbnails;
+      return persistedMessage;
+    }),
+  }));
+  localStorage.setItem(LS_THEMES_KEY, JSON.stringify(persistedThemes));
 }
 
 function loadActiveThemeId(): string | null {
@@ -177,6 +193,96 @@ function mergeHistoryIntoThemes(themes: GenTheme[], records: ImageGenRecord[]): 
 function fmtRes(v: string | null | undefined): string {
   if (!v) return '';
   return v.split('x').join('×');
+}
+
+function PersistentImage({
+  cacheKey,
+  sourceUrl,
+  alt,
+  className,
+  placeholderClassName,
+  compact = false,
+}: {
+  cacheKey: string;
+  sourceUrl?: string;
+  alt: string;
+  className: string;
+  placeholderClassName: string;
+  compact?: boolean;
+}) {
+  const [resolvedUrl, setResolvedUrl] = useState<string | null>(null);
+  const [unavailable, setUnavailable] = useState(false);
+  const [attempt, setAttempt] = useState(0);
+
+  useEffect(() => {
+    let cancelled = false;
+    let objectUrl: string | null = null;
+
+    void loadPersistentImage(cacheKey, sourceUrl)
+      .then((blob) => {
+        if (cancelled) return;
+        objectUrl = URL.createObjectURL(blob);
+        setResolvedUrl(objectUrl);
+      })
+      .catch(() => {
+        if (!cancelled) setUnavailable(true);
+      });
+
+    return () => {
+      cancelled = true;
+      if (objectUrl) URL.revokeObjectURL(objectUrl);
+    };
+  }, [attempt, cacheKey, sourceUrl]);
+
+  if (!resolvedUrl) {
+    if (unavailable) {
+      return (
+        <button
+          type="button"
+          className={placeholderClassName}
+          onClick={() => {
+            setUnavailable(false);
+            setAttempt((current) => current + 1);
+          }}
+          aria-label={`${alt}加载失败，点击重试`}
+          title="点击重试"
+        >
+          {compact ? <ImagePlus size={14} className="text-cream-dim" /> : (
+            <span className="px-3 text-center text-xs text-cream-dim">图片尚未缓存，点击重试</span>
+          )}
+        </button>
+      );
+    }
+    return (
+      <div className={placeholderClassName} role="img" aria-label={alt}>
+        <Loader2 size={18} className="animate-spin text-coral" />
+      </div>
+    );
+  }
+
+  return <img src={resolvedUrl} alt={alt} className={className} loading="lazy" />;
+}
+
+async function toPngBlob(blob: Blob): Promise<Blob> {
+  const bitmap = await createImageBitmap(blob);
+  const canvas = document.createElement('canvas');
+  canvas.width = bitmap.width;
+  canvas.height = bitmap.height;
+  const context = canvas.getContext('2d');
+  if (!context) {
+    bitmap.close();
+    throw new Error('No 2D context');
+  }
+  context.drawImage(bitmap, 0, 0);
+  bitmap.close();
+
+  return new Promise<Blob>((resolve, reject) => {
+    canvas.toBlob((pngBlob) => {
+      canvas.remove();
+      if (pngBlob) resolve(pngBlob);
+      else reject(new Error('Failed to convert image to PNG'));
+    }, 'image/png');
+  });
 }
 
 function AspectRatioLabel({ aspectRatio }: { aspectRatio: string }) {
@@ -618,31 +724,9 @@ export default function ImageGenPage() {
     return () => window.removeEventListener(API_KEY_CHANGE_EVENT, syncModels);
   }, []);
 
-  function copyImageToClipboard(imageUrl: string, recordId: number) {
-    const fullUrl = imageUrl.startsWith('http') ? imageUrl : window.location.origin + imageUrl;
-    fetch(fullUrl)
-      .then((r) => {
-        if (!r.ok) throw new Error('HTTP ' + r.status);
-        return r.blob();
-      })
-      .then((blob) => createImageBitmap(blob))
-      .then((bitmap) => {
-        // Render to canvas → PNG blob (universal clipboard format)
-        const canvas = document.createElement('canvas');
-        canvas.width = bitmap.width;
-        canvas.height = bitmap.height;
-        const ctx = canvas.getContext('2d');
-        if (!ctx) throw new Error('No 2D context');
-        ctx.drawImage(bitmap, 0, 0);
-        bitmap.close();
-        return new Promise<Blob>((resolve, reject) => {
-          canvas.toBlob((b) => {
-            canvas.remove();
-            if (b) resolve(b);
-            else reject(new Error('toBlob returned null'));
-          }, 'image/png');
-        });
-      })
+  function copyImageToClipboard(cacheKey: string, imageUrl: string, recordId: number) {
+    loadPersistentImage(cacheKey, imageUrl)
+      .then(toPngBlob)
       .then((pngBlob) => {
         if (!navigator.clipboard) throw new Error('navigator.clipboard unavailable');
         return navigator.clipboard.write([new ClipboardItem({ 'image/png': pngBlob })]).then(() => {
@@ -654,7 +738,7 @@ export default function ImageGenPage() {
         console.warn('copyImageToClipboard failed:', e);
         // Fallback: copy image URL text
         const ta = document.createElement('textarea');
-        ta.value = fullUrl;
+        ta.value = new URL(imageUrl, window.location.origin).href;
         ta.style.position = 'fixed';
         ta.style.left = '-9999px';
         document.body.appendChild(ta);
@@ -664,6 +748,23 @@ export default function ImageGenPage() {
         document.body.removeChild(ta);
         setCopiedId(String(recordId));
         setTimeout(() => setCopiedId(null), 1500);
+      });
+  }
+
+  function downloadImage(cacheKey: string, imageUrl: string, recordId: number) {
+    void loadPersistentImage(cacheKey, imageUrl)
+      .then((blob) => {
+        const objectUrl = URL.createObjectURL(blob);
+        const anchor = document.createElement('a');
+        anchor.href = objectUrl;
+        anchor.download = `artverse-${recordId}.png`;
+        document.body.appendChild(anchor);
+        anchor.click();
+        anchor.remove();
+        window.setTimeout(() => URL.revokeObjectURL(objectUrl), 0);
+      })
+      .catch((error) => {
+        console.warn('downloadImage failed:', error);
       });
   }
 
@@ -801,6 +902,10 @@ export default function ImageGenPage() {
   };
 
   const handleDeleteTheme = (id: string) => {
+    const deletedTheme = themes.find((theme) => theme.id === id);
+    deletedTheme?.messages.forEach((message) => {
+      message.refImageKeys?.forEach((key) => { void deleteCachedImage(key); });
+    });
     const isDeletingActive = id === activeThemeId;
     const remaining = themes.filter((t) => t.id !== id);
 
@@ -880,12 +985,19 @@ export default function ImageGenPage() {
     // Capture the target theme ID at the moment of sending,
     // so that switching themes mid-generation doesn't misroute the result.
     const targetThemeId = activeThemeId;
+    const filesToSend = refFiles;
+    const userMessageId = 'u-temp-' + generateId();
+    const refImageKeys = filesToSend.map((_, index) => referenceImageCacheKey(userMessageId, index));
+    const cacheResults = await Promise.all(
+      filesToSend.map((ref, index) => cacheImage(refImageKeys[index], ref.file)),
+    );
 
     const userMsg: Message = {
-      id: 'u-temp-' + Date.now(),
+      id: userMessageId,
       type: 'user',
       prompt: prompt.trim() || '仅使用参考图生成',
-      refThumbnails: refFiles.map((f) => f.preview),
+      refImageKeys,
+      refThumbnails: cacheResults.every(Boolean) ? undefined : filesToSend.map((ref) => ref.preview),
     };
     setThemes((prev) =>
       prev.map((t) =>
@@ -894,10 +1006,12 @@ export default function ImageGenPage() {
     );
 
     const promptText = prompt.trim() || '仅使用参考图生成';
-    const filesToSend = refFiles;
     const currentConfig = config;
     setPrompt('');
     setRefFiles([]);
+    if (cacheResults.every(Boolean)) {
+      filesToSend.forEach((ref) => URL.revokeObjectURL(ref.preview));
+    }
     // Mark only this theme as generating
     setGeneratingThemes((prev) => ({ ...prev, [targetThemeId]: true }));
 
@@ -959,11 +1073,19 @@ export default function ImageGenPage() {
     }
   };
 
-  const handleDelete = async (id: number, msgId: string) => {
+  const handleDelete = async (id: number, msgId: string, imagePath: string | null) => {
     if (!activeThemeId) return;
     const targetThemeId = activeThemeId;
+    const targetTheme = themes.find((theme) => theme.id === targetThemeId);
+    const removedMessages = targetTheme?.messages.filter(
+      (message) => message.id === 'u-' + id || message.id === 'a-' + id || message.id === msgId,
+    ) ?? [];
     try {
       await deleteImageGenRecord(id);
+      if (imagePath) await deleteCachedImage(generatedImageCacheKey(imagePath));
+      removedMessages.forEach((message) => {
+        message.refImageKeys?.forEach((key) => { void deleteCachedImage(key); });
+      });
       setThemes((prev) =>
         prev.map((t) =>
           t.id === targetThemeId
@@ -978,6 +1100,10 @@ export default function ImageGenPage() {
 
   const handleDeleteUserMessage = (msgId: string) => {
     if (!activeThemeId) return;
+    const targetMessage = themes
+      .find((theme) => theme.id === activeThemeId)
+      ?.messages.find((message) => message.id === msgId);
+    targetMessage?.refImageKeys?.forEach((key) => { void deleteCachedImage(key); });
     setThemes((prev) =>
       prev.map((t) =>
         t.id === activeThemeId
@@ -1003,18 +1129,22 @@ export default function ImageGenPage() {
     // Fill the prompt text into the composer
     setPrompt(msg.prompt || '');
 
-    // Restore reference images from stored blob URLs
-    if (msg.refThumbnails && msg.refThumbnails.length > 0) {
+    // Restore references from IndexedDB, with legacy blob URLs as a best-effort fallback.
+    if ((msg.refImageKeys && msg.refImageKeys.length > 0) || (msg.refThumbnails && msg.refThumbnails.length > 0)) {
+      const referenceCount = Math.max(msg.refImageKeys?.length ?? 0, msg.refThumbnails?.length ?? 0);
       Promise.all(
-        msg.refThumbnails.map(async (url) => {
-          const resp = await fetch(url);
-          const blob = await resp.blob();
+        Array.from({ length: referenceCount }, async (_, index) => {
+          const cacheKey = msg.refImageKeys?.[index];
+          const legacyUrl = msg.refThumbnails?.[index];
+          const blob = cacheKey
+            ? await loadPersistentImage(cacheKey, legacyUrl)
+            : await fetch(legacyUrl as string).then((response) => response.blob());
           const file = new File([blob], `ref-${Date.now()}.png`, { type: blob.type });
           return { file, preview: URL.createObjectURL(file) } as RefFile;
         }),
       ).then((refs) => {
         setRefFiles(refs.slice(0, 3));
-      });
+      }).catch(() => {});
     }
 
     // Remove the message and restore generation config from the AI response that follows this user message
@@ -1041,7 +1171,7 @@ export default function ImageGenPage() {
     }
   };
 
-  const handleOpenInCanvas = (imageUrl: string) => {
+  const handleOpenInCanvas = (cacheKey: string, imageUrl: string) => {
     // Reset Excalidraw to blank state
     setExcalidrawKey((k) => k + 1);
     setCanvasOpen(true);
@@ -1051,33 +1181,12 @@ export default function ImageGenPage() {
     setPrompt('按照画布标注修改图片');
     // Copy image to clipboard so user can paste it into Excalidraw
     // Also add the original image as a reference in the chat composer
-    const fullUrl = imageUrl.startsWith('http') ? imageUrl : window.location.origin + imageUrl;
-    fetch(fullUrl)
-      .then((r) => {
-        if (!r.ok) throw new Error('HTTP ' + r.status);
-        return r.blob();
-      })
+    loadPersistentImage(cacheKey, imageUrl)
       .then((blob) => {
         // Add original image as reference in the chat
         const file = new File([blob], `canvas-original-${Date.now()}.png`, { type: 'image/png' });
         addRefFiles([file]);
-        return createImageBitmap(blob);
-      })
-      .then((bitmap) => {
-        const canvas = document.createElement('canvas');
-        canvas.width = bitmap.width;
-        canvas.height = bitmap.height;
-        const ctx = canvas.getContext('2d');
-        if (!ctx) throw new Error('No 2D context');
-        ctx.drawImage(bitmap, 0, 0);
-        bitmap.close();
-        return new Promise<Blob>((resolve, reject) => {
-          canvas.toBlob((b) => {
-            canvas.remove();
-            if (b) resolve(b);
-            else reject(new Error('toBlob returned null'));
-          }, 'image/png');
-        });
+        return toPngBlob(blob);
       })
       .then((pngBlob) => {
         if (!navigator.clipboard) return;
@@ -1253,14 +1362,23 @@ export default function ImageGenPage() {
               <div className="mx-auto w-full max-w-6xl space-y-8">
                 {messages.map((msg) => {
                   if (msg.type === 'user') {
+                    const referenceCount = Math.max(msg.refImageKeys?.length ?? 0, msg.refThumbnails?.length ?? 0);
                     return (
                       <div key={msg.id} className="group flex justify-end">
                         <div className="max-w-[78%]">
                           <div className="inline-flex items-center gap-2 rounded-2xl border border-ink-border bg-ink-lighter px-4 py-3 text-sm text-cream shadow-sm">
-                            {msg.refThumbnails && msg.refThumbnails.length > 0 && (
+                            {referenceCount > 0 && (
                               <div className="flex gap-1">
-                                {msg.refThumbnails.map((src, i) => (
-                                  <img key={i} src={src} alt={`参考图 ${i + 1}`} className="h-10 w-10 rounded-lg object-cover" />
+                                {Array.from({ length: referenceCount }, (_, index) => (
+                                  <PersistentImage
+                                    key={msg.refImageKeys?.[index] ?? index}
+                                    cacheKey={msg.refImageKeys?.[index] ?? `legacy-reference:${msg.id}:${index}`}
+                                    sourceUrl={msg.refThumbnails?.[index]}
+                                    alt={`参考图 ${index + 1}`}
+                                    className="h-10 w-10 rounded-lg object-cover"
+                                    placeholderClassName="flex h-10 w-10 items-center justify-center rounded-lg bg-ink-light"
+                                    compact
+                                  />
                                 ))}
                               </div>
                             )}
@@ -1297,6 +1415,7 @@ export default function ImageGenPage() {
                   const record = msg.record;
                   if (record) {
                     const imageUrl = record.image_url ? imageGenUrl(record.image_url) : '';
+                    const imageCacheKey = record.image_url ? generatedImageCacheKey(record.image_url) : '';
                     return (
                       <div key={msg.id} className="space-y-3">
                         <div className="flex items-center justify-between text-xs text-cream-dim">
@@ -1321,11 +1440,12 @@ export default function ImageGenPage() {
                         ) : (
                         <div className="flex justify-start">
                           <div className="inline-flex max-w-full items-center justify-center overflow-hidden rounded-2xl border border-ink-border bg-ink-light shadow-sm">
-                            <img
-                              src={imageUrl}
+                            <PersistentImage
+                              cacheKey={imageCacheKey}
+                              sourceUrl={imageUrl}
                               alt={record.prompt}
                               className="block h-auto max-h-[75vh] max-w-full object-contain"
-                              loading="lazy"
+                              placeholderClassName="flex min-h-64 w-80 max-w-full items-center justify-center bg-ink-light"
                             />
                           </div>
                         </div>
@@ -1335,7 +1455,7 @@ export default function ImageGenPage() {
                           <button
                             className="rounded-lg p-2 hover:bg-ink-lighter transition-colors"
                             title="复制图片到剪贴板"
-                            onClick={() => copyImageToClipboard(imageUrl, record.id)}
+                            onClick={() => copyImageToClipboard(imageCacheKey, imageUrl, record.id)}
                           >
                             {copiedId === String(record.id) ? (
                               <Check size={14} className="text-coral" />
@@ -1343,17 +1463,22 @@ export default function ImageGenPage() {
                               <Copy size={14} />
                             )}
                           </button>
-                          <a href={imageUrl} download className="rounded-lg p-2 hover:bg-ink-lighter" title="下载图片">
-                            <Download size={14} />
-                          </a>
                           <button
-                            onClick={() => handleOpenInCanvas(imageUrl)}
+                            type="button"
+                            onClick={() => downloadImage(imageCacheKey, imageUrl, record.id)}
+                            className="rounded-lg p-2 hover:bg-ink-lighter"
+                            title="下载图片"
+                          >
+                            <Download size={14} />
+                          </button>
+                          <button
+                            onClick={() => handleOpenInCanvas(imageCacheKey, imageUrl)}
                             className="rounded-lg p-2 hover:bg-ink-lighter transition-colors"
                             title="在画布中标注"
                           >
                             <Edit3 size={14} />
                           </button>
-                          <button onClick={() => handleDelete(record.id, msg.id)} className="rounded-lg p-2 hover:bg-ink-lighter" title="删除记录">
+                          <button onClick={() => handleDelete(record.id, msg.id, record.image_url)} className="rounded-lg p-2 hover:bg-ink-lighter" title="删除记录">
                             <Trash2 size={14} />
                           </button>
                         </div>}

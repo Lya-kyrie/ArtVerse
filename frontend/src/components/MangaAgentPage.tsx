@@ -903,38 +903,65 @@ export default function MangaAgentPage({ onCreateStory }: { onCreateStory?: () =
 
   if (showWelcome) {
     return (
-      <div className="flex min-h-0 flex-1 flex-col items-center justify-center bg-paper-base px-6 py-16 text-center">
-        <div className="animate-stamp mb-8 inline-flex h-20 w-20 items-center justify-center rounded-2xl border-2 border-vermilion/20 bg-vermilion-light/20">
-          <Sparkles size={36} className="text-vermilion" />
-        </div>
-        <h1 className="font-display text-4xl font-bold tracking-tight text-sumi">
-          ArtVerse
-        </h1>
-        <p className="mt-2 text-lg text-sumi-dim">AI 漫画创作工坊</p>
-        <div className="brush-divider my-6 w-48" />
-        <p className="max-w-md text-sm leading-relaxed text-sumi-dim">
-          将你的故事，变成漫画分镜。从创建故事开始，AI 将协助你完成角色设定、对话创作、分镜生成和漫画渲染。
-        </p>
-        <div className="mt-10 grid w-full max-w-xl grid-cols-3 gap-4">
-          {[
-            { icon: <BookOpenText size={22} />, label: '创建故事', desc: '设定世界观与角色' },
-            { icon: <MessageSquareText size={22} />, label: 'AI 创作', desc: '对话式推进剧情' },
-            { icon: <Sparkles size={22} />, label: '生成漫画', desc: '分镜转漫画图片' },
-          ].map((step, i) => (
-            <button
-              key={i}
-              type="button"
-              onClick={onCreateStory}
-              className={
-                'panel-frame flex flex-col items-center gap-2 p-5 text-center transition-all ' +
-                'cursor-pointer hover:-translate-y-0.5 hover:border-vermilion/40 hover:bg-vermilion-light/10'
-              }
-            >
-              <div className="text-vermilion">{step.icon}</div>
-              <div className="text-sm font-semibold text-sumi">{step.label}</div>
-              <div className="text-xs text-sumi-dim">{step.desc}</div>
-            </button>
-          ))}
+      <div className="flex min-h-0 flex-1 overflow-y-auto bg-paper-base px-5 py-10 sm:px-8 sm:py-14">
+        <div className="mx-auto flex w-full max-w-4xl flex-col items-center justify-center text-center">
+          <div className="mb-7 flex h-12 w-12 items-center justify-center rounded-md bg-vermilion text-white shadow-sm">
+            <Sparkles size={24} />
+          </div>
+          <p className="mb-3 text-xs font-semibold text-vermilion">AI 漫画创作工作台</p>
+          <h1 className="font-display text-4xl font-semibold text-sumi sm:text-5xl">
+            把故事写成画面
+          </h1>
+          <p className="mt-4 max-w-xl text-sm leading-7 text-sumi-dim sm:text-base">
+            从一个人物、一段情节或一句灵感开始，建立你的第一部漫画故事。
+          </p>
+
+          <button
+            type="button"
+            onClick={onCreateStory}
+            className="command-surface mt-9 w-full max-w-3xl p-3 text-left transition-transform duration-200 hover:-translate-y-0.5 hover:border-vermilion/30 sm:p-4"
+          >
+            <div className="flex items-center justify-between border-b border-paper-border px-1 pb-3 text-xs text-sumi-faint">
+              <span className="flex items-center gap-2 font-medium text-sumi-dim"><BookOpenText size={14} /> 新故事</span>
+              <span>创建后即可与 AI 对话</span>
+            </div>
+            <div className="flex min-h-20 items-center gap-3 px-1 pt-3 sm:min-h-24">
+              <span className="min-w-0 flex-1 text-sm text-sumi-faint sm:text-base">写下故事名称，开始构建角色与世界...</span>
+              <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-md bg-vermilion text-white">
+                <Send size={17} />
+              </span>
+            </div>
+          </button>
+
+          <div className="mt-5 grid w-full max-w-3xl grid-cols-1 gap-2 sm:grid-cols-3">
+            {[
+              { icon: <BookOpenText size={16} />, label: '建立故事与角色' },
+              { icon: <MessageSquareText size={16} />, label: '对话推进剧情' },
+              { icon: <Sparkles size={16} />, label: '生成分镜漫画' },
+            ].map((item) => (
+              <button
+                key={item.label}
+                type="button"
+                onClick={onCreateStory}
+                className="flex min-h-11 items-center justify-center gap-2 rounded-md border border-paper-border bg-paper-raised px-4 text-xs font-medium text-sumi-dim transition-colors hover:border-vermilion/30 hover:text-vermilion"
+              >
+                <span className="text-vermilion">{item.icon}</span>
+                {item.label}
+              </button>
+            ))}
+          </div>
+
+          <div className="mt-12 flex w-full max-w-3xl items-center text-left">
+            {['故事设定', '章节创作', '漫画生成'].map((label, index) => (
+              <div key={label} className="flex min-w-0 flex-1 items-center last:flex-none">
+                <div className="flex items-center gap-2">
+                  <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full border border-paper-border bg-paper-raised text-[10px] font-semibold text-sumi-dim">{index + 1}</span>
+                  <span className="hidden text-xs text-sumi-faint sm:inline">{label}</span>
+                </div>
+                {index < 2 && <span className="mx-3 h-px min-w-4 flex-1 bg-paper-border sm:mx-5" />}
+              </div>
+            ))}
+          </div>
         </div>
       </div>
     );
@@ -943,10 +970,10 @@ export default function MangaAgentPage({ onCreateStory }: { onCreateStory?: () =
   return (
     <div className="flex min-h-0 flex-1 flex-col bg-paper-base">
       {/* Header */}
-      <header className="border-b border-paper-border bg-paper-surface/80 px-5 py-3 backdrop-blur-sm">
+      <header className="border-b border-paper-border bg-paper-raised px-4 py-3 sm:px-5">
         <div className="flex flex-wrap items-center gap-3">
-          <div className="flex h-9 w-9 items-center justify-center rounded-lg border border-vermilion/20 bg-vermilion-light/30">
-            <Sparkles size={16} className="text-vermilion" />
+          <div className="flex h-9 w-9 items-center justify-center rounded-md bg-vermilion text-white">
+            <Sparkles size={16} />
           </div>
           <div className="min-w-0">
             <h1 className="font-display text-base font-semibold text-sumi">创作工坊</h1>
@@ -955,9 +982,9 @@ export default function MangaAgentPage({ onCreateStory }: { onCreateStory?: () =
         </div>
       </header>
 
-      <div className="flex min-h-0 flex-1 gap-4 p-4">
+      <div className="flex min-h-0 flex-1 flex-col md:flex-row">
         {/* Left sidebar — conversation list only */}
-        <aside className="flex w-[240px] min-w-0 shrink-0 flex-col rounded-xl border border-paper-border bg-paper-surface/70 p-4">
+        <aside className="flex h-[132px] w-full min-w-0 shrink-0 flex-col border-b border-paper-border bg-paper-surface/70 p-3 md:h-auto md:w-[250px] md:border-b-0 md:border-r md:p-4">
           <div className="mb-3 flex items-center justify-between">
             <p className="text-[11px] font-semibold uppercase tracking-wider text-sumi-faint">会话列表</p>
             <button
@@ -970,9 +997,9 @@ export default function MangaAgentPage({ onCreateStory }: { onCreateStory?: () =
             </button>
           </div>
 
-          <div className="flex-1 min-h-0 space-y-1.5 overflow-y-auto pr-1">
+          <div className="flex min-h-0 flex-1 gap-2 overflow-x-auto pb-1 md:block md:space-y-1.5 md:overflow-x-hidden md:overflow-y-auto md:pb-0 md:pr-1">
             {conversations.length === 0 ? (
-              <div className="rounded-md border border-paper-border bg-paper-base/50 px-3 py-4 text-center text-xs text-sumi-faint">
+              <div className="w-full rounded-md border border-paper-border bg-paper-raised/70 px-3 py-4 text-center text-xs text-sumi-faint">
                 暂无会话
               </div>
             ) : conversations.map((conversation) => {
@@ -981,7 +1008,7 @@ export default function MangaAgentPage({ onCreateStory }: { onCreateStory?: () =
               return (
                 <div
                   key={conversation.conversationId}
-                  className={`flex items-start gap-2 rounded-md border px-3 py-2.5 transition ${selected ? 'border-vermilion/40 bg-vermilion-light/20' : 'border-paper-border bg-paper-base hover:border-sumi-faint/40'} ${pending ? 'ring-1 ring-vermilion/30' : ''}`}
+                  className={`flex min-w-[220px] items-start gap-2 rounded-md border px-3 py-2.5 transition md:min-w-0 ${selected ? 'border-vermilion/40 bg-vermilion-light/30' : 'border-paper-border bg-paper-raised hover:border-sumi-faint/40'} ${pending ? 'ring-1 ring-vermilion/30' : ''}`}
                 >
                   <button
                     type="button"
@@ -1019,7 +1046,7 @@ export default function MangaAgentPage({ onCreateStory }: { onCreateStory?: () =
         </aside>
 
         {/* Main chat area */}
-        <main className="flex min-h-0 min-w-0 flex-1 flex-col rounded-xl border border-paper-border bg-paper-raised shadow-sm">
+        <main className="flex min-h-0 min-w-0 flex-1 flex-col bg-paper-raised">
           <div className="flex items-center gap-2.5 border-b border-paper-border px-4 py-3">
             <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-paper-surface">
               <Bot size={16} className="text-sumi-dim" />
@@ -1039,7 +1066,7 @@ export default function MangaAgentPage({ onCreateStory }: { onCreateStory?: () =
               </div>
             ) : messages.length === 0 && !showExecutionPanel ? (
               <div className="flex h-full flex-col items-center justify-center px-6 text-center">
-                <div className="mb-5 flex h-20 w-20 items-center justify-center rounded-full border border-paper-border bg-paper-surface">
+                <div className="mb-5 flex h-16 w-16 items-center justify-center rounded-md border border-paper-border bg-paper-surface">
                   <BookOpenText size={30} className="text-vermilion/60" />
                 </div>
                 <h2 className="font-display text-2xl font-semibold text-sumi">开始创作</h2>
@@ -1150,7 +1177,7 @@ export default function MangaAgentPage({ onCreateStory }: { onCreateStory?: () =
 
           <div className="border-t border-paper-border px-4 py-3">
             {/* Story / Chapter / Model row */}
-            <div className="mb-3 flex items-center gap-2">
+            <div className="mb-3 flex flex-wrap items-center gap-2">
               {/* Story selector — opens upward */}
               <SelectUpward
                 value={storyId}
@@ -1200,10 +1227,10 @@ export default function MangaAgentPage({ onCreateStory }: { onCreateStory?: () =
               <button
                 onClick={() => void startRun()}
                 disabled={sending || conversationLoading || !chapterId || !input.trim()}
-                className="inline-flex h-auto min-w-[100px] items-center justify-center gap-1.5 rounded-lg bg-vermilion px-4 py-2.5 text-sm font-medium text-white transition hover:bg-vermilion-hover disabled:cursor-not-allowed disabled:opacity-40"
+                className="inline-flex h-auto min-w-12 items-center justify-center gap-1.5 rounded-md bg-vermilion px-3 py-2.5 text-sm font-medium text-white transition hover:bg-vermilion-hover disabled:cursor-not-allowed disabled:opacity-40 sm:min-w-[100px] sm:px-4"
               >
                 {sending ? <Loader2 size={15} className="animate-spin" /> : <Send size={15} />}
-                发送
+                <span className="hidden sm:inline">发送</span>
               </button>
             </div>
           </div>

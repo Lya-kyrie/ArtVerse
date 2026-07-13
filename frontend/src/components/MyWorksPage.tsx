@@ -1,5 +1,8 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
+  ArrowDown,
+  ArrowRight,
+  ArrowUp,
   ArrowUpDown,
   BookOpenText,
   CalendarDays,
@@ -13,6 +16,7 @@ import {
   Image as ImageIcon,
   Layers,
   Loader2,
+  RefreshCw,
   Search,
   Send,
   SquarePen,
@@ -80,6 +84,10 @@ const text = {
   pageUnit: '\u9875',
   prevChapter: '\u4e0a\u4e00\u8bdd',
   nextChapter: '\u4e0b\u4e00\u8bdd',
+  retry: '\u91cd\u65b0\u52a0\u8f7d',
+  loadFailed: '\u4f5c\u54c1\u52a0\u8f7d\u5931\u8d25\uff0c\u8bf7\u68c0\u67e5\u7f51\u7edc\u540e\u91cd\u8bd5',
+  manage: '\u7ba1\u7406',
+  onlineRate: '\u7ae0\u8282\u4e0a\u7ebf\u7387',
 };
 
 const statusFilters: { key: StatusFilter; label: string }[] = [
@@ -114,13 +122,17 @@ export default function MyWorksPage() {
   const [searchQuery, setSearchQuery] = useState('');
   const [sortOrder, setSortOrder] = useState<SortOrder>('newest');
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('all');
+  const [loadError, setLoadError] = useState('');
+  const pageScrollRef = useRef<HTMLDivElement>(null);
 
   const loadWorks = useCallback(async () => {
+    setLoadError('');
     try {
       const data = await listMyWorks();
       setWorks(data);
     } catch (error) {
       console.error(error);
+      setLoadError(text.loadFailed);
     } finally {
       setLoading(false);
     }
@@ -132,7 +144,10 @@ export default function MyWorksPage() {
       .then((data) => {
         if (!cancelled) setWorks(data);
       })
-      .catch((error) => console.error(error))
+      .catch((error) => {
+        console.error(error);
+        if (!cancelled) setLoadError(text.loadFailed);
+      })
       .finally(() => {
         if (!cancelled) setLoading(false);
       });
@@ -167,11 +182,13 @@ export default function MyWorksPage() {
     setSelectedWork(work);
     setEditChapters(work.chapters.map((chapter) => ({ ...chapter })));
     setView('detail');
+    requestAnimationFrame(() => pageScrollRef.current?.scrollTo({ top: 0 }));
   };
 
   const backToList = async () => {
     setView('list');
     setSelectedWork(null);
+    requestAnimationFrame(() => pageScrollRef.current?.scrollTo({ top: 0 }));
     await loadWorks();
   };
 
@@ -261,103 +278,123 @@ export default function MyWorksPage() {
     return <div className="flex-1 flex items-center justify-center"><Loader2 size={28} className="animate-spin text-coral" /></div>;
   }
 
+  if (loadError) {
+    return (
+      <div className="flex flex-1 items-center justify-center bg-paper-base px-4">
+        <div className="text-center">
+          <RefreshCw size={38} className="mx-auto text-sumi-faint" strokeWidth={1.35} />
+          <p className="mt-3 text-sm font-medium text-sumi">{loadError}</p>
+          <button type="button" onClick={() => void loadWorks()} className="mt-4 inline-flex items-center gap-1.5 rounded-md border border-paper-border bg-paper-raised px-3 py-2 text-sm text-sumi-dim transition-colors hover:border-vermilion/40 hover:text-vermilion">
+            <RefreshCw size={14} />{text.retry}
+          </button>
+        </div>
+      </div>
+    );
+  }
+
   if (view === 'list') {
     return (
-      <div className="flex-1 flex flex-col min-h-0 bg-ink">
-        <div className="border-b border-ink-border px-4 py-4 md:px-6 shrink-0">
-          <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
-            <div>
-              <h2 className="flex items-center gap-2 text-xl font-semibold text-cream"><BookOpenText size={22} className="text-coral" />{text.title}</h2>
-              <p className="mt-1 text-sm text-cream-dim">{text.subtitle}</p>
-            </div>
-            <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
-              <div className="relative">
-                <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-cream-dim" />
-                <input value={searchQuery} onChange={(event) => setSearchQuery(event.target.value)} placeholder={text.search} className="w-full rounded-lg border border-ink-border bg-ink-lighter py-2 pl-9 pr-3 text-sm text-cream placeholder-ink-muted focus:border-coral focus:outline-none sm:w-64" />
+      <div className="flex min-h-0 flex-1 flex-col bg-paper-base">
+        <div className="shrink-0 border-b border-paper-border bg-paper-raised">
+          <div className="mx-auto w-full max-w-7xl px-4 py-5 md:px-8 md:py-7">
+            <div className="flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between">
+              <div>
+                <div className="flex items-center gap-2 text-xs font-semibold text-vermilion"><BookOpenText size={15} />创作中心</div>
+                <h1 className="font-display mt-1.5 text-2xl font-bold text-sumi md:text-3xl">{text.title}</h1>
+                <p className="mt-1.5 text-sm text-sumi-dim">{text.subtitle}</p>
               </div>
-              <div className="relative">
-                <select value={sortOrder} onChange={(event) => setSortOrder(event.target.value as SortOrder)} className="w-full appearance-none rounded-lg border border-ink-border bg-ink-lighter py-2 pl-3 pr-9 text-sm text-cream-dim focus:border-coral focus:outline-none sm:w-32">
-                  <option value="newest">{text.newest}</option>
-                  <option value="oldest">{text.oldest}</option>
-                </select>
-                <ArrowUpDown size={13} className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-cream-dim" />
+              <div className="grid w-full grid-cols-[minmax(0,1fr)_128px] gap-2 lg:w-auto lg:grid-cols-[256px_144px]">
+                <div className="relative min-w-0">
+                  <Search size={15} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-sumi-faint" />
+                  <input value={searchQuery} onChange={(event) => setSearchQuery(event.target.value)} placeholder={text.search} className="h-10 w-full rounded-md border border-paper-border bg-paper-base pl-9 pr-3 text-sm text-sumi placeholder-sumi-faint focus:border-vermilion focus:outline-none" />
+                </div>
+                <div className="relative min-w-0">
+                  <select value={sortOrder} onChange={(event) => setSortOrder(event.target.value as SortOrder)} className="h-10 w-full appearance-none rounded-md border border-paper-border bg-paper-base py-2 pl-3 pr-9 text-sm text-sumi-dim focus:border-vermilion focus:outline-none">
+                    <option value="newest">{text.newest}</option>
+                    <option value="oldest">{text.oldest}</option>
+                  </select>
+                  <ArrowUpDown size={13} className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-sumi-faint" />
+                </div>
               </div>
             </div>
-          </div>
 
-          <div className="mt-4 grid grid-cols-2 gap-3 lg:grid-cols-4">
-            <div className="rounded-lg border border-ink-border bg-ink-light p-3">
-              <div className="flex items-center gap-2 text-xs text-cream-dim"><Layers size={14} className="text-coral" />{text.allWorks}</div>
-              <div className="mt-2 text-2xl font-semibold text-cream">{works.length}</div>
-            </div>
-            <div className="rounded-lg border border-ink-border bg-ink-light p-3">
-              <div className="flex items-center gap-2 text-xs text-cream-dim"><Globe size={14} className="text-success" />{text.publishedWorks}</div>
-              <div className="mt-2 text-2xl font-semibold text-cream">{dashboardStats.publishedWorks}</div>
-            </div>
-            <div className="rounded-lg border border-ink-border bg-ink-light p-3">
-              <div className="flex items-center gap-2 text-xs text-cream-dim"><FileText size={14} className="text-amber-accent" />{text.totalChapters}</div>
-              <div className="mt-2 text-2xl font-semibold text-cream">{dashboardStats.totalChapters}</div>
-            </div>
-            <div className="rounded-lg border border-ink-border bg-ink-light p-3">
-              <div className="flex items-center gap-2 text-xs text-cream-dim"><CheckCircle2 size={14} className="text-coral-light" />{text.onlineChapters}</div>
-              <div className="mt-2 text-2xl font-semibold text-cream">{dashboardStats.publishedChapters}</div>
+            <div className="mt-6 grid grid-cols-2 border-y border-paper-border sm:grid-cols-4">
+              {[
+                { label: text.allWorks, value: works.length, icon: <Layers size={15} className="text-vermilion" /> },
+                { label: text.publishedWorks, value: dashboardStats.publishedWorks, icon: <Globe size={15} className="text-success" /> },
+                { label: text.totalChapters, value: dashboardStats.totalChapters, icon: <FileText size={15} className="text-kinpaku" /> },
+                { label: text.onlineChapters, value: dashboardStats.publishedChapters, icon: <CheckCircle2 size={15} className="text-aizuri" /> },
+              ].map((stat, index) => (
+                <div key={stat.label} className={`flex items-center gap-3 py-3 ${index % 2 === 1 ? 'border-l border-paper-border' : ''} ${index > 1 ? 'border-t border-paper-border sm:border-t-0' : ''} sm:border-l sm:first:border-l-0 sm:px-5 sm:first:pl-0`}>
+                  <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-paper-surface">{stat.icon}</span>
+                  <div className="min-w-0"><div className="text-xl font-semibold text-sumi">{stat.value}</div><div className="truncate text-[11px] text-sumi-faint">{stat.label}</div></div>
+                </div>
+              ))}
             </div>
           </div>
         </div>
 
-        <div className="flex items-center gap-2 border-b border-ink-border px-4 py-3 md:px-6 shrink-0 overflow-x-auto">
-          {statusFilters.map((filter) => (
-            <button key={filter.key} onClick={() => setStatusFilter(filter.key)} className={`shrink-0 rounded-lg px-3 py-1.5 text-sm font-medium transition-colors ${statusFilter === filter.key ? 'bg-coral text-cream' : 'bg-ink-lighter text-cream-dim hover:bg-ink-surface hover:text-cream'}`}>
-              {filter.label}
-            </button>
-          ))}
-          <span className="ml-auto shrink-0 text-xs text-warm-gray">{text.pendingWorks} {dashboardStats.pendingWorks} {text.worksUnit}</span>
-        </div>
+        <div ref={pageScrollRef} className="flex-1 overflow-y-auto">
+          <main className="mx-auto w-full max-w-7xl px-4 py-5 md:px-8 md:py-7">
+            <div className="mb-5 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+              <div className="flex w-fit max-w-full gap-1 overflow-x-auto rounded-md bg-paper-surface p-1">
+                {statusFilters.map((filter) => {
+                  const count = filter.key === 'all' ? works.length : filter.key === 'published' ? dashboardStats.publishedWorks : dashboardStats.pendingWorks;
+                  return (
+                    <button key={filter.key} type="button" onClick={() => setStatusFilter(filter.key)} className={`flex h-8 shrink-0 items-center gap-1.5 rounded px-3 text-sm font-medium transition-colors ${statusFilter === filter.key ? 'bg-paper-raised text-sumi shadow-sm' : 'text-sumi-dim hover:text-sumi'}`}>
+                      {filter.label}<span className="text-[11px] text-sumi-faint">{count}</span>
+                    </button>
+                  );
+                })}
+              </div>
+              <span className="text-xs text-sumi-faint">{text.pendingWorks} {dashboardStats.pendingWorks} {text.worksUnit}</span>
+            </div>
 
-        <div className="flex-1 overflow-y-auto p-4 md:p-6">
           {filteredWorks.length === 0 ? (
-            <div className="flex h-full items-center justify-center">
-              <div className="text-center text-warm-gray">
-                <ImageIcon size={48} className="mx-auto mb-3 opacity-30" />
-                <p className="text-sm">{searchQuery ? text.noMatch : text.noWorks}</p>
+              <div className="flex min-h-64 items-center justify-center border-y border-paper-border">
+                <div className="text-center text-sumi-faint">
+                  <ImageIcon size={42} className="mx-auto" strokeWidth={1.25} />
+                  <p className="mt-3 text-sm">{searchQuery ? text.noMatch : text.noWorks}</p>
+                  {(searchQuery || statusFilter !== 'all') && <button type="button" onClick={() => { setSearchQuery(''); setStatusFilter('all'); }} className="mt-3 text-xs font-medium text-vermilion hover:text-vermilion-hover">清除筛选</button>}
+                </div>
               </div>
-            </div>
           ) : (
-            <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
+              <div className="grid grid-cols-1 gap-3 xl:grid-cols-2">
               {filteredWorks.map((work) => {
                 const cover = coverUrl(work);
                 const stats = getWorkStats(work);
                 return (
-                  <button key={work.id} onClick={() => openDetail(work)} className="group grid grid-cols-[88px_1fr] gap-4 rounded-lg border border-ink-border bg-ink-light p-3 text-left transition-colors hover:border-coral/40 hover:bg-ink-lighter sm:grid-cols-[112px_1fr]">
-                    <div className="aspect-[3/4] overflow-hidden rounded-md border border-ink-border bg-ink-lighter">
-                      {cover ? <img src={cover} alt={work.title} className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-105" loading="lazy" /> : <div className="flex h-full w-full items-center justify-center"><ImageIcon size={34} className="text-warm-gray" /></div>}
+                    <button key={work.id} type="button" onClick={() => openDetail(work)} className="group grid min-w-0 grid-cols-[82px_1fr] gap-3 rounded-md border border-paper-border bg-paper-raised p-3 text-left transition-all hover:border-vermilion/30 hover:shadow-[0_10px_26px_rgba(24,27,25,0.07)] sm:grid-cols-[96px_1fr] sm:gap-4">
+                    <div className="aspect-[3/4] overflow-hidden rounded-md border border-paper-border bg-paper-surface">
+                        {cover ? <img src={cover} alt={work.title} className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-[1.025]" loading="lazy" /> : <div className="flex h-full w-full items-center justify-center"><ImageIcon size={30} className="text-sumi-faint" strokeWidth={1.25} /></div>}
                     </div>
-                    <div className="min-w-0 py-1">
-                      <div className="flex items-start justify-between gap-3">
+                      <div className="flex min-w-0 flex-col py-0.5">
+                        <div className="flex items-start justify-between gap-2">
                         <div className="min-w-0">
-                          <h3 className="truncate text-base font-semibold text-cream">{work.title}</h3>
-                          <p className="mt-1 line-clamp-2 text-sm leading-relaxed text-cream-dim">{work.description || text.noDescription}</p>
+                            <h3 className="truncate text-base font-semibold text-sumi transition-colors group-hover:text-vermilion">{work.title}</h3>
+                            <p className="mt-1 line-clamp-2 text-xs leading-[18px] text-sumi-dim sm:text-sm sm:leading-5">{work.description || text.noDescription}</p>
                         </div>
-                        <span className={`shrink-0 rounded-md border px-2 py-1 text-xs ${work.is_published ? 'border-success/30 bg-success/10 text-success' : 'border-ink-border bg-ink text-cream-dim'}`}>{work.is_published ? text.published : text.draft}</span>
+                          <span className={`shrink-0 rounded-sm px-2 py-1 text-[11px] font-medium ${work.is_published ? 'bg-success/10 text-success' : 'bg-paper-surface text-sumi-dim'}`}>{work.is_published ? text.published : text.draft}</span>
                       </div>
-                      <div className="mt-4 grid grid-cols-3 gap-2 text-xs text-cream-dim">
-                        <span className="rounded-md bg-ink px-2 py-1.5">{text.totalPrefix} {stats.totalChapters} {text.chapterUnit}</span>
-                        <span className="rounded-md bg-ink px-2 py-1.5">{text.online} {stats.publishedChapters} {text.chapterUnit}</span>
-                        <span className="rounded-md bg-ink px-2 py-1.5">{text.draft} {stats.draftChapters} {text.chapterUnit}</span>
-                      </div>
-                      <div className="mt-4 flex items-center gap-3">
-                        <div className="h-2 flex-1 overflow-hidden rounded-full bg-ink">
-                          <div className="h-full rounded-full bg-coral" style={{ width: `${stats.progress}%` }} />
+                        <div className="mt-auto pt-3">
+                          <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-sumi-faint">
+                            <span className="flex items-center gap-1"><Layers size={12} />{stats.totalChapters} {text.chapterUnit}</span>
+                            <span className="flex items-center gap-1"><Globe size={12} />{stats.publishedChapters} {text.online}</span>
+                            <span className="hidden items-center gap-1 sm:flex"><CalendarDays size={12} />{formatDate(work.created_at)}</span>
                         </div>
-                        <span className="w-10 text-right text-xs text-cream-dim">{stats.progress}%</span>
-                      </div>
-                      <div className="mt-3 flex items-center gap-2 text-xs text-warm-gray"><CalendarDays size={13} />{text.createdAt} {formatDate(work.created_at)}</div>
+                          <div className="mt-2.5 flex items-center gap-2">
+                            <div className="h-1.5 min-w-0 flex-1 overflow-hidden rounded-full bg-paper-surface"><div className="h-full rounded-full bg-vermilion" style={{ width: `${stats.progress}%` }} /></div>
+                            <span className="w-8 text-right text-[11px] text-sumi-faint">{stats.progress}%</span>
+                          </div>
+                          <div className="mt-2 flex items-center justify-end gap-1 text-xs font-medium text-vermilion opacity-80 transition-opacity group-hover:opacity-100">{text.manage}<ArrowRight size={13} /></div>
+                        </div>
                     </div>
                   </button>
                 );
               })}
             </div>
           )}
+          </main>
         </div>
       </div>
     );
@@ -367,85 +404,135 @@ export default function MyWorksPage() {
     const cover = coverUrl(selectedWork);
     const publishedCount = editChapters.filter((chapter) => chapter.is_published).length;
     const progress = editChapters.length > 0 ? Math.round((publishedCount / editChapters.length) * 100) : 0;
+    const draftCount = editChapters.length - publishedCount;
 
     return (
-      <div className="flex-1 flex flex-col min-h-0 bg-ink">
-        <div className="flex items-center justify-between border-b border-ink-border px-4 py-3 md:px-6 shrink-0">
-          <button onClick={backToList} className="flex items-center gap-1.5 text-sm text-cream-dim transition-colors hover:text-cream">
-            <ChevronLeft size={18} />{text.backToList}
-          </button>
-          <button onClick={handleSave} disabled={saving} className="flex items-center gap-2 rounded-lg bg-coral px-4 py-2 text-sm font-medium text-cream transition-colors hover:bg-coral-light disabled:opacity-40">
-            {saving ? <Loader2 size={14} className="animate-spin" /> : <Send size={14} />}{text.savePublish}
-          </button>
-        </div>
-
-        <div className="flex-1 overflow-y-auto p-4 md:p-6">
-          <div className="grid gap-5 xl:grid-cols-[320px_1fr]">
-            <aside className="space-y-4">
-              <div className="rounded-lg border border-ink-border bg-ink-light p-4">
-                <div className="mx-auto aspect-[3/4] w-36 overflow-hidden rounded-md border border-ink-border bg-ink-lighter">
-                  {cover ? <img src={cover} alt={selectedWork.title} className="h-full w-full object-cover" /> : <div className="flex h-full w-full items-center justify-center"><ImageIcon size={34} className="text-warm-gray" /></div>}
-                </div>
-                <h1 className="mt-4 text-xl font-semibold text-cream">{selectedWork.title}</h1>
-                <p className="mt-2 text-sm leading-relaxed text-cream-dim">{selectedWork.description || text.noDescription}</p>
-                <div className="mt-4 flex flex-wrap gap-2 text-xs">
-                  <span className={`rounded-md border px-2 py-1 ${selectedWork.is_published ? 'border-success/30 bg-success/10 text-success' : 'border-ink-border bg-ink text-cream-dim'}`}>{selectedWork.is_published ? text.publicWork : text.privateWork}</span>
-                  <span className="rounded-md border border-ink-border bg-ink px-2 py-1 text-cream-dim">{text.createdAt} {formatDate(selectedWork.created_at)}</span>
-                </div>
-              </div>
-
-              <div className="rounded-lg border border-ink-border bg-ink-light p-4">
-                <h2 className="flex items-center gap-2 text-sm font-semibold text-cream"><Clock3 size={15} className="text-coral" />{text.publishProgress}</h2>
-                <div className="mt-4 text-3xl font-semibold text-cream">{progress}%</div>
-                <div className="mt-3 h-2 overflow-hidden rounded-full bg-ink">
-                  <div className="h-full rounded-full bg-coral" style={{ width: `${progress}%` }} />
-                </div>
-                <div className="mt-4 grid grid-cols-2 gap-2 text-xs text-cream-dim">
-                  <span className="rounded-md bg-ink px-2 py-2">{text.publishedChapterCount} {publishedCount} {text.chapterUnit}</span>
-                  <span className="rounded-md bg-ink px-2 py-2">{text.pendingChapterCount} {editChapters.length - publishedCount} {text.chapterUnit}</span>
-                </div>
-              </div>
-            </aside>
-
-            <section className="rounded-lg border border-ink-border bg-ink-light">
-              <div className="flex flex-col gap-3 border-b border-ink-border p-4 lg:flex-row lg:items-center lg:justify-between">
-                <div>
-                  <h2 className="flex items-center gap-2 text-base font-semibold text-cream"><SquarePen size={17} className="text-coral" />{text.chapterQueue}</h2>
-                  <p className="mt-1 text-sm text-cream-dim">{text.queueSubtitle}</p>
-                </div>
-                <div className="flex items-center gap-2">
-                  <button onClick={selectAll} className="rounded-lg border border-ink-border bg-ink px-3 py-2 text-xs text-cream-dim transition-colors hover:border-coral/40 hover:text-cream">{text.allOnline}</button>
-                  <button onClick={deselectAll} className="rounded-lg border border-ink-border bg-ink px-3 py-2 text-xs text-cream-dim transition-colors hover:border-coral/40 hover:text-cream">{text.allDraft}</button>
-                </div>
-              </div>
-
-              <div className="p-4">
-                {editChapters.length === 0 ? (
-                  <p className="py-12 text-center text-sm text-warm-gray">{text.noChapters}</p>
-                ) : (
-                  <div className="space-y-2">
-                    {editChapters.map((chapter, index) => (
-                      <div key={chapter.id} className={`grid gap-3 rounded-lg border p-3 transition-colors lg:grid-cols-[48px_96px_1fr_92px_48px_86px] lg:items-center ${chapter.is_published ? 'border-coral/30 bg-coral/5' : 'border-ink-border bg-ink'}`}>
-                        <div className="flex items-center gap-1 lg:flex-col">
-                          <button onClick={() => moveChapter(index, -1)} disabled={index === 0} className="text-warm-gray transition-colors hover:text-cream disabled:cursor-not-allowed disabled:opacity-20"><ChevronRight size={14} className="rotate-[-90deg]" /></button>
-                          <button onClick={() => moveChapter(index, 1)} disabled={index === editChapters.length - 1} className="text-warm-gray transition-colors hover:text-cream disabled:cursor-not-allowed disabled:opacity-20"><ChevronRight size={14} className="rotate-90" /></button>
-                        </div>
-                        <span className="text-sm font-medium text-cream-dim">{chapterTitle(chapter.chapter_number)}</span>
-                        <input value={chapter.display_title || ''} onChange={(event) => updateDisplayTitle(chapter.id, event.target.value)} placeholder={chapterTitle(chapter.chapter_number)} className="min-w-0 rounded-md border border-ink-border bg-ink-lighter px-3 py-2 text-sm text-cream placeholder-ink-muted focus:border-coral focus:outline-none" />
-                        <span className={`w-fit rounded-md border px-2 py-1 text-xs ${chapter.is_published ? 'border-success/30 bg-success/10 text-success' : 'border-ink-border bg-ink-lighter text-cream-dim'}`}>{chapter.is_published ? text.publishedChapterCount : text.draft}</span>
-                        <label className="flex items-center gap-2 text-xs text-cream-dim">
-                          <input type="checkbox" checked={chapter.is_published} onChange={() => toggleChapter(chapter.id)} className="h-4 w-4 rounded border-ink-muted bg-ink-lighter text-coral focus:border-coral" />{text.visible}
-                        </label>
-                        <button onClick={() => openReader(chapter.id)} className="flex items-center justify-center gap-1 rounded-md px-2 py-2 text-xs text-cream-dim transition-colors hover:bg-coral-light/10 hover:text-coral" title={text.preview}>
-                          <Eye size={14} />{text.preview}
-                        </button>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-            </section>
+      <div className="flex min-h-0 flex-1 flex-col bg-paper-base">
+        <header className="glass z-10 shrink-0 border-b border-paper-border">
+          <div className="mx-auto flex min-h-16 w-full max-w-7xl items-center justify-between gap-3 px-3 md:px-8">
+            <button type="button" onClick={backToList} className="flex h-9 min-w-0 items-center gap-1 rounded-md px-2 text-sm text-sumi-dim transition-colors hover:bg-paper-surface hover:text-sumi">
+              <ChevronLeft size={18} className="shrink-0" />
+              <span className="hidden sm:inline">{text.backToList}</span>
+              <span className="sm:hidden">{text.back}</span>
+            </button>
+            <div className="hidden min-w-0 items-center gap-2 text-xs text-sumi-faint md:flex">
+              <span className="max-w-48 truncate text-sumi-dim">{selectedWork.title}</span>
+              <span>/</span>
+              <span>发布设置</span>
+            </div>
+            <button type="button" onClick={handleSave} disabled={saving} className="flex h-10 shrink-0 items-center gap-2 rounded-md bg-vermilion px-4 text-sm font-semibold text-white shadow-[0_5px_14px_rgba(211,58,44,0.18)] transition-all hover:bg-vermilion-hover hover:shadow-[0_7px_18px_rgba(211,58,44,0.24)] disabled:opacity-40">
+              {saving ? <Loader2 size={15} className="animate-spin" /> : <Send size={15} />}
+              <span className="hidden sm:inline">{text.savePublish}</span>
+              <span className="sm:hidden">保存设置</span>
+            </button>
           </div>
+        </header>
+
+        <div ref={pageScrollRef} className="flex-1 overflow-y-auto">
+          <section className="border-b border-paper-border bg-paper-raised">
+            <div className="mx-auto grid w-full max-w-7xl grid-cols-[92px_minmax(0,1fr)] gap-4 px-4 py-6 sm:grid-cols-[116px_minmax(0,1fr)] sm:gap-6 md:px-8 md:py-8 lg:grid-cols-[128px_minmax(0,1fr)_280px] lg:gap-8">
+              <div className="relative aspect-[3/4] w-full overflow-hidden rounded-md border border-paper-border bg-paper-surface shadow-[0_14px_32px_rgba(24,27,25,0.12)]">
+                {cover ? <img src={cover} alt={selectedWork.title} className="h-full w-full object-cover" /> : <div className="flex h-full w-full items-center justify-center"><ImageIcon size={34} className="text-sumi-faint" strokeWidth={1.25} /></div>}
+                <span className={`absolute left-2 top-2 h-2 w-2 rounded-full ring-4 ring-white/80 ${selectedWork.is_published ? 'bg-success' : 'bg-sumi-faint'}`} aria-hidden="true" />
+              </div>
+
+              <div className="min-w-0 self-center">
+                <div className="flex flex-wrap items-center gap-x-3 gap-y-2 text-xs">
+                  <span className={`inline-flex items-center gap-1.5 rounded-sm px-2 py-1 font-medium ${selectedWork.is_published ? 'bg-success/10 text-success' : 'bg-paper-surface text-sumi-dim'}`}>
+                    <span className={`h-1.5 w-1.5 rounded-full ${selectedWork.is_published ? 'bg-success' : 'bg-sumi-faint'}`} />
+                    {selectedWork.is_published ? text.publicWork : text.privateWork}
+                  </span>
+                  <span className="flex items-center gap-1.5 text-sumi-faint"><CalendarDays size={13} />{text.createdAt} {formatDate(selectedWork.created_at)}</span>
+                </div>
+                <h1 className="font-display mt-3 break-words text-2xl font-bold text-sumi md:text-3xl">{selectedWork.title}</h1>
+                <p className="mt-2 max-w-2xl text-sm leading-6 text-sumi-dim">{selectedWork.description || text.noDescription}</p>
+                <div className="mt-4 flex flex-wrap items-center gap-x-5 gap-y-2 text-xs text-sumi-faint lg:hidden">
+                  <span><strong className="mr-1 text-base font-semibold text-sumi">{editChapters.length}</strong>{text.totalChapters}</span>
+                  <span><strong className="mr-1 text-base font-semibold text-success">{publishedCount}</strong>{text.online}</span>
+                  <span><strong className="mr-1 text-base font-semibold text-sumi-dim">{draftCount}</strong>{text.draft}</span>
+                </div>
+              </div>
+
+              <aside className="col-span-2 border-t border-paper-border pt-5 lg:col-span-1 lg:border-l lg:border-t-0 lg:pl-8 lg:pt-0">
+                <div className="flex items-start justify-between gap-4">
+                  <div>
+                    <span className="flex items-center gap-2 text-sm font-medium text-sumi"><Clock3 size={15} className="text-success" />{text.onlineRate}</span>
+                    <p className="mt-1 text-xs text-sumi-faint">已完成 {publishedCount} / {editChapters.length} 话</p>
+                  </div>
+                  <strong className="text-3xl font-semibold text-sumi">{progress}<span className="ml-0.5 text-sm font-medium text-sumi-faint">%</span></strong>
+                </div>
+                <div className="mt-4 h-2 overflow-hidden rounded-full bg-paper-surface"><div className="h-full rounded-full bg-success transition-[width] duration-300" style={{ width: `${progress}%` }} /></div>
+                <div className="mt-5 hidden grid-cols-3 divide-x divide-paper-border lg:grid">
+                  <div><strong className="block text-lg font-semibold text-sumi">{editChapters.length}</strong><span className="text-[11px] text-sumi-faint">全部章节</span></div>
+                  <div className="pl-4"><strong className="block text-lg font-semibold text-success">{publishedCount}</strong><span className="text-[11px] text-sumi-faint">已上线</span></div>
+                  <div className="pl-4"><strong className="block text-lg font-semibold text-sumi-dim">{draftCount}</strong><span className="text-[11px] text-sumi-faint">草稿</span></div>
+                </div>
+              </aside>
+            </div>
+          </section>
+
+          <main className="mx-auto w-full max-w-7xl px-4 py-6 md:px-8 md:py-8">
+            <section className="overflow-hidden rounded-md border border-paper-border bg-paper-raised shadow-[0_1px_2px_rgba(24,27,25,0.03)]">
+              <div className="flex flex-col gap-4 border-b border-paper-border p-4 md:p-5 lg:flex-row lg:items-center lg:justify-between">
+                <div className="min-w-0">
+                  <div className="flex items-center gap-2">
+                    <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-vermilion-light text-vermilion"><SquarePen size={16} /></span>
+                    <div className="min-w-0">
+                      <h2 className="text-base font-semibold text-sumi">{text.chapterQueue}</h2>
+                      <p className="mt-0.5 text-xs text-sumi-faint sm:text-sm">{text.queueSubtitle}</p>
+                    </div>
+                  </div>
+                </div>
+                <div className="grid grid-cols-2 gap-2 sm:flex sm:items-center">
+                  <button type="button" onClick={selectAll} className="flex h-9 items-center justify-center gap-1.5 rounded-md border border-success/25 bg-success/[0.06] px-3 text-xs font-medium text-success transition-colors hover:bg-success/10">
+                    <Globe size={14} />{text.allOnline}
+                  </button>
+                  <button type="button" onClick={deselectAll} className="flex h-9 items-center justify-center gap-1.5 rounded-md border border-paper-border bg-paper-base px-3 text-xs font-medium text-sumi-dim transition-colors hover:border-sumi-faint/50 hover:text-sumi">
+                    <FileText size={14} />{text.allDraft}
+                  </button>
+                </div>
+              </div>
+
+              {editChapters.length === 0 ? (
+                <div className="flex min-h-56 items-center justify-center px-4">
+                  <div className="text-center text-sumi-faint"><FileText size={34} className="mx-auto" strokeWidth={1.25} /><p className="mt-3 text-sm">{text.noChapters}</p></div>
+                </div>
+              ) : (
+                <div>
+                  <div className="hidden grid-cols-[56px_112px_minmax(180px,1fr)_150px_56px] items-center gap-4 border-b border-paper-border bg-paper-surface/70 px-5 py-3 text-[11px] font-semibold text-sumi-faint md:grid">
+                    <span>排序</span><span>章节</span><span>展示标题</span><span>发布状态</span><span className="text-center">预览</span>
+                  </div>
+                  {editChapters.map((chapter, index) => (
+                    <div key={chapter.id} className={`group grid grid-cols-[36px_minmax(0,1fr)_auto] items-center gap-x-3 gap-y-3 border-b border-paper-border px-3 py-4 transition-colors last:border-b-0 hover:bg-paper-base/70 md:grid-cols-[56px_112px_minmax(180px,1fr)_150px_56px] md:gap-4 md:px-5 md:py-3.5 ${chapter.is_published ? 'bg-success/[0.025]' : 'bg-paper-raised'}`}>
+                      <div className="flex w-8 flex-col overflow-hidden rounded-md border border-paper-border bg-paper-raised md:w-9">
+                        <button type="button" onClick={() => moveChapter(index, -1)} disabled={index === 0} className="flex h-7 items-center justify-center border-b border-paper-border text-sumi-faint transition-colors hover:bg-paper-surface hover:text-sumi disabled:cursor-not-allowed disabled:opacity-25" title="上移章节" aria-label={`上移${chapterTitle(chapter.chapter_number)}`}><ArrowUp size={13} /></button>
+                        <button type="button" onClick={() => moveChapter(index, 1)} disabled={index === editChapters.length - 1} className="flex h-7 items-center justify-center text-sumi-faint transition-colors hover:bg-paper-surface hover:text-sumi disabled:cursor-not-allowed disabled:opacity-25" title="下移章节" aria-label={`下移${chapterTitle(chapter.chapter_number)}`}><ArrowDown size={13} /></button>
+                      </div>
+
+                      <div className="min-w-0">
+                        <span className="block truncate text-sm font-semibold text-sumi">{chapterTitle(chapter.chapter_number)}</span>
+                        <span className="mt-1 block text-[10px] text-sumi-faint">序号 {String(index + 1).padStart(2, '0')}</span>
+                      </div>
+
+                      <button type="button" role="switch" aria-checked={chapter.is_published} aria-label={`${chapterTitle(chapter.chapter_number)}${chapter.is_published ? '转为草稿' : '设为上线'}`} onClick={() => toggleChapter(chapter.id)} className="flex min-w-[96px] items-center justify-end gap-2 text-xs md:col-start-4 md:row-start-1 md:justify-start">
+                        <span className={`relative h-5 w-9 shrink-0 rounded-full shadow-[inset_0_0_0_1px_rgba(24,27,25,0.04)] transition-colors ${chapter.is_published ? 'bg-success' : 'bg-paper-border'}`}><span className={`absolute left-0.5 top-0.5 h-4 w-4 rounded-full bg-white shadow-[0_1px_2px_rgba(24,27,25,0.16)] transition-transform ${chapter.is_published ? 'translate-x-4' : 'translate-x-0'}`} /></span>
+                        <span className={`font-medium ${chapter.is_published ? 'text-success' : 'text-sumi-faint'}`}>{chapter.is_published ? '已上线' : text.draft}</span>
+                      </button>
+
+                      <label className="col-span-3 min-w-0 md:col-span-1 md:col-start-3 md:row-start-1">
+                        <span className="mb-1.5 block text-[11px] font-medium text-sumi-faint md:hidden">展示标题</span>
+                        <input value={chapter.display_title || ''} onChange={(event) => updateDisplayTitle(chapter.id, event.target.value)} placeholder={chapterTitle(chapter.chapter_number)} className="h-10 w-full min-w-0 rounded-md border border-paper-border bg-paper-raised px-3 text-sm text-sumi shadow-[inset_0_1px_1px_rgba(24,27,25,0.02)] placeholder-sumi-faint transition-[border-color,box-shadow] focus:border-vermilion focus:outline-none focus:ring-2 focus:ring-vermilion/10 md:h-9" />
+                      </label>
+
+                      <button type="button" onClick={() => void openReader(chapter.id)} className="col-span-3 flex h-9 items-center justify-center gap-1.5 rounded-md border border-paper-border bg-paper-raised text-xs font-medium text-sumi-dim transition-colors hover:border-vermilion/35 hover:bg-vermilion-light/40 hover:text-vermilion md:col-span-1 md:col-start-5 md:row-start-1 md:h-9 md:w-9 md:justify-self-center md:border-transparent md:bg-transparent" title={`预览${chapterTitle(chapter.chapter_number)}`} aria-label={`预览${chapterTitle(chapter.chapter_number)}`}>
+                        <Eye size={15} /><span className="md:hidden">预览章节</span>
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </section>
+          </main>
         </div>
       </div>
     );
@@ -457,40 +544,40 @@ export default function MyWorksPage() {
     const prevDisabled = currentReaderIdx <= 0;
 
     return (
-      <div className="flex-1 flex flex-col min-h-0 bg-paper-base">
-        <div className="flex items-center justify-between border-b border-paper-border bg-paper-surface px-3 py-2.5 md:px-5 shrink-0">
-          <button onClick={closeReader} className="flex items-center gap-1.5 text-sm text-cream-dim transition-colors hover:text-cream"><ChevronLeft size={18} />{text.back}</button>
-          <div className="flex min-w-0 items-center gap-2 px-3">
-            <span className="truncate text-sm font-medium text-cream">{selectedWork.title}</span>
-            <span className="text-warm-gray">/</span>
-            <span className="truncate text-sm text-cream-dim">{readerChapterInfo?.display_title || (readerChapterInfo?.chapter_number ? chapterTitle(readerChapterInfo.chapter_number) : '')}</span>
+      <div className="flex min-h-0 flex-1 flex-col bg-paper-base">
+        <header className="glass z-10 flex min-h-16 shrink-0 items-center justify-between gap-2 border-b border-paper-border px-3 md:px-6">
+          <button type="button" onClick={closeReader} className="flex h-9 shrink-0 items-center gap-1 rounded-md px-2 text-sm text-sumi-dim transition-colors hover:bg-paper-surface hover:text-sumi"><ChevronLeft size={18} />{text.back}</button>
+          <div className="flex min-w-0 items-center gap-2 px-1">
+            <span className="hidden max-w-48 truncate text-sm font-semibold text-sumi sm:inline">{selectedWork.title}</span>
+            <span className="hidden text-sumi-faint sm:inline">/</span>
+            <span className="truncate text-sm text-sumi-dim">{readerChapterInfo?.display_title || (readerChapterInfo?.chapter_number ? chapterTitle(readerChapterInfo.chapter_number) : '')}</span>
           </div>
-          <select value={readerChapterId ?? ''} onChange={(event) => { const id = Number(event.target.value); if (id) openReader(id); }} className="max-w-[150px] rounded-md border border-ink-border bg-ink-lighter px-2 py-1 text-xs text-cream-dim focus:border-coral focus:outline-none">
+          <select value={readerChapterId ?? ''} aria-label="切换章节" onChange={(event) => { const id = Number(event.target.value); if (id) void openReader(id); }} className="h-9 max-w-[132px] shrink-0 rounded-md border border-paper-border bg-paper-raised px-2 text-xs text-sumi-dim focus:border-vermilion focus:outline-none sm:max-w-[180px]">
             {chapters.map((chapter) => <option key={chapter.id} value={chapter.id}>{chapterTitle(chapter.chapter_number)} {chapter.display_title || ''}</option>)}
           </select>
-        </div>
-        <div className="flex-1 overflow-y-auto">
+        </header>
+        <div className="flex-1 overflow-y-auto bg-paper-surface/60">
           {readerLoading ? (
-            <div className="flex h-full items-center justify-center"><Loader2 size={28} className="animate-spin text-coral" /></div>
+            <div className="flex h-full items-center justify-center"><Loader2 size={28} className="animate-spin text-vermilion" /></div>
           ) : readerImages.length === 0 ? (
             <div className="flex h-full items-center justify-center">
-              <div className="text-center text-warm-gray">
-                <ImageIcon size={64} className="mx-auto mb-4 opacity-20" />
+              <div className="px-4 text-center text-sumi-faint">
+                <ImageIcon size={52} className="mx-auto mb-4" strokeWidth={1.1} />
                 <p className="text-base">{text.noManga}</p>
-                <button onClick={closeReader} className="mt-3 text-sm text-coral transition-colors hover:text-coral-light">{text.backToManage}</button>
+                <button type="button" onClick={closeReader} className="mt-3 text-sm font-medium text-vermilion transition-colors hover:text-vermilion-hover">{text.backToManage}</button>
               </div>
             </div>
           ) : (
-            <div className="mx-auto max-w-3xl">
+            <div className="mx-auto max-w-3xl bg-paper-raised shadow-[0_0_40px_rgba(24,27,25,0.08)]">
               {readerImages.map((image) => <img key={image.id} src={mangaImageUrl(image.image_path) || ''} alt={`${text.chapterPrefix} ${image.image_number} ${text.pageUnit}`} className="block w-full" loading="lazy" />)}
             </div>
           )}
         </div>
-        <div className="flex items-center justify-center gap-4 border-t border-ink-border bg-ink px-4 py-3 md:gap-8 shrink-0">
-          <button onClick={() => navigateReaderChapter(-1)} disabled={prevDisabled} className="flex items-center gap-1.5 rounded-lg bg-ink-lighter px-4 py-2 text-sm font-medium text-cream-dim transition-colors hover:bg-ink-surface disabled:cursor-not-allowed disabled:opacity-30"><ChevronLeft size={16} />{text.prevChapter}</button>
-          <span className="text-xs text-warm-gray">{currentReaderIdx + 1} / {chapters.length}</span>
-          <button onClick={() => navigateReaderChapter(1)} disabled={nextDisabled} className="flex items-center gap-1.5 rounded-lg bg-ink-lighter px-4 py-2 text-sm font-medium text-cream-dim transition-colors hover:bg-ink-surface disabled:cursor-not-allowed disabled:opacity-30">{text.nextChapter}<ChevronRight size={16} /></button>
-        </div>
+        <footer className="flex shrink-0 items-center justify-center gap-3 border-t border-paper-border bg-paper-raised px-3 py-3 md:gap-8">
+          <button type="button" onClick={() => navigateReaderChapter(-1)} disabled={prevDisabled} className="flex h-9 items-center gap-1 rounded-md border border-paper-border px-3 text-sm font-medium text-sumi-dim transition-colors hover:bg-paper-surface hover:text-sumi disabled:cursor-not-allowed disabled:opacity-30"><ChevronLeft size={16} /><span className="hidden sm:inline">{text.prevChapter}</span></button>
+          <span className="min-w-14 text-center text-xs text-sumi-faint">{currentReaderIdx + 1} / {chapters.length}</span>
+          <button type="button" onClick={() => navigateReaderChapter(1)} disabled={nextDisabled} className="flex h-9 items-center gap-1 rounded-md border border-paper-border px-3 text-sm font-medium text-sumi-dim transition-colors hover:bg-paper-surface hover:text-sumi disabled:cursor-not-allowed disabled:opacity-30"><span className="hidden sm:inline">{text.nextChapter}</span><ChevronRight size={16} /></button>
+        </footer>
       </div>
     );
   }

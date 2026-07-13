@@ -1,52 +1,52 @@
 @import "tailwindcss";
 
-/* ── 和纸工坊 设计令牌 ── */
+/* ── 轻量创作工作台 设计令牌 ── */
 
 @theme {
-  /* 纸本色系 */
-  --color-paper-base: #FAF6EF;
-  --color-paper-surface: #F2EDE4;
+  /* 中性画布 */
+  --color-paper-base: #F6F7F5;
+  --color-paper-surface: #F0F2EF;
   --color-paper-raised: #FFFFFF;
-  --color-paper-border: #E5DFD5;
+  --color-paper-border: #E1E5E0;
 
   /* 墨色系 */
-  --color-sumi: #1A1614;
-  --color-sumi-dim: #5C5650;
-  --color-sumi-faint: #8B8680;
+  --color-sumi: #181B19;
+  --color-sumi-dim: #5E6560;
+  --color-sumi-faint: #8C938E;
 
   /* 朱砂色系 */
-  --color-vermilion: #C0392B;
-  --color-vermilion-hover: #A93226;
-  --color-vermilion-light: #FADBD8;
+  --color-vermilion: #D33A2C;
+  --color-vermilion-hover: #B92F24;
+  --color-vermilion-light: #FBE7E4;
 
   /* 金泥色系 */
-  --color-kinpaku: #B8953A;
-  --color-kinpaku-light: #F9EEC1;
+  --color-kinpaku: #9A741D;
+  --color-kinpaku-light: #FBF0CC;
 
   /* 蓝墨色系 */
-  --color-aizuri: #2E5A88;
-  --color-aizuri-light: #D6E4F0;
+  --color-aizuri: #315F78;
+  --color-aizuri-light: #DFEDF2;
 
   /* 功能色 */
-  --color-success: #27AE60;
-  --color-warning: #E67E22;
-  --color-danger: #C0392B;
+  --color-success: #2F7D5A;
+  --color-warning: #B86E18;
+  --color-danger: #D33A2C;
 
   /* 保留兼容旧名称（逐步迁移） */
-  --color-ink: #FAF6EF;
-  --color-ink-light: #F2EDE4;
+  --color-ink: #F6F7F5;
+  --color-ink-light: #F0F2EF;
   --color-ink-lighter: #FFFFFF;
-  --color-ink-surface: #E5DFD5;
-  --color-ink-border: #E5DFD5;
-  --color-ink-muted: #8B8680;
-  --color-cream: #1A1614;
-  --color-cream-dim: #5C5650;
-  --color-coral: #C0392B;
-  --color-coral-light: #A93226;
-  --color-coral-dark: #922B21;
-  --color-amber-accent: #B8953A;
-  --color-amber-accent-light: #D4B45A;
-  --color-warm-gray: #8B8680;
+  --color-ink-surface: #E1E5E0;
+  --color-ink-border: #E1E5E0;
+  --color-ink-muted: #8C938E;
+  --color-cream: #181B19;
+  --color-cream-dim: #5E6560;
+  --color-coral: #D33A2C;
+  --color-coral-light: #B92F24;
+  --color-coral-dark: #98251D;
+  --color-amber-accent: #9A741D;
+  --color-amber-accent-light: #B28A2A;
+  --color-warm-gray: #8C938E;
 }
 
 /* ── 全局基础 ── */
@@ -59,12 +59,26 @@ body {
   -moz-osx-font-smoothing: grayscale;
 }
 
+#root {
+  min-height: 100dvh;
+  isolation: isolate;
+}
+
+button,
+[role='button'] {
+  cursor: pointer;
+}
+
+button:disabled {
+  cursor: not-allowed;
+}
+
 /* ── 网点纹理 (Screen Tone) ── */
 body::before {
   content: '';
   position: fixed;
   inset: 0;
-  opacity: 0.025;
+  opacity: 0;
   background-image: radial-gradient(circle, var(--color-sumi) 0.5px, transparent 1px);
   background-size: 6px 6px;
   pointer-events: none;
@@ -155,14 +169,14 @@ body::before {
 /* 漫画分格框 */
 .panel-frame {
   border: 1px solid var(--color-paper-border);
-  border-radius: 10px;
-  border-left-width: 3px;
-  border-left-color: var(--color-sumi-faint);
+  border-radius: 8px;
   background: var(--color-paper-raised);
+  box-shadow: 0 1px 2px rgba(24, 27, 25, 0.04);
 }
 
 .panel-frame:hover {
-  border-left-color: var(--color-vermilion);
+  border-color: rgba(211, 58, 44, 0.3);
+  box-shadow: 0 12px 30px rgba(24, 27, 25, 0.08);
 }
 
 /* 网点纹理背景（用于卡片装饰） */
@@ -174,7 +188,7 @@ body::before {
 
 /* 毛玻璃效果（浅色版） */
 .glass {
-  background: rgba(250, 246, 239, 0.8);
+  background: rgba(246, 247, 245, 0.88);
   backdrop-filter: blur(16px) saturate(120%);
   -webkit-backdrop-filter: blur(16px) saturate(120%);
 }
@@ -194,7 +208,21 @@ body::before {
 
 /* 显示字体 */
 .font-display {
-  font-family: 'Noto Serif SC', serif;
+  font-family: 'Songti SC', 'Noto Serif SC', 'STSong', serif;
+}
+
+.surface-panel {
+  border: 1px solid var(--color-paper-border);
+  border-radius: 8px;
+  background: var(--color-paper-raised);
+  box-shadow: 0 1px 2px rgba(24, 27, 25, 0.04);
+}
+
+.command-surface {
+  border: 1px solid var(--color-paper-border);
+  border-radius: 8px;
+  background: var(--color-paper-raised);
+  box-shadow: 0 16px 44px rgba(24, 27, 25, 0.1);
 }
 
 .input-field {

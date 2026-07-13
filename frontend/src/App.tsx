@@ -177,17 +177,34 @@ export default function App() {
     <button
       type="button"
       onClick={() => goView(target)}
+      title={!sidebarOpen ? label : undefined}
       className={
-        'relative w-full rounded-md px-3 py-2.5 text-left text-sm font-medium transition-all duration-200 '
+        'group relative flex min-h-10 w-full items-center rounded-md px-3 text-left text-sm font-medium transition-all duration-200 '
         + (view === target
-          ? 'border-l-[3px] border-l-vermilion bg-vermilion-light/30 pl-[9px] text-vermilion'
-          : 'border-l-[3px] border-l-transparent pl-[9px] text-sumi-dim hover:bg-paper-base hover:text-sumi')
+          ? 'bg-vermilion-light/45 text-vermilion'
+          : 'text-sumi-dim hover:bg-paper-base hover:text-sumi')
       }
     >
-      <span className="flex items-center gap-3">
+      {view === target && <span className="absolute inset-y-2 left-0 w-0.5 rounded-full bg-vermilion" />}
+      <span className="flex items-center gap-3 whitespace-nowrap">
         {icon}
         {sidebarOpen && <span>{label}</span>}
       </span>
+    </button>
+  );
+
+  const mobileNavItem = (icon: ReactNode, label: string, target: View) => (
+    <button
+      type="button"
+      onClick={() => goView(target)}
+      className={
+        'relative flex min-w-0 flex-1 flex-col items-center justify-center gap-1 px-1 py-2 text-[10px] font-medium transition-colors '
+        + (view === target ? 'text-vermilion' : 'text-sumi-faint hover:text-sumi')
+      }
+    >
+      {view === target && <span className="absolute inset-x-4 top-0 h-0.5 rounded-full bg-vermilion" />}
+      {icon}
+      <span className="max-w-full truncate">{label}</span>
     </button>
   );
 
@@ -200,68 +217,91 @@ export default function App() {
   }
 
   return (
-    <div className="flex h-dvh w-screen overflow-hidden bg-paper-base text-sumi">
-      <aside
-        className={
-          'flex shrink-0 flex-col border-r border-paper-border bg-paper-surface transition-all duration-300 '
-          + (sidebarOpen ? 'w-[220px]' : 'w-14')
-          + (isMobile && view === 'editor' ? ' hidden' : '')
-        }
-      >
-        <div className="flex h-14 items-center justify-between border-b border-paper-border px-3">
-          {sidebarOpen && (
-            <span className="flex items-center gap-1.5 font-display text-base font-bold tracking-wide text-vermilion">
-              <Sparkles size={15} />
-              ArtVerse
-            </span>
-          )}
-          <button
-            type="button"
-            onClick={() => setSidebarOpen((prev) => !prev)}
-            className="ml-auto text-sumi-faint transition-colors hover:text-sumi-dim"
-            aria-label="Toggle sidebar"
-          >
-            {sidebarOpen ? <PanelLeftClose size={16} /> : <PanelLeftOpen size={16} />}
-          </button>
-        </div>
-
-        {sidebarOpen && <div className="brush-divider mx-3 mt-0" />}
-
-        <nav className="flex flex-1 flex-col gap-0.5 px-2 py-3">
-          {navItem(<Sparkles size={18} />, '创作助手', 'home')}
-          {navItem(<Globe size={18} />, '作品广场', 'square')}
-          {navItem(<BookOpenText size={18} />, '故事工作区', 'workspace')}
-          {navItem(<FileText size={18} />, '作品管理', 'myworks')}
-          {navItem(<Paintbrush size={18} />, 'AI 生图', 'imagegen')}
-        </nav>
-
-        <div className="flex flex-col gap-0.5 border-t border-paper-border px-2 py-3">
-          {authenticated ? (
-            <>
-              {navItem(<KeyRound size={18} />, 'API 设置', 'settings')}
-              <button
-                type="button"
-                onClick={() => { void handleLogout(); }}
-                className="flex w-full items-center gap-3 rounded-md px-3 py-2.5 text-sm font-medium text-sumi-dim transition-colors hover:bg-vermilion-light/30 hover:text-vermilion"
-              >
-                <LogOut size={18} />
-                {sidebarOpen && <span>退出登录</span>}
-              </button>
-            </>
-          ) : (
+    <div className="relative flex h-dvh w-screen overflow-hidden bg-paper-base text-sumi">
+      {!isMobile && (
+        <aside
+          className={
+            'flex shrink-0 flex-col border-r border-paper-border bg-paper-raised transition-[width] duration-300 '
+            + (sidebarOpen ? 'w-[232px]' : 'w-[68px]')
+          }
+        >
+          <div className="flex h-16 items-center gap-3 border-b border-paper-border px-3">
+            <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md bg-vermilion text-white shadow-sm">
+              <Sparkles size={18} />
+            </div>
+            {sidebarOpen && (
+              <div className="min-w-0 flex-1">
+                <div className="font-display text-base font-bold text-sumi">ArtVerse</div>
+                <div className="text-[10px] text-sumi-faint">AI 漫画创作工坊</div>
+              </div>
+            )}
             <button
               type="button"
-              onClick={() => requireLogin()}
-              className="flex w-full items-center gap-3 rounded-md px-3 py-2.5 text-sm font-medium text-sumi-dim transition-colors hover:bg-paper-base hover:text-sumi"
+              onClick={() => setSidebarOpen((prev) => !prev)}
+              className="ml-auto flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-sumi-faint transition-colors hover:bg-paper-base hover:text-sumi"
+              aria-label={sidebarOpen ? '收起侧栏' : '展开侧栏'}
+              title={sidebarOpen ? '收起侧栏' : '展开侧栏'}
             >
-              <LogIn size={18} />
-              {sidebarOpen && <span>登录</span>}
+              {sidebarOpen ? <PanelLeftClose size={16} /> : <PanelLeftOpen size={16} />}
             </button>
-          )}
-        </div>
-      </aside>
+          </div>
 
-      <div className="flex min-h-0 flex-1 flex-col">
+          <nav className="flex flex-1 flex-col gap-1 px-2 py-4">
+            {sidebarOpen && <p className="mb-1 px-3 text-[10px] font-semibold text-sumi-faint">创作空间</p>}
+            {navItem(<Sparkles size={18} />, '创作助手', 'home')}
+            {navItem(<BookOpenText size={18} />, '故事工作区', 'workspace')}
+            {navItem(<Paintbrush size={18} />, 'AI 生图', 'imagegen')}
+            {sidebarOpen && <p className="mb-1 mt-4 px-3 text-[10px] font-semibold text-sumi-faint">发现与管理</p>}
+            {navItem(<Globe size={18} />, '作品广场', 'square')}
+            {navItem(<FileText size={18} />, '作品管理', 'myworks')}
+          </nav>
+
+          <div className="flex flex-col gap-1 border-t border-paper-border px-2 py-3">
+            {authenticated ? (
+              <>
+                {navItem(<KeyRound size={18} />, 'API 设置', 'settings')}
+                <button
+                  type="button"
+                  onClick={() => { void handleLogout(); }}
+                  title={!sidebarOpen ? '退出登录' : undefined}
+                  className="flex min-h-10 w-full items-center gap-3 rounded-md px-3 text-sm font-medium text-sumi-dim transition-colors hover:bg-vermilion-light/35 hover:text-vermilion"
+                >
+                  <LogOut size={18} />
+                  {sidebarOpen && <span>退出登录</span>}
+                </button>
+              </>
+            ) : (
+              <button
+                type="button"
+                onClick={() => requireLogin()}
+                title={!sidebarOpen ? '登录' : undefined}
+                className="flex min-h-10 w-full items-center gap-3 rounded-md px-3 text-sm font-medium text-sumi-dim transition-colors hover:bg-paper-base hover:text-sumi"
+              >
+                <LogIn size={18} />
+                {sidebarOpen && <span>登录</span>}
+              </button>
+            )}
+          </div>
+        </aside>
+      )}
+
+      <div className={'flex min-h-0 min-w-0 flex-1 flex-col ' + (isMobile && view !== 'editor' ? 'pb-[calc(64px+env(safe-area-inset-bottom))]' : '')}>
+        {isMobile && view !== 'editor' && (
+          <header className="flex h-14 shrink-0 items-center justify-between border-b border-paper-border bg-paper-raised px-4">
+            <button type="button" onClick={() => goView('home')} className="flex items-center gap-2" aria-label="返回创作助手">
+              <span className="flex h-8 w-8 items-center justify-center rounded-md bg-vermilion text-white"><Sparkles size={16} /></span>
+              <span className="font-display text-base font-bold text-sumi">ArtVerse</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => authenticated ? goView('settings') : requireLogin()}
+              className="flex h-9 w-9 items-center justify-center rounded-md border border-paper-border bg-paper-base text-sumi-dim"
+              aria-label={authenticated ? 'API 设置' : '登录'}
+            >
+              {authenticated ? <KeyRound size={17} /> : <LogIn size={17} />}
+            </button>
+          </header>
+        )}
         {view === 'home' && <MangaAgentPage onCreateStory={openWorkspaceCreateStory} />}
         {view === 'square' && <SquarePage />}
         {view === 'workspace' && (
@@ -279,9 +319,19 @@ export default function App() {
         {view === 'settings' && <ApiSettingsPage />}
       </div>
 
+      {isMobile && view !== 'editor' && (
+        <nav className="fixed inset-x-0 bottom-0 z-40 flex h-[calc(64px+env(safe-area-inset-bottom))] border-t border-paper-border bg-paper-raised/95 pb-[env(safe-area-inset-bottom)] backdrop-blur-xl" aria-label="主导航">
+          {mobileNavItem(<Sparkles size={19} />, '创作', 'home')}
+          {mobileNavItem(<BookOpenText size={19} />, '故事', 'workspace')}
+          {mobileNavItem(<Paintbrush size={19} />, '生图', 'imagegen')}
+          {mobileNavItem(<Globe size={19} />, '广场', 'square')}
+          {mobileNavItem(<FileText size={19} />, '作品', 'myworks')}
+        </nav>
+      )}
+
       {loginOpen && (
         <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-sumi/30 backdrop-blur-sm"
+          className="fixed inset-0 z-50 flex items-center justify-center bg-sumi/40 p-4 backdrop-blur-sm"
           onClick={() => setLoginOpen(false)}
         >
           <div className="w-full max-w-sm animate-fade-in" onClick={(event) => event.stopPropagation()}>

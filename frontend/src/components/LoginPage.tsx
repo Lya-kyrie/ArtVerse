@@ -47,22 +47,39 @@ export default function LoginPage({ onAuthSuccess, variant = 'page', message, on
   return (
     <div className={(isModal ? '' : 'min-h-screen bg-paper-base ') + 'flex items-center justify-center p-4'}>
       <div className="w-full max-w-sm">
-        <div className="mb-6 text-center">
-          <div className="animate-stamp mb-4 inline-flex h-14 w-14 items-center justify-center rounded-xl border-2 border-vermilion/20 bg-vermilion-light/20">
-            <Sparkles size={28} className="text-vermilion" />
+        <div className="mb-4 flex items-center justify-center gap-3">
+          <div className="flex h-10 w-10 items-center justify-center rounded-md bg-vermilion text-white shadow-sm">
+            <Sparkles size={20} />
           </div>
-          <h1 className="font-display text-xl font-bold tracking-tight text-sumi">ArtVerse</h1>
-          <p className="mt-1 text-sm text-sumi-dim">AI 漫画创作工坊</p>
+          <div className="text-left">
+            <h1 className="font-display text-lg font-bold text-sumi">ArtVerse</h1>
+            <p className="text-xs text-sumi-faint">AI 漫画创作工坊</p>
+          </div>
         </div>
 
-        <form onSubmit={handleSubmit} className="space-y-4 rounded-xl border border-paper-border bg-paper-raised p-6 shadow-md">
+        <form onSubmit={handleSubmit} className="space-y-4 rounded-lg border border-paper-border bg-paper-raised p-6 shadow-[0_18px_60px_rgba(24,27,25,0.16)]">
           {message && (
             <p className="rounded-md border border-kinpaku/20 bg-kinpaku-light/50 px-3 py-2 text-sm text-kinpaku">
               {message}
             </p>
           )}
 
-          <h2 className="text-sm font-semibold text-sumi">{mode === 'login' ? '登录' : '注册'}</h2>
+          <div className="grid grid-cols-2 gap-1 rounded-md bg-paper-surface p-1" aria-label="账号操作">
+            <button
+              type="button"
+              onClick={() => { setMode('login'); setError(''); }}
+              className={'rounded px-3 py-2 text-xs font-medium transition-colors ' + (mode === 'login' ? 'bg-paper-raised text-sumi shadow-sm' : 'text-sumi-faint hover:text-sumi')}
+            >
+              登录
+            </button>
+            <button
+              type="button"
+              onClick={() => { setMode('register'); setError(''); }}
+              className={'rounded px-3 py-2 text-xs font-medium transition-colors ' + (mode === 'register' ? 'bg-paper-raised text-sumi shadow-sm' : 'text-sumi-faint hover:text-sumi')}
+            >
+              注册
+            </button>
+          </div>
 
           <div className="space-y-1.5">
             <label className="flex items-center gap-1.5 text-xs text-sumi-dim">
@@ -125,14 +142,6 @@ export default function LoginPage({ onAuthSuccess, variant = 'page', message, on
               <UserPlus size={16} />
             )}
             {mode === 'login' ? '登录' : '注册'}
-          </button>
-
-          <button
-            type="button"
-            onClick={() => { setMode(mode === 'login' ? 'register' : 'login'); setError(''); }}
-            className="w-full text-center text-xs text-sumi-dim transition-colors hover:text-vermilion"
-          >
-            {mode === 'login' ? '还没有账号？立即注册' : '已有账号？去登录'}
           </button>
 
           {isModal && onCancel && (

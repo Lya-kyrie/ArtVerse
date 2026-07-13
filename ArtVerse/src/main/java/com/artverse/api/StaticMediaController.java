@@ -7,6 +7,7 @@ import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.web.bind.annotation.*;
 
@@ -20,6 +21,8 @@ import java.nio.file.Path;
 @RequestMapping("/static/manga")
 @RequiredArgsConstructor
 public class StaticMediaController {
+
+    private static final String IMMUTABLE_BROWSER_CACHE = "private, max-age=31536000, immutable";
 
     private final MediaStorageService mediaStorageService;
     private final ObjectStorageService objectStorageService;
@@ -50,9 +53,11 @@ public class StaticMediaController {
         try (InputStream in = objectStorageService.get(properties.getMinio().getBucket(), objectKey);
              OutputStream out = response.getOutputStream()) {
             response.setContentType(contentTypeFor(objectKey));
+            applyImmutableCache(response);
             in.transferTo(out);
         } catch (Exception e) {
             log.warn("Failed to serve MinIO object {}: {}", objectKey, e.getMessage());
+            response.setHeader(HttpHeaders.CACHE_CONTROL, "no-store");
             response.setStatus(HttpServletResponse.SC_NOT_FOUND);
         }
     }
@@ -70,13 +75,19 @@ public class StaticMediaController {
             if (contentType == null) contentType = "image/png";
             response.setContentType(contentType);
             response.setContentLengthLong(Files.size(path));
+            applyImmutableCache(response);
             try (InputStream in = Files.newInputStream(path);
                  OutputStream out = response.getOutputStream()) {
                 in.transferTo(out);
             }
         } catch (Exception e) {
             log.warn("Failed to serve file {}: {}", path, e.getMessage());
+            response.setHeader(HttpHeaders.CACHE_CONTROL, "no-store");
             response.setStatus(HttpServletResponse.SC_INTERNAL_SERVER_ERROR);
         }
+    }
+
+    private void applyImmutableCache(HttpServletResponse response) {
+        response.setHeader(HttpHeaders.CACHE_CONTROL, IMMUTABLE_BROWSER_CACHE);
     }
 }

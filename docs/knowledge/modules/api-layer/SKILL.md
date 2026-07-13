@@ -40,6 +40,7 @@ REST controllers (18 controllers) and DTOs. All `/api/**` routes.
 - **Provider secrets**: `GET /api/user/provider-configs/{configId}/api-key` is authenticated, checks profile ownership in `ApiKeyService`, and returns `Cache-Control: no-store`.
 - **Thin controllers**: Controllers resolve user, validate, then delegate to services. No business logic in controllers.
 - **Standalone image generation**: `POST /api/image-gen/generate` creates a durable `RUNNING` record and returns it immediately; `GET /api/image-gen/history` is the recovery/status endpoint.
+- **Static media caching**: successful `/static/manga/**` responses use a private one-year immutable browser cache because stored media paths contain unique filenames; failed responses use `no-store` so transient storage failures are retryable.
 - **AG-UI protocol**: Manga agent streaming uses AG-UI event frames as default SSE protocol.
 
 ## Invariants

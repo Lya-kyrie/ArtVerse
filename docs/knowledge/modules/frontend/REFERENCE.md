@@ -41,6 +41,7 @@ frontend → backend API (via api.ts):
 | `tailwindcss` | CSS framework |
 | `api.ts` | Central API layer — all backend communication |
 | `genStore.ts` | Client-side manga gen state |
+| `imageCache.ts` | Persistent browser cache for generated and reference image Blobs |
 
 ## Backend API Contract
 

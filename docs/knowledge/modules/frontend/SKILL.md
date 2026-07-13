@@ -24,6 +24,7 @@ npm run lint       # ESLint
 | `src/App.tsx` | Root component, auth gate, global navigation, and layout |
 | `src/api.ts` | All API calls (`authFetch`), AG-UI stream parsing, `ArtVerseMangaAgentHttpAgent` |
 | `src/genStore.ts` | Manga generation state management |
+| `src/imageCache.ts` | IndexedDB-backed generated/reference image Blob cache |
 | `src/ErrorBoundary.tsx` | React error boundary |
 
 ### Components
@@ -78,6 +79,7 @@ The frontend consumes AG-UI events via `@ag-ui/core` and `@ag-ui/client`. Live e
 - `WorkspaceEditor` owns chapter navigation and passes `onGoToManga` to `ChatPanel` for mobile tab switching.
 - `ChatPanel.tsx` reads models from every enabled LLM provider and sends the selected provider `config_id` plus model with story-chat requests.
 - `ImageGenPage.tsx` reads models from every enabled image provider and sends the selected provider `config_id` plus model with image-generation requests. It restores persisted image-generation records on entry and polls while a record is `RUNNING`.
+- Image generation themes keep only lightweight message metadata and image cache keys in `localStorage`. `imageCache.ts` stores image Blobs in bounded IndexedDB storage; generated images read local-first and fall back to `/static/manga/**`, while reference images must never persist temporary `blob:` URLs.
 - `ModelSwitcher.tsx` groups models by provider profile rather than model vendor, so duplicate model names across profiles remain independently routable.
 - `ApiSettingsPage.tsx` treats backend `config_id` as the provider-profile identity. During legacy local-storage migration, an ID-less local profile may be matched once to a remote profile only when provider, label, normalized Base URL, and selected models all match; unmatched local drafts remain local until saved.
 - Editing a synchronized provider fetches its API key from the ownership-checked reveal endpoint. The plaintext stays in the current editor state and is stripped from browser persistence; subsequent AI requests use `config_id` so the backend owns secret resolution.

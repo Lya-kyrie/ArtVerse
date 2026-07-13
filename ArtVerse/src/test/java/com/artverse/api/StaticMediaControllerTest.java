@@ -4,6 +4,7 @@ import com.artverse.config.ArtVerseProperties;
 import com.artverse.media.MediaStorageService;
 import com.artverse.storage.ObjectStorageService;
 import org.junit.jupiter.api.Test;
+import org.springframework.http.HttpHeaders;
 import org.springframework.mock.web.MockHttpServletRequest;
 import org.springframework.mock.web.MockHttpServletResponse;
 
@@ -58,5 +59,7 @@ class StaticMediaControllerTest {
         assertThat(response.getStatus()).isEqualTo(200);
         assertThat(response.getContentAsByteArray()).isEqualTo("png-bytes".getBytes());
         assertThat(response.getContentType()).isEqualTo("image/png");
+        assertThat(response.getHeader(HttpHeaders.CACHE_CONTROL))
+                .isEqualTo("private, max-age=31536000, immutable");
     }
 }

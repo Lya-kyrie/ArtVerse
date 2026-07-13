@@ -1502,18 +1502,18 @@ export async function deleteChapterRefImage(chapterId: number, filename: string)
 export type MangaStyle = 'japanese_manga' | 'korean_webtoon' | 'american_comic' | 'ligne_claire' | 'chinese_ink' | 'semi_realistic' | 'realistic' | 'oil_painting' | 'flat_design' | 'pixel_art' | 'watercolor' | 'cyberpunk';
 
 export const MANGA_STYLE_LABELS: Record<MangaStyle, string> = {
-  japanese_manga: 'Japanese Manga',
-  korean_webtoon: 'Korean Webtoon',
-  american_comic: 'American Comic',
-  ligne_claire: 'Ligne Claire',
-  chinese_ink: 'Chinese Ink',
-  semi_realistic: 'Semi Realistic',
-  realistic: 'Realistic',
-  oil_painting: 'Oil Painting',
-  flat_design: 'Flat Design',
-  pixel_art: 'Pixel Art',
-  watercolor: 'Watercolor',
-  cyberpunk: 'Cyberpunk',
+  japanese_manga: '日式漫画',
+  korean_webtoon: '韩式网漫',
+  american_comic: '美式漫画',
+  ligne_claire: '欧式清线',
+  chinese_ink: '中国水墨',
+  semi_realistic: '半写实',
+  realistic: '写实',
+  oil_painting: '油画',
+  flat_design: '扁平设计',
+  pixel_art: '像素艺术',
+  watercolor: '水彩',
+  cyberpunk: '赛博朋克',
 };
 
 export async function getMangaStyle(storyId: number): Promise<MangaStyle> {
@@ -1536,10 +1536,10 @@ export async function setMangaStyle(storyId: number, style: MangaStyle): Promise
 export type ColorMode = 'bw' | 'grayscale' | 'color' | 'duotone';
 
 export const COLOR_MODE_LABELS: Record<ColorMode, string> = {
-  bw: 'Black & White',
-  grayscale: 'Grayscale',
-  color: 'Color',
-  duotone: 'Duotone',
+  bw: '黑白',
+  grayscale: '灰度',
+  color: '彩色',
+  duotone: '双色调',
 };
 
 

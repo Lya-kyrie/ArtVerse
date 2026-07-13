@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { ChevronUp, ChevronDown, Download, ImageIcon, Loader2, Sparkles, Pencil, RefreshCw, Check, X, Square, Users, ImagePlus, Trash2 } from 'lucide-react';
+import { ChevronUp, ChevronDown, Download, ImageIcon, Loader2, Sparkles, Pencil, RefreshCw, Check, X, Square, Users, ImagePlus, Trash2, Plus } from 'lucide-react';
 import {
   generateMangaStream,
   generateScenes,
@@ -33,6 +33,7 @@ import {
   deleteCharRefImage,
 } from '../api';
 import { genStore } from '../genStore';
+import AssetGroupManagerModal from './AssetGroupManagerModal';
 
 interface Props {
   chapter: Chapter | null;
@@ -139,6 +140,7 @@ function ScenePagePreview({ scene, expanded = false }: { scene: string; expanded
 }
 
 type Phase = 'idle' | 'generating-scenes' | 'editing-scenes' | 'generating-images';
+type ResourceLoadState = 'idle' | 'loading' | 'ready' | 'error';
 const DEFAULT_IMAGE_COUNT = 10;
 
 export default function MangaPanel({ chapter, onChapterRefresh }: Props) {
@@ -156,6 +158,9 @@ export default function MangaPanel({ chapter, onChapterRefresh }: Props) {
   const [regenIdx, setRegenIdx] = useState<number>(-1);
   const [assetGroups, setAssetGroups] = useState<AssetGroup[]>([]);
   const [selectedAssetGroupId, setSelectedAssetGroupId] = useState<number | null>(null);
+  const [assetGroupLoadState, setAssetGroupLoadState] = useState<ResourceLoadState>('idle');
+  const [storyboardLoadState, setStoryboardLoadState] = useState<ResourceLoadState>('idle');
+  const [showAssetGroupManager, setShowAssetGroupManager] = useState(false);
   const [selectedGroupCharacters, setSelectedGroupCharacters] = useState<AssetGroupCharacter[]>([]);
   const [charThumbnails, setCharThumbnails] = useState<Record<number, string>>({});
   const [charCardsExpanded, setCharCardsExpanded] = useState(true);
@@ -205,6 +210,9 @@ export default function MangaPanel({ chapter, onChapterRefresh }: Props) {
     setRegenIdx(-1);
     setAssetGroups([]);
     setSelectedAssetGroupId(null);
+    setAssetGroupLoadState(chapter ? 'loading' : 'idle');
+    setStoryboardLoadState(chapter ? 'loading' : 'idle');
+    setShowAssetGroupManager(false);
     setSelectedGroupCharacters([]);
     setCharThumbnails({});
     setAssetGroupSaving(false);
@@ -217,6 +225,7 @@ export default function MangaPanel({ chapter, onChapterRefresh }: Props) {
         if (chapterLoadRequestRef.current !== requestId) return;
         setAssetGroups(r.groups);
         setSelectedAssetGroupId(r.selected_group_id ?? null);
+        setAssetGroupLoadState('ready');
         const selGroup = r.groups.find((g: any) => g.id === r.selected_group_id);
         const chars = selGroup?.characters || [];
         setSelectedGroupCharacters(chars);
@@ -230,7 +239,9 @@ export default function MangaPanel({ chapter, onChapterRefresh }: Props) {
           })).then(() => setCharThumbnails(thumbs));
         }
       }).catch((err: any) => {
+        if (chapterLoadRequestRef.current !== requestId) return;
         console.error('Failed to load asset group:', err);
+        setAssetGroupLoadState('error');
         setErrorMsg('加载设定组失败: ' + (err.message || '未知错误'));
       });
 
@@ -257,7 +268,12 @@ export default function MangaPanel({ chapter, onChapterRefresh }: Props) {
             setPhase('editing-scenes');
           }
         }
-      }).catch(() => {});
+        setStoryboardLoadState('ready');
+      }).catch((err: any) => {
+        if (chapterLoadRequestRef.current !== requestId) return;
+        setStoryboardLoadState('error');
+        setErrorMsg('加载分镜失败: ' + (err.message || '未知错误'));
+      });
     }
   }, [chapter?.id]);
 
@@ -365,11 +381,15 @@ export default function MangaPanel({ chapter, onChapterRefresh }: Props) {
     }
   };
 
-  const refreshChapterAssetFallback = async (chapterId: number) => {
+  const refreshChapterAssetFallback = async (chapterId: number, showLoading = false) => {
+    const requestId = chapterLoadRequestRef.current;
+    if (showLoading) setAssetGroupLoadState('loading');
     try {
       const r = await getChapterAssetGroup(chapterId);
+      if (chapterLoadRequestRef.current !== requestId) return;
       setAssetGroups(r.groups);
       setSelectedAssetGroupId(r.selected_group_id ?? null);
+      setAssetGroupLoadState('ready');
       // Load characters for selected group
       const selGroup = r.groups.find((g: any) => g.id === r.selected_group_id);
       const chars = selGroup?.characters || [];
@@ -385,8 +405,12 @@ export default function MangaPanel({ chapter, onChapterRefresh }: Props) {
           } catch (_e) {}
         }));
         setCharThumbnails(thumbs);
+      } else {
+        setCharThumbnails({});
       }
     } catch (err: any) {
+      if (chapterLoadRequestRef.current !== requestId) return;
+      setAssetGroupLoadState('error');
       setErrorMsg(err.message);
     }
   };
@@ -401,6 +425,7 @@ export default function MangaPanel({ chapter, onChapterRefresh }: Props) {
       const result = await setChapterAssetGroup(chapter.id, nextGroupId);
       setAssetGroups(result.groups);
       setSelectedAssetGroupId(result.selected_group_id ?? null);
+      setAssetGroupLoadState('ready');
       // Immediately extract characters from result
       const selGroup = result.groups.find((g: any) => g.id === result.selected_group_id);
       const chars = selGroup?.characters || [];
@@ -415,11 +440,14 @@ export default function MangaPanel({ chapter, onChapterRefresh }: Props) {
             if (refs.length > 0) thumbs[c.id] = mangaThumbUrl(refs[0].object_key, 200) || '';
           } catch (_e) {}
         })).then(() => setCharThumbnails(thumbs));
+      } else {
+        setCharThumbnails({});
       }
       // Still refresh in background for consistency
       refreshChapterAssetFallback(chapter.id).catch(() => {});
     } catch (err: any) {
       setSelectedAssetGroupId(previous);
+      setAssetGroupLoadState('ready');
       setErrorMsg(`切换设定组失败: ${err.message}`);
     } finally {
       setAssetGroupSaving(false);
@@ -442,11 +470,13 @@ export default function MangaPanel({ chapter, onChapterRefresh }: Props) {
       const generatedScenes = await generateScenes(chapter.id, controller.signal);
       if (controller.signal.aborted) return;
       setScenes(generatedScenes);
+      setStoryboardLoadState('ready');
       setPhase('editing-scenes');
     } catch (err: any) {
       if (err.name === 'AbortError') return;
       setErrorMsg(`分镜生成失败: ${err.message}`);
-      setPhase('idle');
+      setStoryboardLoadState('ready');
+      setPhase(scenes.length > 0 ? 'editing-scenes' : 'idle');
     } finally {
       sceneAbortRef.current = null;
     }
@@ -455,6 +485,8 @@ export default function MangaPanel({ chapter, onChapterRefresh }: Props) {
   const handleAbortScenes = () => {
     sceneAbortRef.current?.abort();
     sceneAbortRef.current = null;
+    setStatusMsg('');
+    setPhase(scenes.length > 0 ? 'editing-scenes' : 'idle');
   };
 
   // ── Scene editing ──
@@ -725,7 +757,16 @@ export default function MangaPanel({ chapter, onChapterRefresh }: Props) {
           第 {chapter?.chapter_number ?? '–'} 话 · 漫画
         </h2>
         <div className="flex items-center gap-1.5 md:gap-2 flex-wrap justify-end">
-          {assetGroups.length > 0 && (
+          {chapter && assetGroupLoadState === 'loading' && (
+            <button
+              disabled
+              className="flex h-8 min-w-28 items-center justify-center gap-1.5 rounded-md border border-paper-border bg-paper-surface px-2 text-xs font-medium text-sumi-faint opacity-70"
+            >
+              <Loader2 size={13} className="animate-spin" />
+              加载设定组
+            </button>
+          )}
+          {chapter && assetGroupLoadState === 'ready' && assetGroups.length > 0 && (
             <select
               value={selectedAssetGroupId ?? ''}
               onChange={(e) => handleSelectAssetGroup(e.target.value)}
@@ -733,12 +774,31 @@ export default function MangaPanel({ chapter, onChapterRefresh }: Props) {
               className="max-w-[160px] px-2 py-1.5 text-xs font-medium rounded-md bg-paper-surface text-sumi-dim border border-paper-border outline-none focus:border-vermilion transition-colors disabled:opacity-50"
               title="选择本话继承的全局角色卡和垫图组"
             >
+              <option value="">选择设定组</option>
               {assetGroups.map((group) => (
                 <option key={group.id ?? 'default'} value={group.id ?? ''}>
                   {group.is_default ? '默认组' : group.name}
                 </option>
               ))}
             </select>
+          )}
+          {chapter && assetGroupLoadState === 'ready' && assetGroups.length === 0 && (
+            <button
+              onClick={() => setShowAssetGroupManager(true)}
+              disabled={generating}
+              className="flex h-8 items-center gap-1.5 rounded-md border border-paper-border bg-paper-surface px-2.5 text-xs font-medium text-sumi-dim transition-colors hover:border-vermilion hover:text-vermilion disabled:opacity-40"
+            >
+              <Plus size={13} />
+              新建设定组
+            </button>
+          )}
+          {chapter && assetGroupLoadState === 'error' && (
+            <button
+              disabled
+              className="flex h-8 items-center rounded-md border border-paper-border bg-paper-surface px-2.5 text-xs font-medium text-sumi-faint opacity-70"
+            >
+              设定组不可用
+            </button>
           )}
           {/* Image count selector */}
           {!generating && (phase === 'idle' || phase === 'editing-scenes') && (
@@ -783,7 +843,24 @@ export default function MangaPanel({ chapter, onChapterRefresh }: Props) {
               下载
             </button>
           )}
-          {!generating && (phase === 'idle' || phase === 'editing-scenes') && (
+          {!generating && storyboardLoadState === 'loading' && (
+            <button
+              disabled
+              className="flex h-8 min-w-28 items-center justify-center gap-1.5 rounded-md bg-vermilion px-3 text-xs font-medium text-white opacity-40"
+            >
+              <Loader2 size={13} className="animate-spin" />
+              读取分镜
+            </button>
+          )}
+          {!generating && storyboardLoadState === 'error' && (
+            <button
+              disabled
+              className="flex h-8 items-center rounded-md bg-vermilion px-3 text-xs font-medium text-white opacity-40"
+            >
+              分镜状态不可用
+            </button>
+          )}
+          {!generating && storyboardLoadState === 'ready' && (phase === 'idle' || phase === 'editing-scenes') && (
             <button
               onClick={handleGenerateScenes}
               disabled={!hasSourceContent}
@@ -791,8 +868,8 @@ export default function MangaPanel({ chapter, onChapterRefresh }: Props) {
                          bg-vermilion hover:bg-vermilion-hover text-white disabled:opacity-40
                          disabled:cursor-not-allowed transition-colors"
             >
-              <RefreshCw size={13} />
-              AI 重写分镜
+              {scenes.length > 0 ? <RefreshCw size={13} /> : <Sparkles size={13} />}
+              {scenes.length > 0 ? 'AI 重写分镜' : '分镜生成'}
             </button>
           )}
           {!generating && phase === 'editing-scenes' && scenes.length > 0 && (
@@ -1400,6 +1477,30 @@ export default function MangaPanel({ chapter, onChapterRefresh }: Props) {
             </div>
           </div>
         </div>
+      )}
+
+      {showAssetGroupManager && chapter && (
+        <AssetGroupManagerModal
+          key={chapter.story_id}
+          storyId={chapter.story_id}
+          onClose={() => {
+            const chapterId = chapter.id;
+            setShowAssetGroupManager(false);
+            void refreshChapterAssetFallback(chapterId, true);
+          }}
+          onGroupsChange={(nextGroups) => {
+            setAssetGroups(nextGroups);
+            const selectedGroup = nextGroups.find((group) => group.id === selectedAssetGroupId);
+            if (selectedAssetGroupId !== null && !selectedGroup) {
+              setSelectedAssetGroupId(null);
+              setSelectedGroupCharacters([]);
+              setCharThumbnails({});
+            } else if (selectedGroup) {
+              setSelectedGroupCharacters(selectedGroup.characters ?? []);
+            }
+            setAssetGroupLoadState('ready');
+          }}
+        />
       )}
 
     </div>

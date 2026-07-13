@@ -28,13 +28,8 @@ import {
   addStoryRefImage,
   deleteStoryRefImage,
   getStoryAssetGroups,
-  createStoryAssetGroup,
-  updateStoryAssetGroup,
-  deleteStoryAssetGroup,
   type Story,
   type RefImage,
-  type AssetGroup,
-  type AssetGroupCharacter,
   type CharacterProfile,
   type CharRefImage,
   listCharacterProfiles,
@@ -47,6 +42,7 @@ import {
 } from '../api';
 
 import ImageEditor from './ImageEditor';
+import AssetGroupManagerModal from './AssetGroupManagerModal';
 
 interface Props {
   onSelectStory: (story: Story) => void;
@@ -106,31 +102,12 @@ export default function HomePage({ onSelectStory, createStorySignal, onCreateSto
 
   // Story global asset groups
   const [assetModalStoryId, setAssetModalStoryId] = useState<number | null>(null);
-  const [assetGroups, setAssetGroups] = useState<AssetGroup[]>([]);
-  const [assetSelectedKey, setAssetSelectedKey] = useState<string>("");
-  const [assetDraftName, setAssetDraftName] = useState("");
-  const [assetDraftDesc, setAssetDraftDesc] = useState("");
-  const [assetDraftCharIds, setAssetDraftCharIds] = useState<Set<number>>(new Set());
-  const [allStoryCharacters, setAllStoryCharacters] = useState<CharacterProfile[]>([]);
-  const [charThumbnails, setCharThumbnails] = useState<Record<number, string>>({});
-  const [assetModalLoading, setAssetModalLoading] = useState(false);
-  const [assetModalSaving, setAssetModalSaving] = useState(false);
-  const assetModalRequestRef = useRef(0);
-
-  const activeAssetGroup = assetGroups.find((g) => String(g.id) === assetSelectedKey);
 
   useEffect(() => {
     if (createStorySignal == null) return;
     setShowNew(true);
     onCreateStorySignalConsumed?.();
   }, [createStorySignal, onCreateStorySignalConsumed]);
-
-
-  const syncActiveAssetDraft = (group: AssetGroup | undefined) => {
-    setAssetDraftName(group?.name ?? '');
-    setAssetDraftDesc(group?.description ?? '');
-    setAssetDraftCharIds(new Set((group?.characters ?? []).map((ch: AssetGroupCharacter) => ch.id)));
-  };
 
   const openCharModal = async (storyId: number) => {
     setCharModalStoryId(storyId);
@@ -184,119 +161,8 @@ export default function HomePage({ onSelectStory, createStorySignal, onCreateSto
   };
 
 
-  const openAssetGroupModal = async (storyId: number) => {
-    const requestId = ++assetModalRequestRef.current;
+  const openAssetGroupModal = (storyId: number) => {
     setAssetModalStoryId(storyId);
-    setAssetGroups([]);
-    setAssetSelectedKey('');
-    setAssetModalLoading(true);
-    try {
-      const [groups, characters] = await Promise.all([
-        getStoryAssetGroups(storyId),
-        listCharacterProfiles(storyId),
-      ]);
-      if (assetModalRequestRef.current !== requestId) return;
-      setAssetGroups(groups);
-      setAllStoryCharacters(characters);
-
-      // Load thumbnails for all characters
-      const thumbnails: Record<number, string> = {};
-      await Promise.all(characters.map(async (ch) => {
-        try {
-          const images = await listCharRefImages(storyId, ch.id);
-          thumbnails[ch.id] = images.length > 0 ? refImageUrl(images[0].object_key) : '';
-        } catch {
-          thumbnails[ch.id] = '';
-        }
-      }));
-      setCharThumbnails(thumbnails);
-      if (groups.length > 0) {
-        setAssetSelectedKey(String(groups[0].id));
-        syncActiveAssetDraft(groups[0]);
-      }
-      setStoryRefFlags((prev) => ({ ...prev, [storyId]: groups.length > 0 }));
-    } catch (err: any) {
-      if (assetModalRequestRef.current !== requestId) return;
-      alert('加载设定组失败: ' + (err.message || ''));
-    } finally {
-      if (assetModalRequestRef.current !== requestId) return;
-      setAssetModalLoading(false);
-    }
-  };
-
-  const selectAssetGroup = (group: AssetGroup) => {
-    setAssetSelectedKey(String(group.id));
-    syncActiveAssetDraft(group);
-  };
-
-  const saveAssetGroup = async () => {
-    if (assetModalStoryId === null || !activeAssetGroup) return;
-    setAssetModalSaving(true);
-    try {
-      const charIds = Array.from(assetDraftCharIds);
-      if (activeAssetGroup.id) {
-        const updated = await updateStoryAssetGroup(activeAssetGroup.id, {
-          name: assetDraftName,
-          description: assetDraftDesc,
-          characterIds: charIds,
-        });
-        setAssetGroups((prev) => prev.map((g) => (g.id === updated.id ? updated : g)));
-        syncActiveAssetDraft(updated);
-      } else {
-        const created = await createStoryAssetGroup(assetModalStoryId, assetDraftName, assetDraftDesc, charIds);
-        setAssetGroups((prev) => [...prev, created]);
-        setAssetSelectedKey(String(created.id));
-        syncActiveAssetDraft(created);
-      }
-      // Refresh groups list
-      const groups = await getStoryAssetGroups(assetModalStoryId);
-      setAssetGroups(groups);
-      if (activeAssetGroup.id) {
-        const updated = groups.find((g) => g.id === activeAssetGroup.id);
-        if (updated) syncActiveAssetDraft(updated);
-      }
-      setStoryRefFlags((prev) => ({ ...prev, [assetModalStoryId]: groups.length > 0 }));
-    } catch (err: any) {
-      alert('保存设定组失败: ' + (err.message || ''));
-    } finally {
-      setAssetModalSaving(false);
-    }
-  };
-
-  const addAssetGroup = async () => {
-    if (assetModalStoryId === null) return;
-    try {
-      const created = await createStoryAssetGroup(assetModalStoryId, '新设定组', '');
-      const groups = await getStoryAssetGroups(assetModalStoryId);
-      setAssetGroups(groups);
-      setAssetSelectedKey(String(created.id));
-      syncActiveAssetDraft(created);
-      setStoryRefFlags((prev) => ({ ...prev, [assetModalStoryId]: groups.length > 0 }));
-    } catch (err: any) {
-      alert('新增设定组失败: ' + (err.message || ''));
-    }
-  };
-
-  const removeAssetGroup = async () => {
-    if (assetModalStoryId === null || !activeAssetGroup?.id) return;
-    if (!confirm('删除"' + activeAssetGroup.name + '"?已选择该组的章节会恢复为未选择状态。')) return;
-    try {
-      await deleteStoryAssetGroup(assetModalStoryId, activeAssetGroup.id);
-      const groups = await getStoryAssetGroups(assetModalStoryId);
-      setAssetGroups(groups);
-      if (groups.length > 0) {
-        setAssetSelectedKey(String(groups[0].id));
-        syncActiveAssetDraft(groups[0]);
-      } else {
-        setAssetSelectedKey('');
-        setAssetDraftName('');
-        setAssetDraftDesc('');
-        setAssetDraftCharIds(new Set());
-      }
-      setStoryRefFlags((prev) => ({ ...prev, [assetModalStoryId]: groups.length > 0 }));
-    } catch (err: any) {
-      alert('删除设定组失败: ' + (err.message || ''));
-    }
   };
 
 
@@ -507,7 +373,7 @@ export default function HomePage({ onSelectStory, createStorySignal, onCreateSto
   }
 
   return (
-    <div className="min-h-screen bg-paper-base text-sumi">
+    <div className="h-full overflow-y-auto bg-paper-base text-sumi">
       <input
         ref={editorFileInputRef}
         type="file"
@@ -549,40 +415,40 @@ export default function HomePage({ onSelectStory, createStorySignal, onCreateSto
       )}
 
       {/* Header */}
-      <header className="border-b border-paper-border glass sticky top-0 z-10">
-        <div className="max-w-7xl mx-auto px-3 py-4 flex items-center justify-between">
+      <header className="sticky top-0 z-10 border-b border-paper-border bg-paper-raised/95 backdrop-blur-xl">
+        <div className="mx-auto flex max-w-7xl items-center justify-between px-4 py-3 sm:px-6">
           <div className="flex items-center gap-3">
-            <div className="w-9 h-9 rounded-lg bg-vermilion flex items-center justify-center">
+            <div className="flex h-9 w-9 items-center justify-center rounded-md bg-vermilion">
               <Sparkles size={18} className="text-white" />
             </div>
             <div>
-              <h1 className="font-display text-lg font-bold tracking-tight text-sumi">ArtVerse</h1>
-              <p className="text-xs text-sumi-dim">AI 漫画创作工坊</p>
+              <h1 className="text-sm font-semibold text-sumi sm:text-base">故事工作区</h1>
+              <p className="text-[11px] text-sumi-faint">管理故事、角色与创作设定</p>
             </div>
           </div>
           <button
             onClick={() => importFileRef.current?.click()}
             disabled={importingStory}
-            className="ml-auto mr-2 flex items-center gap-2 px-4 py-2.5 bg-paper-surface hover:bg-paper-border
-                       text-sumi-dim text-sm font-medium rounded-md transition-colors disabled:opacity-40"
+            className="ml-auto mr-2 flex h-9 items-center gap-2 rounded-md border border-paper-border bg-paper-raised px-3
+                       text-sumi-dim text-xs font-medium transition-colors hover:bg-paper-surface disabled:opacity-40 sm:px-4 sm:text-sm"
             title="导入整本作品"
           >
             {importingStory ? <Loader2 size={16} className="animate-spin" /> : <Upload size={16} />}
-            导入
+            <span className="hidden sm:inline">导入</span>
           </button>
           <button
             onClick={() => setShowNew(true)}
-            className="flex items-center gap-2 px-4 py-2.5 bg-vermilion hover:bg-vermilion-hover
-                       text-white text-sm font-medium rounded-md transition-colors"
+            className="flex h-9 items-center gap-2 rounded-md bg-vermilion px-3 text-xs font-medium
+                       text-white transition-colors hover:bg-vermilion-hover sm:px-4 sm:text-sm"
           >
             <Plus size={16} />
-            新建小说
+            <span className="hidden sm:inline">新建小说</span><span className="sm:hidden">新建</span>
           </button>
         </div>
       </header>
 
       {/* Content */}
-      <main className="max-w-7xl mx-auto px-3 py-8">
+      <main className="mx-auto max-w-7xl px-4 py-6 sm:px-6 sm:py-8">
         {/* New story modal */}
         {showNew && (
           <div className="fixed inset-0 z-50 flex items-center justify-center bg-sumi/30 backdrop-blur-sm p-3 sm:p-4" onClick={() => setShowNew(false)}>
@@ -680,31 +546,39 @@ export default function HomePage({ onSelectStory, createStorySignal, onCreateSto
 
         {/* Empty state */}
         {stories.length === 0 && !showNew && (
-          <div className="flex flex-col items-center justify-center py-32 text-sumi-dim">
-            <BookOpenText size={56} className="mb-4 text-sumi-faint/30" />
-            <p className="text-lg font-medium mb-2 text-sumi">还没有故事</p>
-            <p className="text-sm mb-6">点击新建开始你的第一部漫画</p>
+          <div className="mx-auto flex max-w-2xl flex-col items-center justify-center py-20 text-center text-sumi-dim sm:py-28">
+            <div className="mb-5 flex h-14 w-14 items-center justify-center rounded-md border border-paper-border bg-paper-raised shadow-sm">
+              <BookOpenText size={24} className="text-vermilion" />
+            </div>
+            <p className="mb-2 font-display text-2xl font-semibold text-sumi">创建你的第一部故事</p>
+            <p className="mb-7 max-w-md text-sm leading-6">从故事名称开始，随后完善人物、章节和视觉设定。</p>
             <button
               onClick={() => setShowNew(true)}
-              className="px-5 py-2.5 bg-vermilion hover:bg-vermilion-hover text-white text-sm font-medium rounded-md transition-colors"
+              className="flex items-center gap-2 rounded-md bg-vermilion px-5 py-2.5 text-sm font-medium text-white transition-colors hover:bg-vermilion-hover"
             >
-              <Plus size={16} className="inline mr-1" />
-              新建故事
+              <Plus size={16} /> 新建故事
             </button>
           </div>
         )}
 
         {/* Story cards grid */}
         {stories.length > 0 && (
-          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-4">
+          <>
+            <div className="mb-5 flex items-end justify-between">
+              <div>
+                <h2 className="font-display text-2xl font-semibold text-sumi">你的故事</h2>
+                <p className="mt-1 text-xs text-sumi-faint">共 {stories.length} 部作品</p>
+              </div>
+            </div>
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-4">
             {stories.map((s) => (
               <div
                 key={s.id}
-                className="group panel-frame overflow-hidden transition-all duration-200 hover:shadow-card-hover hover:-translate-y-0.5"
+                className="group panel-frame flex min-w-0 overflow-hidden transition-all duration-200 hover:-translate-y-0.5 sm:block"
               >
                 {/* Cover */}
                 <div
-                  className="relative aspect-[3/4] bg-gradient-to-br from-gray-800 to-gray-900 cursor-pointer overflow-hidden"
+                  className="relative aspect-[3/4] w-[120px] shrink-0 cursor-pointer overflow-hidden bg-paper-surface sm:w-auto"
                   onClick={() => handleCoverClick(s.id)}
                 >
                   {s.cover_image ? (
@@ -725,7 +599,7 @@ export default function HomePage({ onSelectStory, createStorySignal, onCreateSto
                 </div>
 
                 {/* Info */}
-                <div className="p-3">
+                <div className="min-w-0 flex-1 p-3.5">
                   {editingId === s.id ? (
                     <div className="space-y-2">
                       <input
@@ -766,11 +640,11 @@ export default function HomePage({ onSelectStory, createStorySignal, onCreateSto
                         <p className="text-xs text-sumi-dim mb-3 line-clamp-2">{s.description}</p>
                       )}
                       {!s.description && <div className="mb-3" />}
-                      <div className="flex items-center justify-between">
+                      <div className="flex flex-wrap items-end justify-between gap-2">
                         <span className="text-xs text-sumi-faint">
                           {new Date(s.created_at).toLocaleDateString('zh-CN')}
                         </span>
-                        <div className="flex items-center gap-1">
+                        <div className="flex flex-wrap items-center justify-end gap-0.5">
                           <button
                             onClick={(e) => {
                               e.stopPropagation();
@@ -845,181 +719,21 @@ export default function HomePage({ onSelectStory, createStorySignal, onCreateSto
                 </div>
               </div>
             ))}
-          </div>
+            </div>
+          </>
         )}
       </main>
 
       {/* Asset groups modal */}
       {assetModalStoryId !== null && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-sumi/30 backdrop-blur-sm p-3 sm:p-4" onClick={() => setAssetModalStoryId(null)}>
-          <div className="bg-ink-light border border-ink-border rounded-xl w-full max-w-6xl h-[640px] max-h-[88vh] shadow-2xl flex flex-col" onClick={(e) => e.stopPropagation()}>
-            {/* Header */}
-            <div className="flex items-center justify-between px-5 py-4 border-b border-ink-border flex-shrink-0">
-              <h3 className="text-sm font-semibold flex items-center gap-2">
-                <Layers size={16} className="text-coral" />
-                设置设定组
-              </h3>
-              <button onClick={() => setAssetModalStoryId(null)} className="p-1 text-cream-dim hover:text-cream-dim transition-colors">
-                <X size={16} />
-              </button>
-            </div>
-
-            {assetModalLoading ? (
-              <div className="flex items-center justify-center flex-1 text-cream-dim">
-                <Loader2 size={24} className="animate-spin" />
-              </div>
-            ) : (
-              <div className="grid grid-cols-[220px_1fr] min-h-0 flex-1">
-                {/* Left sidebar */}
-                <div className="border-r border-ink-border p-3 overflow-y-auto">
-                  <button
-                    onClick={addAssetGroup}
-                    className="w-full flex items-center justify-center gap-1.5 px-3 py-2 text-xs font-medium rounded-lg bg-coral hover:bg-coral-light text-cream transition-colors"
-                  >
-                    <Plus size={13} />
-                    添加设定组
-                  </button>
-                  <div className="mt-3 space-y-1">
-                    {assetGroups.map((group) => {
-                      const key = String(group.id);
-                      const active = key === assetSelectedKey;
-                      return (
-                        <button
-                          key={key}
-                          onClick={() => selectAssetGroup(group)}
-                          className={`w-full text-left px-3 py-2 rounded-lg border transition-colors ${
-                            active
-                              ? 'bg-coral/15 border-coral text-cream'
-                              : 'bg-paper-surface border-paper-border text-sumi-dim hover:text-sumi hover:border-paper-border'
-                          }`}
-                        >
-                          <span className="text-xs font-medium truncate block">{group.name}</span>
-                        </button>
-                      );
-                    })}
-                  </div>
-                </div>
-
-                {/* Right panel */}
-                <div className="min-h-0 flex flex-col">
-                  {activeAssetGroup ? (
-                    <>
-                      <div className="flex-1 overflow-y-auto p-4 space-y-4">
-                        {/* Name */}
-                        <div>
-                          <label className="block text-xs text-cream-dim mb-1.5">设定组名称</label>
-                          <input
-                            value={assetDraftName}
-                            onChange={(e) => setAssetDraftName(e.target.value)}
-                            className="w-full px-3 py-2 bg-ink-lighter border border-ink-border rounded-lg text-sm focus:outline-none focus:ring-2 focus:border-coral"
-                            placeholder="输入设定组名称"
-                          />
-                        </div>
-
-                        {/* Description */}
-                        <div>
-                          <label className="block text-xs text-cream-dim mb-1.5">描述</label>
-                          <textarea
-                            value={assetDraftDesc}
-                            onChange={(e) => setAssetDraftDesc(e.target.value)}
-                            rows={4}
-                            className="w-full bg-ink-lighter text-sm text-cream rounded-lg p-3 resize-none outline-none border border-ink-border focus:border-coral leading-relaxed"
-                            placeholder="设定组描述..."
-                          />
-                        </div>
-
-                        {/* Character selection */}
-                        <div>
-                          <label className="block text-xs text-cream-dim mb-2">
-                            选择角色卡 ({assetDraftCharIds.size} 个已选)
-                          </label>
-                          {allStoryCharacters.length === 0 ? (
-                            <p className="text-xs text-warm-gray py-4 text-center border border-dashed border-ink-border rounded-lg">
-                              暂无角色卡，请先在小说卡片处添加角色卡
-                            </p>
-                          ) : (
-                            <div className="grid grid-cols-4 gap-3">
-                              {allStoryCharacters.map((ch) => {
-                                const checked = assetDraftCharIds.has(ch.id);
-                                const thumb = charThumbnails[ch.id];
-                                const toggle = () => {
-                                  const next = new Set(assetDraftCharIds);
-                                  if (checked) next.delete(ch.id);
-                                  else next.add(ch.id);
-                                  setAssetDraftCharIds(next);
-                                };
-                                return (
-                                  <div
-                                    key={ch.id}
-                                    onClick={toggle}
-                                    className={`relative rounded-lg border-2 cursor-pointer transition-all overflow-hidden ${
-                                      checked
-                                        ? 'border-vermilion bg-vermilion-light/30'
-                                        : 'border-paper-border hover:border-sumi-faint bg-paper-surface'
-                                    }`}
-                                  >
-                                    {/* Checkmark */}
-                                    {checked && (
-                                      <div className="absolute top-1.5 right-1.5 z-10 w-5 h-5 rounded-full bg-vermilion flex items-center justify-center shadow">
-                                        <Check size={11} className="text-cream" />
-                                      </div>
-                                    )}
-                                    {/* Thumbnail */}
-                                    <div className="aspect-square bg-ink-lighter flex items-center justify-center">
-                                      {thumb ? (
-                                        <img
-                                          src={thumb}
-                                          alt={ch.name}
-                                          className="w-full h-full object-contain"
-                                          loading="lazy"
-                                        />
-                                      ) : (
-                                        <Users size={24} className="text-warm-gray" />
-                                      )}
-                                    </div>
-                                    {/* Name */}
-                                    <div className="px-2 py-1.5 text-center">
-                                      <span className="text-xs text-cream-dim truncate block">{ch.name}</span>
-                                    </div>
-                                  </div>
-                                );
-                              })}
-                            </div>
-                          )}
-                        </div>
-                      </div>
-
-                      {/* Bottom actions */}
-                      <div className="px-5 py-3 border-t border-ink-border flex-shrink-0">
-                        <div className="flex justify-end gap-2">
-                          {activeAssetGroup.id && (
-                            <button
-                              onClick={removeAssetGroup}
-                              className="px-4 py-2 bg-vermilion-light/30 border border-vermilion/20 text-vermilion hover:bg-vermilion-light/50 text-sm font-medium rounded-lg transition-colors"
-                            >
-                              删除此设定组
-                            </button>
-                          )}
-                          <button
-                            onClick={saveAssetGroup}
-                            disabled={assetModalSaving}
-                            className="px-5 py-2 bg-coral hover:bg-coral-light text-cream text-sm font-medium rounded-lg transition-colors disabled:opacity-40"
-                          >
-                            {assetModalSaving ? '保存中...' : '保存'}
-                          </button>
-                        </div>
-                      </div>
-                    </>
-                  ) : (
-                    <div className="flex items-center justify-center flex-1 text-cream-dim text-sm">
-                      请选择或添加一个设定组
-                    </div>
-                  )}
-                </div>
-              </div>
-            )}
-          </div>
-        </div>
+        <AssetGroupManagerModal
+          key={assetModalStoryId}
+          storyId={assetModalStoryId}
+          onClose={() => setAssetModalStoryId(null)}
+          onGroupsChange={(groups) => {
+            setStoryRefFlags((previous) => ({ ...previous, [assetModalStoryId]: groups.length > 0 }));
+          }}
+        />
       )}
 
       {/* Character card modal (profile-based) */}

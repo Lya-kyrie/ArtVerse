@@ -1,0 +1,40 @@
+- generic [ref=e3]:
+  - complementary [ref=e4]:
+    - generic [ref=e5]:
+      - generic [ref=e10]:
+        - generic [ref=e11]: ArtVerse
+        - generic [ref=e12]: AI 漫画创作工坊
+      - button "收起侧栏" [ref=e13] [cursor=pointer]
+    - navigation [ref=e17]:
+      - paragraph [ref=e18]: 创作空间
+      - button "创作助手" [ref=e19] [cursor=pointer]
+      - button "故事工作区" [ref=e26] [cursor=pointer]
+      - button "AI 生图" [ref=e31] [cursor=pointer]
+      - paragraph [ref=e38]: 发现与管理
+      - button "作品广场" [ref=e39] [cursor=pointer]
+      - button "作品管理" [ref=e45] [cursor=pointer]
+    - button "登录" [ref=e52] [cursor=pointer]
+  - generic [ref=e58]:
+    - banner [ref=e59]:
+      - generic [ref=e65]:
+        - heading "创作工坊" [level=1] [ref=e66]
+        - paragraph [ref=e67]: AI 漫画创作工坊
+    - generic [ref=e68]:
+      - complementary [ref=e69]:
+        - generic [ref=e70]:
+          - paragraph [ref=e71]: 会话列表
+          - button "新建" [disabled] [ref=e72]
+        - generic [ref=e74]: 暂无会话
+      - main [ref=e76]:
+        - generic [ref=e82]:
+          - generic [ref=e83]: AI 对话
+          - generic [ref=e84]: 漫画创作助手
+        - generic [ref=e89]:
+          - generic [ref=e90]:
+            - button "暂无故事" [ref=e92] [cursor=pointer]
+            - button "暂无章节" [disabled] [ref=e97]
+            - button "DeepSeek Official · deepseek-chat" [ref=e103] [cursor=pointer]:
+              - generic [ref=e104]: D
+          - generic [ref=e108]:
+            - textbox "请先选择故事和章节" [ref=e109]
+            - button "发送" [disabled] [ref=e110]
