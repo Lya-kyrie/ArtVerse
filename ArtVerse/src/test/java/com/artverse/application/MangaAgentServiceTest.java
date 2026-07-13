@@ -82,7 +82,9 @@ class MangaAgentServiceTest {
                 List.of(),
                 java.time.OffsetDateTime.now(),
                 java.time.OffsetDateTime.now(),
-                null
+                null,
+                java.time.OffsetDateTime.now(),
+                "MODEL"
         );
         Mockito.doReturn(java.util.Optional.of(fixture.waitingRun))
                 .when(fixture.runService).findRun(conversation, requestId);
@@ -157,7 +159,8 @@ class MangaAgentServiceTest {
         MangaWorkflowOrchestrator orchestrator = mock(MangaWorkflowOrchestrator.class);
         ArtVerseProperties properties = new ArtVerseProperties();
         AgentRunToolStatus toolStatus = new AgentRunToolStatus(redisTemplate());
-        properties.getAgent().setRunTimeoutSeconds(5);
+        properties.getAgent().setFirstEventTimeoutSeconds(5);
+        properties.getAgent().setModelIdleTimeoutSeconds(5);
 
         User user = user(1L);
         Chapter chapter = chapter(user);

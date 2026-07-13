@@ -5,18 +5,11 @@ import com.artverse.agent.AgentModelSpecFactory;
 import com.artverse.agent.AgentRunRequest;
 import com.artverse.agent.AgentWorkspaceService;
 import com.artverse.agent.MangaAgentPromptProvider;
-import com.artverse.application.AgentRunToolStatus;
-import com.artverse.application.AgentToolAuditService;
-import com.artverse.application.ChapterAccessService;
-import com.artverse.application.SceneService;
-import com.artverse.application.StructuredStoryboardService;
 import com.artverse.application.tools.MangaContextTools;
 import com.artverse.application.tools.MangaHitlTools;
 import com.artverse.application.tools.MangaStoryboardTools;
 import com.artverse.application.tools.MangaToolSupport;
 import com.artverse.config.ArtVerseProperties;
-import com.artverse.guard.GenerationGuardService;
-import com.artverse.persistence.MangaImageRepository;
 import io.agentscope.core.model.Model;
 import io.agentscope.core.model.OpenAIChatModel;
 import io.agentscope.core.state.AgentStateStore;
@@ -46,14 +39,11 @@ public class AgentScopeAgentFactory {
     private final ArtVerseProperties properties;
     private final AgentWorkspaceService agentWorkspaceService;
     private final MangaAgentPromptProvider promptProvider;
-    private final MangaImageRepository mangaImageRepository;
-    private final SceneService sceneService;
-    private final StructuredStoryboardService structuredStoryboardService;
-    private final ChapterAccessService chapterAccessService;
-    private final GenerationGuardService generationGuardService;
-    private final AgentToolAuditService agentToolAuditService;
-    private final AgentRunToolStatus agentRunToolStatus;
     private final AgentStateStore agentStateStore;
+    private final MangaToolSupport mangaToolSupport;
+    private final MangaContextTools mangaContextTools;
+    private final MangaStoryboardTools mangaStoryboardTools;
+    private final MangaHitlTools mangaHitlTools;
     private final ConcurrentHashMap<String, HarnessAgent> agents = new ConcurrentHashMap<>();
 
     public HarnessAgent getOrCreate(AgentRunRequest request) {
@@ -84,8 +74,6 @@ public class AgentScopeAgentFactory {
     }
 
     private void configureTools(Toolkit toolkit) {
-        MangaToolSupport support = new MangaToolSupport(agentRunToolStatus);
-
         toolkit.createToolGroup(
                 CONTEXT_TOOLS,
                 "Read-only manga chapter, story, storyboard, and image context tools.",
@@ -102,16 +90,9 @@ public class AgentScopeAgentFactory {
                 true
         );
 
-        toolkit.registration().tool(new MangaContextTools(
-                mangaImageRepository, sceneService, chapterAccessService, agentToolAuditService, support
-        )).group(CONTEXT_TOOLS).apply();
-        toolkit.registration().tool(new MangaStoryboardTools(
-                sceneService, structuredStoryboardService, chapterAccessService,
-                generationGuardService, agentToolAuditService, support
-        )).group(STORYBOARD_TOOLS).apply();
-        toolkit.registration().tool(new MangaHitlTools(agentToolAuditService, support))
-                .group(HITL_TOOLS)
-                .apply();
+        toolkit.registration().tool(mangaContextTools).group(CONTEXT_TOOLS).apply();
+        toolkit.registration().tool(mangaStoryboardTools).group(STORYBOARD_TOOLS).apply();
+        toolkit.registration().tool(mangaHitlTools).group(HITL_TOOLS).apply();
 
         toolkit.setActiveGroups(List.of(CONTEXT_TOOLS, STORYBOARD_TOOLS, HITL_TOOLS));
         toolkit.registerMetaTool();

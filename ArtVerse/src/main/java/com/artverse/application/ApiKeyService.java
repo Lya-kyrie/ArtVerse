@@ -40,57 +40,90 @@ public class ApiKeyService {
     public record KeyInfo(String provider, String apiKeyMasked) {}
 
     public record ProviderInfo(
+            Long configId,
             String slot,
             String provider,
             String label,
             String apiKeyMasked,
             String baseUrl,
-            String model
+            String model,
+            boolean active
     ) {}
 
     @Transactional
     public void saveKey(User user, String provider, String apiKey) {
         UserProviderConfig current = resolveProviderConfig(user, slotFromLegacyProvider(provider));
-        saveProviderConfig(user, new UserProviderConfig(
+        Long configId = repository.findFirstByUserIdAndSlotAndActiveTrueOrderByCreatedAtAscIdAsc(user.getId(), current.slot())
+                .map(UserApiKey::getId)
+                .orElse(null);
+        saveProviderConfig(user, configId, new UserProviderConfig(
                 current.slot(),
                 legacyProviderOrDefault(provider, current.provider()),
                 current.label(),
                 apiKey,
                 current.baseUrl(),
                 current.model()
-        ));
+        ), true);
     }
 
     @Transactional
-    public void saveProviderConfig(User user, UserProviderConfig config) {
+    public ProviderInfo saveProviderConfig(User user, Long configId, UserProviderConfig config, boolean activate) {
         String slot = requireSupportedSlot(config.slot());
-        UserProviderConfig merged = mergeWithDefaults(slot, config);
-        String encrypted = encrypt(merged.apiKey());
-        UserApiKey entity = repository.findByUserIdAndSlot(user.getId(), slot)
-                .orElseGet(() -> {
+        UserApiKey entity = configId == null
+                ? new UserApiKey()
+                : repository.findByIdAndUserId(configId, user.getId())
+                    .filter(item -> slot.equals(item.getSlot()))
+                    .orElseThrow(() -> new BusinessException(404, "Provider configuration not found."));
+        if (entity.getId() == null) {
                     UserApiKey newKey = new UserApiKey();
                     newKey.setUser(user);
                     newKey.setSlot(slot);
-                    return newKey;
-                });
+                    entity = newKey;
+        }
+        UserProviderConfig merged = mergeWithDefaults(slot, new UserProviderConfig(
+                config.slot(),
+                config.provider(),
+                config.label(),
+                config.apiKey().isBlank() && entity.getId() != null ? decryptSecret(entity.getApiKey()) : config.apiKey(),
+                config.baseUrl(),
+                config.model()
+        ));
+        String encrypted = encryptSecret(merged.apiKey());
+        boolean isNew = entity.getId() == null;
+        boolean isFirstProfile = isNew && repository.findByUserIdAndSlotOrderByCreatedAtAsc(user.getId(), slot).isEmpty();
+        boolean shouldActivate = activate || entity.isActive() || isFirstProfile;
+        if (shouldActivate && !supportsMultipleActiveProfiles(slot)) {
+            repository.findByUserIdAndSlotOrderByCreatedAtAsc(user.getId(), slot)
+                    .forEach(item -> item.setActive(false));
+            repository.flush();
+        }
         entity.setProvider(merged.provider());
         entity.setLabel(merged.label());
         entity.setApiKey(encrypted);
         entity.setBaseUrl(merged.baseUrl());
         entity.setModel(merged.model());
-        repository.save(entity);
+        entity.setActive(shouldActivate);
+        return toProviderInfo(repository.save(entity));
     }
 
     public List<KeyInfo> getKeys(User user) {
         return repository.findByUserId(user.getId()).stream()
-                .map(k -> new KeyInfo(k.getProvider(), maskKey(decrypt(k.getApiKey()))))
+                .map(k -> new KeyInfo(k.getProvider(), maskKey(decryptSecret(k.getApiKey()))))
                 .toList();
     }
 
     public List<ProviderInfo> getProviderConfigs(User user) {
-        return List.of(SLOT_LLM, SLOT_IMAGE, SLOT_WORKFLOW).stream()
-                .map(slot -> toProviderInfo(resolveProviderConfig(user, slot)))
+        return repository.findByUserId(user.getId()).stream()
+                .sorted((left, right) -> left.getCreatedAt().compareTo(right.getCreatedAt()))
+                .map(this::toProviderInfo)
                 .toList();
+    }
+
+    public String getProviderApiKey(User user, Long configId) {
+        return repository.findByIdAndUserId(configId, user.getId())
+                .map(UserApiKey::getApiKey)
+                .map(this::decryptSecret)
+                .orElseThrow(() -> new BusinessException(404, "Provider configuration not found."));
     }
 
     public String getDecryptedKey(User user, String provider) {
@@ -101,16 +134,13 @@ public class ApiKeyService {
     public UserProviderConfig resolveProviderConfig(User user, String slot) {
         String normalizedSlot = requireSupportedSlot(slot);
         UserProviderConfig defaults = defaultConfigForSlot(normalizedSlot);
-        return repository.findByUserIdAndSlot(user.getId(), normalizedSlot)
-                .map(entity -> mergeWithDefaults(normalizedSlot, new UserProviderConfig(
-                        normalizedSlot,
-                        entity.getProvider(),
-                        entity.getLabel(),
-                        decrypt(entity.getApiKey()),
-                        entity.getBaseUrl(),
-                        entity.getModel()
-                )))
-                .orElse(defaults);
+        return repository.findFirstByUserIdAndSlotAndActiveTrueOrderByCreatedAtAscIdAsc(user.getId(), normalizedSlot)
+                .map(entity -> toProviderConfig(entity, normalizedSlot))
+                .orElseGet(() -> repository.findByUserIdAndSlotOrderByCreatedAtAsc(user.getId(), normalizedSlot).isEmpty()
+                        ? defaults
+                        : new UserProviderConfig(
+                                defaults.slot(), defaults.provider(), defaults.label(), "", defaults.baseUrl(), defaults.model()
+                        ));
     }
 
     public UserProviderConfig requireProviderConfig(User user, String slot, String message) {
@@ -122,7 +152,31 @@ public class ApiKeyService {
     }
 
     public UserProviderConfig requireProviderConfig(User user, UserProviderConfig override, String message) {
-        UserProviderConfig config = resolveProviderConfig(user, override);
+        return requireProviderConfig(user, override, null, message);
+    }
+
+    public UserProviderConfig requireProviderConfig(User user, UserProviderConfig override, Long configId, String message) {
+        UserProviderConfig config;
+        if (configId != null) {
+            String normalizedSlot = requireSupportedSlot(override.slot());
+            UserApiKey selected = repository.findByIdAndUserId(configId, user.getId())
+                    .filter(entity -> normalizedSlot.equals(entity.getSlot()))
+                    .orElseThrow(() -> new BusinessException(404, "Provider configuration not found."));
+            if (!selected.isActive()) {
+                throw new BusinessException(409, "Provider configuration is disabled. Enable it in Settings before use.");
+            }
+            UserProviderConfig saved = toProviderConfig(selected, normalizedSlot);
+            config = new UserProviderConfig(
+                    normalizedSlot,
+                    saved.provider(),
+                    saved.label(),
+                    saved.apiKey(),
+                    saved.baseUrl(),
+                    blankToDefault(override.model(), saved.model())
+            );
+        } else {
+            config = resolveProviderConfig(user, override, null);
+        }
         if (config.apiKey().isBlank()) {
             throw new BusinessException(400, message);
         }
@@ -130,8 +184,17 @@ public class ApiKeyService {
     }
 
     public UserProviderConfig resolveProviderConfig(User user, UserProviderConfig override) {
+        return resolveProviderConfig(user, override, null);
+    }
+
+    public UserProviderConfig resolveProviderConfig(User user, UserProviderConfig override, Long configId) {
         String normalizedSlot = requireSupportedSlot(override.slot());
-        UserProviderConfig base = resolveProviderConfig(user, normalizedSlot);
+        UserProviderConfig base = configId == null
+                ? resolveProviderConfig(user, normalizedSlot)
+                : repository.findByIdAndUserId(configId, user.getId())
+                    .filter(entity -> normalizedSlot.equals(entity.getSlot()))
+                    .map(entity -> toProviderConfig(entity, normalizedSlot))
+                    .orElseThrow(() -> new BusinessException(404, "Provider configuration not found."));
         return new UserProviderConfig(
                 normalizedSlot,
                 blankToDefault(override.provider(), base.provider()),
@@ -148,21 +211,49 @@ public class ApiKeyService {
     }
 
     @Transactional
-    public void deleteProviderConfig(User user, String slot) {
-        repository.deleteByUserIdAndSlot(user.getId(), requireSupportedSlot(slot));
+    public void deleteProviderConfig(User user, Long configId) {
+        UserApiKey entity = repository.findByIdAndUserId(configId, user.getId())
+                .orElseThrow(() -> new BusinessException(404, "Provider configuration not found."));
+        repository.delete(entity);
     }
 
-    public List<String> discoverModels(String slot, String provider, String apiKey, String baseUrl) {
-        UserProviderConfig config = mergeWithDefaults(requireSupportedSlot(slot), new UserProviderConfig(
+    @Transactional
+    public ProviderInfo activateProviderConfig(User user, Long configId) {
+        UserApiKey entity = repository.findByIdAndUserId(configId, user.getId())
+                .orElseThrow(() -> new BusinessException(404, "Provider configuration not found."));
+        if (!supportsMultipleActiveProfiles(entity.getSlot())) {
+            repository.findByUserIdAndSlotOrderByCreatedAtAsc(user.getId(), entity.getSlot())
+                    .forEach(item -> item.setActive(false));
+            repository.flush();
+        }
+        entity.setActive(true);
+        return toProviderInfo(entity);
+    }
+
+    @Transactional
+    public ProviderInfo deactivateProviderConfig(User user, Long configId) {
+        UserApiKey entity = repository.findByIdAndUserId(configId, user.getId())
+                .orElseThrow(() -> new BusinessException(404, "Provider configuration not found."));
+        entity.setActive(false);
+        repository.flush();
+        return toProviderInfo(entity);
+    }
+
+    public List<String> discoverModels(User user, String slot, String provider, String apiKey, String baseUrl, Long configId) {
+        String normalizedSlot = requireSupportedSlot(slot);
+        UserProviderConfig override = new UserProviderConfig(
                 slot,
                 provider,
                 "",
                 apiKey,
                 baseUrl,
                 ""
-        ));
+        );
+        UserProviderConfig config = configId == null
+                ? mergeWithDefaults(normalizedSlot, override)
+                : resolveProviderConfig(user, override, configId);
         if (config.apiKey().isBlank()) {
-            throw new BusinessException(400, "Please enter an API key before fetching models.", config.displayName());
+            throw new BusinessException(400, "请先填写 API Key，再获取模型。", config.displayName());
         }
         if (SLOT_WORKFLOW.equals(config.slot())) {
             return List.of("workflow");
@@ -257,14 +348,27 @@ public class ApiKeyService {
         return trimmed.length() > 180 ? trimmed.substring(0, 180) + "..." : trimmed;
     }
 
-    private ProviderInfo toProviderInfo(UserProviderConfig config) {
+    private UserProviderConfig toProviderConfig(UserApiKey entity, String slot) {
+        return mergeWithDefaults(slot, new UserProviderConfig(
+                slot,
+                entity.getProvider(),
+                entity.getLabel(),
+                decryptSecret(entity.getApiKey()),
+                entity.getBaseUrl(),
+                firstConfiguredModel(entity.getModel())
+        ));
+    }
+
+    private ProviderInfo toProviderInfo(UserApiKey entity) {
         return new ProviderInfo(
-                config.slot(),
-                config.provider(),
-                config.displayName(),
-                maskKey(config.apiKey()),
-                config.baseUrl(),
-                config.model()
+                entity.getId(),
+                entity.getSlot(),
+                entity.getProvider(),
+                entity.getLabel(),
+                maskKey(decryptSecret(entity.getApiKey())),
+                entity.getBaseUrl(),
+                entity.getModel(),
+                entity.isActive()
         );
     }
 
@@ -337,7 +441,19 @@ public class ApiKeyService {
         return Map.of(SLOT_LLM, true, SLOT_IMAGE, true, SLOT_WORKFLOW, true).containsKey(safe(slot));
     }
 
-    private String encrypt(String plainText) {
+    private boolean supportsMultipleActiveProfiles(String slot) {
+        return SLOT_LLM.equals(slot) || SLOT_IMAGE.equals(slot);
+    }
+
+    private String firstConfiguredModel(String models) {
+        return safe(models).lines()
+                .map(String::trim)
+                .filter(model -> !model.isBlank())
+                .findFirst()
+                .orElse("");
+    }
+
+    public String encryptSecret(String plainText) {
         try {
             SecretKeySpec keySpec = new SecretKeySpec(ENCRYPTION_KEY, ALGORITHM);
             Cipher cipher = Cipher.getInstance(ALGORITHM);
@@ -348,7 +464,7 @@ public class ApiKeyService {
         }
     }
 
-    private String decrypt(String encrypted) {
+    public String decryptSecret(String encrypted) {
         try {
             SecretKeySpec keySpec = new SecretKeySpec(ENCRYPTION_KEY, ALGORITHM);
             Cipher cipher = Cipher.getInstance(ALGORITHM);
@@ -360,7 +476,8 @@ public class ApiKeyService {
     }
 
     private static String maskKey(String key) {
-        if (key == null || key.length() <= 8) return "(not set)";
+        if (key == null || key.isBlank()) return "";
+        if (key.length() <= 8) return "****";
         return key.substring(0, 7) + "****" + key.substring(key.length() - 4);
     }
 

@@ -60,7 +60,7 @@ All classes depend on `io.agentscope.*` (v2.0.0-RC3):
 | `core.agent.RuntimeContext` | `AgentScopeRuntimeContextFactory` |
 | `core.model.Model`, `OpenAIChatModel` | `AgentScopeAgentFactory`, `IntentClassificationModelProvider` |
 | `core.message.Msg`, `MsgRole` | `AgentScopeHarnessAgentGateway` |
-| `core.event.*` | `AgentScopeEventMapper`, `MangaDirectorAgentNode` |
+| `core.event.*` | `MangaDirectorAgentNode` |
 | `core.tool.Toolkit`, `Tool` | `AgentScopeAgentFactory`, `MangaContextTools`, etc. |
 
 | `harness.agent.HarnessAgent` | `AgentScopeAgentFactory`, `AgentScopeHarnessAgentGateway` |

@@ -104,16 +104,18 @@ class MangaAgentRunServiceTest {
     }
 
     @Test
-    void interruptStaleRunningRunsOnlyInterruptsOldRunningRuns() {
+    void interruptStalledRunningRunsUsesLastRealProgressInsteadOfUpdatedAt() {
         Fixture fixture = fixture();
         MangaAgentRun run = run(fixture.user, fixture.chapter, UUID.randomUUID(), "生成分镜");
         OffsetDateTime staleBefore = OffsetDateTime.now().minusMinutes(10);
 
-        when(fixture.runRepository.findByStatusAndUpdatedAtBefore(eq(MangaAgentRunStatus.RUNNING), eq(staleBefore)))
+        run.setUpdatedAt(OffsetDateTime.now());
+        run.setLastProgressAt(staleBefore.minusSeconds(1));
+        when(fixture.runRepository.findByStatusAndLastProgressAtBefore(eq(MangaAgentRunStatus.RUNNING), eq(staleBefore)))
                 .thenReturn(List.of(run));
         when(fixture.runRepository.save(any(MangaAgentRun.class))).thenAnswer(invocation -> invocation.getArgument(0));
 
-        int interrupted = fixture.service.interruptStaleRunningRuns(staleBefore);
+        int interrupted = fixture.service.interruptStalledRunningRuns(staleBefore, staleBefore.minusMinutes(5));
 
         assertThat(interrupted).isEqualTo(1);
         assertThat(run.getStatus()).isEqualTo(MangaAgentRunStatus.INTERRUPTED);
@@ -159,6 +161,8 @@ class MangaAgentRunServiceTest {
         run.setStatus(MangaAgentRunStatus.RUNNING);
         run.setCreatedAt(OffsetDateTime.now());
         run.setUpdatedAt(OffsetDateTime.now());
+        run.setLastProgressAt(OffsetDateTime.now());
+        run.setCurrentPhase("MODEL");
         return run;
     }
 

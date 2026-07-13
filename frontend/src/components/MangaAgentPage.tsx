@@ -36,7 +36,6 @@ import {
   type MangaAgentConversation,
   type MangaAgentMessage,
   type MangaAgentRunSnapshot,
-  type MangaWorkflowRoute,
   type Story,
 } from '../api';
 import MarkdownRenderer from './MarkdownRenderer';
@@ -134,12 +133,8 @@ function SelectUpward<T extends string>({
   );
 }
 
-const WORKFLOW_ROUTES: Array<{ value: MangaWorkflowRoute; label: string }> = [
-  { value: 'DIRECTOR', label: '导演' },
-];
-
-function routeLabel(route: MangaWorkflowRoute | string | undefined): string {
-  return WORKFLOW_ROUTES.find((item) => item.value === route)?.label || '导演';
+function routeLabel(_route?: string): string {
+  return '导演';
 }
 
 function conversationStatusLabel(status?: string): string {
@@ -232,7 +227,7 @@ function inferExecutionEvent(event: Record<string, any>): ExecutionEventItem {
       id: `${type}-${createdAt || Date.now()}`,
       type,
       title: '智能体已启动',
-      detail: route ? `正在执行 ${routeLabel(route as MangaWorkflowRoute)} 模式：${message}` : message,
+      detail: route ? `正在执行 ${routeLabel(route)} 模式：${message}` : message,
       createdAt,
       tone: 'thinking',
       icon: 'bot',
@@ -271,22 +266,6 @@ function inferExecutionEvent(event: Record<string, any>): ExecutionEventItem {
     const name = String(event.name || '自定义事件');
     const value = asRecord(event.value);
     const data = asRecord(value.data);
-    if (name === 'intent_classified' || value.type === 'intent_classified') {
-      const selectedRoute = String(data.selectedRoute || value.selectedRoute || value.route || '');
-      const rawConfidence = typeof data.confidence === 'number' ? data.confidence : value.confidence;
-      const confidence = typeof rawConfidence === 'number' ? Math.round(rawConfidence * 100) : null;
-      const reason = String(data.reason || value.reason || '');
-      const requiresConfirmation = Boolean(data.requiresConfirmation ?? value.requiresConfirmation);
-      return {
-        id: `${type}-${name}-${createdAt || Date.now()}`,
-        type,
-        title: '用户意图识别完成',
-        detail: `识别为 ${routeLabel(selectedRoute)} 模式${confidence == null ? '' : ` · 置信度 ${confidence}%`}${reason ? ` · ${reason}` : ''}`,
-        createdAt,
-        tone: requiresConfirmation ? 'waiting' : 'thinking',
-        icon: requiresConfirmation ? 'question' : 'sparkles',
-      };
-    }
     const tool = String(value.tool || value.toolName || '');
     const label = String(value.label || value.title || name);
     const detailParts: string[] = [];
@@ -414,6 +393,8 @@ export default function MangaAgentPage({ onCreateStory }: { onCreateStory?: () =
   const [draftReply, setDraftReply] = useState('');
   const [runStatus, setRunStatus] = useState('尚未开始运行');
   const [businessStatus, setBusinessStatus] = useState('');
+  const [lastProgressAt, setLastProgressAt] = useState('');
+  const [currentPhase, setCurrentPhase] = useState('');
   const [executionEvents, setExecutionEvents] = useState<ExecutionEventItem[]>([]);
   const [activeRequestId, setActiveRequestId] = useState<string | null>(null);
   const [pendingConversationId, setPendingConversationId] = useState<string | null>(null);
@@ -483,6 +464,8 @@ export default function MangaAgentPage({ onCreateStory }: { onCreateStory?: () =
       setCustomAnswer('');
       setRunStatus('尚未开始运行');
       setBusinessStatus('');
+      setLastProgressAt('');
+      setCurrentPhase('');
       setActiveRequestId(null);
       conversationCacheRef.current = {};
       if (!storyId) return;
@@ -561,6 +544,8 @@ export default function MangaAgentPage({ onCreateStory }: { onCreateStory?: () =
         setDraftReply('');
         setUserInputRequest(null);
         setBusinessStatus('');
+        setLastProgressAt('');
+        setCurrentPhase('');
         setActiveRequestId(null);
         setRunStatus('会话已就绪');
       }
@@ -576,6 +561,8 @@ export default function MangaAgentPage({ onCreateStory }: { onCreateStory?: () =
     setUserInputRequest(null);
     setCustomAnswer('');
     setBusinessStatus('');
+    setLastProgressAt('');
+    setCurrentPhase('');
     setActiveRequestId(null);
     try {
       const [list, openRun] = await Promise.all([
@@ -605,6 +592,8 @@ export default function MangaAgentPage({ onCreateStory }: { onCreateStory?: () =
     setUserInputRequest(snapshot.userInputRequest ?? null);
     setRunStatus(snapshot.status === 'WAITING_USER' ? '等待用户确认' : `业务状态：${snapshot.status}`);
     setBusinessStatus(snapshot.status);
+    setLastProgressAt(snapshot.lastProgressAt || '');
+    setCurrentPhase(snapshot.currentPhase || '');
     setDraftReply(snapshot.finalReply || '');
     setExecutionEvents((snapshot.events || []).map((event) => {
       const payload = asRecord(event.data);
@@ -619,6 +608,7 @@ export default function MangaAgentPage({ onCreateStory }: { onCreateStory?: () =
   function recordAgUiEvent(rawEvent: Record<string, any>) {
     const executionEvent = inferExecutionEvent(rawEvent);
     setExecutionEvents((prev) => appendExecutionEvent(prev, executionEvent));
+    setLastProgressAt(new Date().toISOString());
 
     if (rawEvent.type === 'STATE_SNAPSHOT') {
       const snapshot = asRecord(rawEvent.snapshot);
@@ -641,10 +631,6 @@ export default function MangaAgentPage({ onCreateStory }: { onCreateStory?: () =
       const status = String(value.status || '');
       if (status) setBusinessStatus(status);
       if (value.message) setRunStatus(String(value.message));
-      const selectedRoute = data.selectedRoute || value.selectedRoute;
-      if (rawEvent.name === 'intent_classified' && selectedRoute) {
-        setRunStatus(`已识别为${routeLabel(String(selectedRoute))}模式`);
-      }
     }
 
     if (rawEvent.type === 'TEXT_MESSAGE_CONTENT' || rawEvent.type === 'TEXT_MESSAGE_START') {
@@ -1080,6 +1066,7 @@ export default function MangaAgentPage({ onCreateStory }: { onCreateStory?: () =
                           {waitingForHuman ? '等待确认' : runStatus}
                         </span>
                         {businessStatus && <span className="rounded-full border border-paper-border bg-paper-base px-2.5 py-0.5 text-[11px] text-sumi-dim">状态 {businessStatus}</span>}
+                        {currentPhase && <span className="rounded-full border border-paper-border bg-paper-base px-2.5 py-0.5 text-[11px] text-sumi-dim">阶段 {currentPhase === 'TOOL' ? '工具调用' : '模型推理'}</span>}
                         {activeRequestId && <span className="text-[10px] text-sumi-faint font-mono">{formatRequestId(activeRequestId)}</span>}
                         {activeRequestId && (sending || waitingForHuman) && (
                           <button onClick={() => void cancelActiveRun()} className="inline-flex items-center gap-1 rounded-full border border-vermilion/30 bg-vermilion-light/20 px-2.5 py-0.5 text-[11px] text-vermilion transition hover:bg-vermilion-light/40">
@@ -1088,6 +1075,7 @@ export default function MangaAgentPage({ onCreateStory }: { onCreateStory?: () =
                           </button>
                         )}
                       </div>
+                      {lastProgressAt && <div className="mt-1.5 text-[10px] text-sumi-faint">最后有效进度：{formatTimestamp(lastProgressAt)}</div>}
 
                       {executionEvents.length > 0 && (
                         <details className="mt-2">

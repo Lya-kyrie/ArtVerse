@@ -38,5 +38,5 @@ Tuned for container/cloud: `-Dsun.net.inetaddr.negative.ttl=0 -Dnetworkaddress.c
 
 - WebClient must be shared (not created per-request). Created once in constructor.
 - Connection pool must be explicitly disposed on shutdown via `@PreDestroy`.
-- API keys come from `artverse.image.api-key` config, not user-provided (unlike DeepSeek).
+- Image requests normally receive the user's enabled provider profile resolved by `config_id`; `artverse.image.*` remains a compatibility fallback when no saved profile exists.
 - Error responses (401, 429, 5xx) must be mapped to clear `BusinessException` messages.

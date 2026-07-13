@@ -65,9 +65,14 @@ async function tryRefreshToken(): Promise<boolean> {
       }
     })();
   }
-  const ok = await refreshPromise;
-  refreshPromise = null;
-  return ok;
+  const currentRefresh = refreshPromise;
+  try {
+    return await currentRefresh;
+  } finally {
+    if (refreshPromise === currentRefresh) {
+      refreshPromise = null;
+    }
+  }
 }
 
 async function fetchAndSaveUser(): Promise<void> {
@@ -131,6 +136,9 @@ export type ApiCapability = 'llm' | 'image' | 'workflow';
 export type ProviderMode = 'official' | 'custom';
 
 export interface ProviderEndpointConfig {
+  configId?: number;
+  active?: boolean;
+  apiKeyMasked?: string;
   presetId: string;
   label: string;
   apiKey: string;
@@ -139,6 +147,9 @@ export interface ProviderEndpointConfig {
 }
 
 export interface ProviderPresetConfig {
+  remoteId?: number;
+  active?: boolean;
+  apiKeyMasked?: string;
   presetId: string;
   label: string;
   mode: ProviderMode;
@@ -152,6 +163,7 @@ export interface ProviderModelOption {
   value: string;
   model: string;
   entryId: string;
+  configId?: number;
   providerLabel: string;
   providerPresetId: string;
   apiKey: string;
@@ -223,6 +235,7 @@ function createDefaultPresetConfig(
   models: string[],
 ): ProviderPresetConfig {
   return {
+    active: true,
     presetId,
     label,
     mode: 'official',
@@ -304,6 +317,9 @@ function normalizePresetConfig(
       ],
   ));
   return {
+    remoteId: typeof raw?.remoteId === 'number' ? raw.remoteId : undefined,
+    active: typeof raw?.active === 'boolean' ? raw.active : fallback.active,
+    apiKeyMasked: String(raw?.apiKeyMasked || ''),
     presetId: String(raw?.presetId || fallback.presetId),
     label: String(raw?.label || fallback.label),
     mode: raw?.mode === 'custom' ? 'custom' : 'official',
@@ -405,6 +421,7 @@ function getFirstEntry(settings: CapabilityProviderSettings): ProviderPresetConf
 
 function isConfiguredProviderEntry(capability: ApiCapability, entry: ProviderPresetConfig): boolean {
   const template = getProviderTemplate(capability, entry.presetId);
+  if (entry.remoteId !== undefined && entry.apiKeyMasked) return true;
   const trimmedKey = entry.apiKey.trim();
   const trimmedLabel = entry.label.trim();
   const trimmedBaseUrl = entry.baseUrl.trim();
@@ -437,57 +454,23 @@ function normalizeProviderConfigValue(value: string | null | undefined): string 
   return String(value || '').trim().replace(/\/+$/, '');
 }
 
-function findMatchingProviderEntryId(
-  settings: CapabilityProviderSettings,
-  remoteConfig: Partial<ProviderEndpointConfig>,
-): string | null {
-  const remotePresetId = String(remoteConfig.presetId || '');
-  const remoteBaseUrl = normalizeProviderConfigValue(remoteConfig.baseUrl);
-  const remoteLabel = normalizeProviderConfigValue(remoteConfig.label);
-  const remoteModels = parseProviderModels(remoteConfig.model).join('\n');
-
-  const exactMatch = Object.entries(settings.entries).find(([, entry]) =>
-    entry.presetId === remotePresetId
-    && normalizeProviderConfigValue(entry.baseUrl) === remoteBaseUrl
-    && normalizeProviderConfigValue(entry.label) === remoteLabel
-    && parseProviderModels(entry.selectedModels).join('\n') === remoteModels,
-  );
-  if (exactMatch) return exactMatch[0];
-
-  const relaxedMatch = Object.entries(settings.entries).find(([, entry]) =>
-    entry.presetId === remotePresetId
-    && normalizeProviderConfigValue(entry.baseUrl) === remoteBaseUrl,
-  );
-  return relaxedMatch?.[0] || null;
+function providerConfigFingerprint(
+  presetId: string,
+  label: string,
+  baseUrl: string,
+  models: string | string[] | null | undefined,
+): string {
+  return JSON.stringify([
+    presetId.trim(),
+    label.trim(),
+    normalizeProviderConfigValue(baseUrl),
+    [...parseProviderModels(models)].sort(),
+  ]);
 }
 
-function mergeRemoteProviderConfig(
-  current: CapabilityProviderSettings,
-  capability: ApiCapability,
-  remoteConfig: Partial<ProviderEndpointConfig>,
-): CapabilityProviderSettings {
-  if (!isConfigMeaningful(remoteConfig)) return current;
-  const next = JSON.parse(JSON.stringify(current)) as CapabilityProviderSettings;
-  const matchingEntryId = findMatchingProviderEntryId(next, remoteConfig);
-  const activeEntryId = matchingEntryId || next.activePresetId;
-  const activeEntry = next.entries[activeEntryId] || getFirstEntry(next);
-
-  if (activeEntry) {
-    activeEntry.label = String(remoteConfig.label || activeEntry.label);
-    activeEntry.baseUrl = String(remoteConfig.baseUrl || activeEntry.baseUrl);
-    activeEntry.selectedModels = parseProviderModels(remoteConfig.model).length > 0
-      ? parseProviderModels(remoteConfig.model)
-      : activeEntry.selectedModels;
-    activeEntry.availableModels = Array.from(new Set([...activeEntry.availableModels, ...activeEntry.selectedModels]));
-    next.activePresetId = activeEntryId;
-    return next;
-  }
-
-  const remotePresetId = String(remoteConfig.presetId || '');
-  const entryId = createEntryKey(capability, remotePresetId || 'custom');
-  next.entries[entryId] = createMigratedEntry(capability, remoteConfig, '');
-  next.activePresetId = entryId;
-  return next;
+function isSameProviderConfig(local: ProviderPresetConfig, remote: ProviderEndpointConfig): boolean {
+  return providerConfigFingerprint(local.presetId, local.label, local.baseUrl, local.selectedModels)
+    === providerConfigFingerprint(remote.presetId, remote.label, remote.baseUrl, remote.model);
 }
 
 function getMeaningfulEntryIds(settings: CapabilityProviderSettings): string[] {
@@ -542,13 +525,50 @@ function migrateLegacySettings(): ApiKeySettings {
 
 export function mergeServerProviderConfigs(
   local: ApiKeySettings,
-  remote: Partial<Record<ApiCapability, ProviderEndpointConfig>>,
+  remote: Partial<Record<ApiCapability, ProviderEndpointConfig[]>>,
 ): ApiKeySettings {
   const next = JSON.parse(JSON.stringify(local)) as ApiKeySettings;
   (['llm', 'image', 'workflow'] as ApiCapability[]).forEach((capability) => {
-    const remoteConfig = remote[capability];
-    if (!remoteConfig) return;
-    next.providers[capability] = mergeRemoteProviderConfig(next.providers[capability], capability, remoteConfig);
+    const remoteEntries = remote[capability];
+    if (!remoteEntries) return;
+    const current = next.providers[capability];
+    const localEntries = Object.entries(current.entries);
+    const entries: Record<string, ProviderPresetConfig> = {};
+    const matchedLocalEntryIds = new Set<string>();
+    remoteEntries.forEach((remoteConfig) => {
+      const entryId = `server-${remoteConfig.configId}`;
+      const localMatchTuple = localEntries.find(([localEntryId, entry]) =>
+        !matchedLocalEntryIds.has(localEntryId)
+        && (entry.remoteId === remoteConfig.configId
+          || (entry.remoteId === undefined && isSameProviderConfig(entry, remoteConfig))),
+      );
+      if (localMatchTuple) matchedLocalEntryIds.add(localMatchTuple[0]);
+      const localMatch = localMatchTuple?.[1];
+      const template = getProviderTemplate(capability, remoteConfig.presetId);
+      const selectedModels = parseProviderModels(remoteConfig.model);
+      entries[entryId] = {
+        remoteId: remoteConfig.configId,
+        active: remoteConfig.active,
+        apiKeyMasked: remoteConfig.apiKeyMasked,
+        presetId: remoteConfig.presetId || template.presetId,
+        label: remoteConfig.label || template.label,
+        mode: remoteConfig.presetId === 'custom' ? 'custom' : 'official',
+        apiKey: localMatch?.apiKey || '',
+        baseUrl: remoteConfig.baseUrl || template.baseUrl,
+        selectedModels,
+        availableModels: Array.from(new Set([...selectedModels, ...(localMatch?.availableModels || [])])),
+      };
+    });
+    const hasRemoteActive = remoteEntries.some((entry) => entry.active);
+    localEntries
+      .filter(([entryId, entry]) =>
+        !matchedLocalEntryIds.has(entryId)
+        && entry.remoteId === undefined
+        && isConfiguredProviderEntry(capability, entry),
+      )
+      .forEach(([entryId, entry]) => { entries[entryId] = { ...entry, active: hasRemoteActive ? false : entry.active }; });
+    const activeEntryId = Object.entries(entries).find(([, entry]) => entry.active)?.[0] || Object.keys(entries)[0] || current.activePresetId;
+    next.providers[capability] = { activePresetId: activeEntryId, entries };
   });
   return next;
 }
@@ -597,12 +617,13 @@ function decodeProviderModelSelection(value: string): { entryId: string; model: 
 export function getProviderModelSelections(capability: ApiCapability): ProviderModelOption[] {
   const settings = getApiKeySettings();
   return Object.entries(settings.providers[capability].entries)
-    .filter(([, entry]) => isConfiguredProviderEntry(capability, entry))
+    .filter(([, entry]) => entry.active && isConfiguredProviderEntry(capability, entry))
     .flatMap(([entryId, entry]) =>
       entry.selectedModels.map((model) => ({
       value: encodeProviderModelSelection(entryId, model),
       model,
       entryId,
+      configId: entry.remoteId,
       providerLabel: entry.label || getProviderTemplate(capability, entry.presetId).label,
       providerPresetId: entry.presetId,
       apiKey: entry.apiKey,
@@ -649,6 +670,7 @@ export function getProviderRequestPayload(
       model: option.model,
       provider: option.providerPresetId,
       label: option.providerLabel,
+      config_id: option.configId ? String(option.configId) : '',
       api_key: option.apiKey,
       apiKey: option.apiKey,
       base_url: option.baseUrl,
@@ -660,6 +682,9 @@ export function getProviderRequestPayload(
 
 export function toProviderEndpointConfig(preset: ProviderPresetConfig): ProviderEndpointConfig {
   return {
+    configId: preset.remoteId,
+    active: preset.active,
+    apiKeyMasked: preset.apiKeyMasked,
     presetId: preset.presetId,
     label: preset.label,
     apiKey: preset.apiKey,
@@ -676,15 +701,23 @@ export function saveApiKeySettings(settings: ApiKeySettings): void {
       workflow: sanitizeCapabilitySettings('workflow', settings.providers.workflow),
     },
   };
-  localStorage.setItem(LS_PROVIDER_SETTINGS, JSON.stringify(normalized));
+  const persisted = JSON.parse(JSON.stringify(normalized)) as ApiKeySettings;
+  (['llm', 'image', 'workflow'] as ApiCapability[]).forEach((capability) => {
+    Object.values(persisted.providers[capability].entries).forEach((entry) => {
+      if (entry.remoteId !== undefined) entry.apiKey = '';
+    });
+  });
+  localStorage.setItem(LS_PROVIDER_SETTINGS, JSON.stringify(persisted));
   const storageMap: Record<ApiCapability, string> = {
     llm: LS_LLM_API_KEY,
     image: LS_IMAGE_API_KEY,
     workflow: LS_WORKFLOW_API_KEY,
   };
   (['llm', 'image', 'workflow'] as ApiCapability[]).forEach((capability) => {
-    const active = getActiveProviderPreset(normalized, capability);
-    const value = active.apiKey.trim();
+    const provider = normalized.providers[capability];
+    const primary = provider.entries[provider.activePresetId];
+    const active = primary?.active ? primary : Object.values(provider.entries).find((entry) => entry.active);
+    const value = active?.remoteId === undefined ? active.apiKey.trim() : '';
     if (value) localStorage.setItem(storageMap[capability], value);
     else localStorage.removeItem(storageMap[capability]);
   });
@@ -713,12 +746,14 @@ export async function saveUserApiKey(provider: string, apiKey: string): Promise<
   if (!res.ok) throw new Error(parseApiError(await res.text()));
 }
 
-export async function saveUserProviderConfig(capability: ApiCapability, config: ProviderEndpointConfig): Promise<void> {
+export async function saveUserProviderConfig(capability: ApiCapability, config: ProviderEndpointConfig): Promise<ProviderEndpointConfig> {
   const res = await authFetch(`${BASE}/api/user/provider-configs`, {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
       slot: capability,
+      config_id: config.configId,
+      active: config.active,
       provider: config.presetId,
       label: config.label,
       api_key: config.apiKey,
@@ -727,35 +762,76 @@ export async function saveUserProviderConfig(capability: ApiCapability, config: 
     }),
   });
   if (!res.ok) throw new Error(parseApiError(await res.text()));
+  return providerConfigFromResponse(await res.json());
 }
 
-export async function getUserProviderConfigs(): Promise<Partial<Record<ApiCapability, ProviderEndpointConfig>>> {
+export async function deleteUserProviderConfig(configId: number): Promise<void> {
+  const res = await authFetch(`${BASE}/api/user/provider-configs/${configId}`, { method: 'DELETE' });
+  if (!res.ok) throw new Error(parseApiError(await res.text()));
+}
+
+export async function activateUserProviderConfig(configId: number): Promise<ProviderEndpointConfig> {
+  const res = await authFetch(`${BASE}/api/user/provider-configs/${configId}/activate`, { method: 'POST' });
+  if (!res.ok) throw new Error(parseApiError(await res.text()));
+  return providerConfigFromResponse(await res.json());
+}
+
+export async function deactivateUserProviderConfig(configId: number): Promise<ProviderEndpointConfig> {
+  const res = await authFetch(`${BASE}/api/user/provider-configs/${configId}/deactivate`, { method: 'POST' });
+  if (!res.ok) throw new Error(parseApiError(await res.text()));
+  return providerConfigFromResponse(await res.json());
+}
+
+function providerConfigFromResponse(item: any): ProviderEndpointConfig {
+  const configId = Number(item.config_id ?? item.configId);
+  if (!Number.isSafeInteger(configId) || configId <= 0) {
+    throw new Error('后端返回的供应商配置缺少有效 config_id，请确认前后端版本一致。');
+  }
+  const apiKeyMasked = String(item.api_key_masked || item.apiKeyMasked || '');
+  return {
+    configId,
+    active: Boolean(item.active),
+    apiKeyMasked: apiKeyMasked === '(not set)' ? '' : apiKeyMasked,
+    presetId: String(item.provider || item.preset_id || item.presetId || ''),
+    label: String(item.label || ''),
+    apiKey: '',
+    baseUrl: String(item.base_url || item.baseUrl || ''),
+    model: String(item.model || ''),
+  };
+}
+
+export async function getUserProviderApiKey(configId: number): Promise<string> {
+  const res = await authFetch(`${BASE}/api/user/provider-configs/${configId}/api-key`, {
+    cache: 'no-store',
+  });
+  if (!res.ok) throw new Error(parseApiError(await res.text()));
+  const data = await res.json();
+  return String(data.api_key ?? data.apiKey ?? '');
+}
+
+export async function getUserProviderConfigs(): Promise<Partial<Record<ApiCapability, ProviderEndpointConfig[]>>> {
   const res = await authFetch(`${BASE}/api/user/provider-configs`);
   if (!res.ok) throw new Error(parseApiError(await res.text()));
   const data = await res.json();
-  return Object.fromEntries(
-    (Array.isArray(data) ? data : []).map((item: any) => [
-      item.slot,
-      {
-        presetId: String(item.provider || ''),
-        label: String(item.label || ''),
-        apiKey: '',
-        baseUrl: String(item.base_url || item.baseUrl || ''),
-        model: String(item.model || ''),
-      } satisfies ProviderEndpointConfig,
-    ]),
-  ) as Partial<Record<ApiCapability, ProviderEndpointConfig>>;
+  const result: Partial<Record<ApiCapability, ProviderEndpointConfig[]>> = {};
+  (Array.isArray(data) ? data : []).forEach((item: any) => {
+    const capability = String(item.slot || '') as ApiCapability;
+    if (!['llm', 'image', 'workflow'].includes(capability)) return;
+    result[capability] = [...(result[capability] || []), providerConfigFromResponse(item)];
+  });
+  return result;
 }
 
 export async function discoverProviderModels(
   capability: ApiCapability,
-  config: Pick<ProviderEndpointConfig, 'presetId' | 'apiKey' | 'baseUrl'>,
+  config: Pick<ProviderEndpointConfig, 'configId' | 'presetId' | 'apiKey' | 'baseUrl'>,
 ): Promise<string[]> {
   const res = await authFetch(`${BASE}/api/user/provider-models/discover`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
       slot: capability,
+      config_id: config.configId,
       provider: config.presetId,
       api_key: config.apiKey,
       base_url: config.baseUrl,
@@ -776,16 +852,23 @@ function apiHeaders(json = false): HeadersInit {
 }
 
 async function authFetch(input: RequestInfo, init?: RequestInit): Promise<Response> {
-  let res = await fetch(input, { ...init, credentials: 'same-origin', headers: { ...apiHeaders(), ...(init?.headers || {}) } });
-  if (res.status === 401) {
-    const refreshed = await tryRefreshToken();
-    if (refreshed) {
-      res = await fetch(input, { ...init, credentials: 'same-origin', headers: { ...apiHeaders(), ...(init?.headers || {}) } });
-    } else {
-      notifyAuthExpired();
+  try {
+    let res = await fetch(input, { ...init, credentials: 'same-origin', headers: { ...apiHeaders(), ...(init?.headers || {}) } });
+    if (res.status === 401) {
+      const refreshed = await tryRefreshToken();
+      if (refreshed) {
+        res = await fetch(input, { ...init, credentials: 'same-origin', headers: { ...apiHeaders(), ...(init?.headers || {}) } });
+      } else {
+        notifyAuthExpired();
+      }
     }
+    return res;
+  } catch (cause) {
+    if (cause instanceof TypeError) {
+      throw new Error('无法连接后端服务，请确认 8080 端口的 ArtVerse 后端已启动后重试。', { cause });
+    }
+    throw cause;
   }
-  return res;
 }
 
 export interface Story {
@@ -859,7 +942,7 @@ export async function deleteStory(storyId: number): Promise<void> {
 }
 
 export async function exportStory(story: Story): Promise<void> {
-  const res = await fetch(`${BASE}/api/stories/${story.id}/export`, { headers: apiHeaders() });
+  const res = await authFetch(`${BASE}/api/stories/${story.id}/export`);
   if (!res.ok) throw new Error(await res.text());
   const blob = await res.blob();
   const url = URL.createObjectURL(blob);
@@ -899,6 +982,7 @@ export function importStoryPackage(
     const doSend = () => {
       const xhr = new XMLHttpRequest();
       xhr.open('POST', `${BASE}/api/stories/import`);
+      xhr.withCredentials = true;
       const headers = apiHeaders();
       Object.entries(headers).forEach(([key, value]) => {
         if (typeof value === 'string') xhr.setRequestHeader(key, value);
@@ -1663,7 +1747,166 @@ export async function listMyWorks(): Promise<MyWork[]> {
 }
 
 // ---- Image Gen ----
-export interface ImageGenRecord { id: number; prompt: string; image_url: string; model: string; size: string; created_at: string; }
+export interface ImageGenRecord {
+  id: number;
+  prompt: string;
+  image_url: string | null;
+  model: string;
+  size: string;
+  status: 'RUNNING' | 'SUCCEEDED' | 'FAILED';
+  failure_reason: string | null;
+  created_at: string;
+  completed_at: string | null;
+}
+
+// ---- Story knowledge base ----
+export type KnowledgeUnitType = 'CHARACTER_CARD' | 'CHARACTER_RELATION' | 'WORLDVIEW' | 'TIMELINE' | 'FORESHADOWING';
+export interface KnowledgeUnit {
+  id: number;
+  type: KnowledgeUnitType;
+  title: string;
+  body: string;
+  summary: string;
+  structuredData: Record<string, unknown>;
+  importance: number;
+  effectiveFromChapter: number | null;
+  effectiveToChapter: number | null;
+  status: 'ACTIVE' | 'ARCHIVED';
+  version: number;
+  indexStatus: string;
+  updatedAt: string;
+}
+export interface KnowledgeUnitInput {
+  type: KnowledgeUnitType;
+  title: string;
+  body: string;
+  summary: string;
+  structuredData: Record<string, unknown>;
+  importance: number;
+  effectiveFromChapter?: number | null;
+  effectiveToChapter?: number | null;
+}
+export interface EmbeddingConfigInfo {
+  id: number;
+  displayName: string;
+  baseUrl: string;
+  model: string;
+  apiKeyMasked: string;
+  customHeaders: string;
+  status: 'UNVERIFIED' | 'VERIFIED' | 'RETIRED';
+  actualDimension: number | null;
+  configVersion: number;
+  active: boolean;
+  usedByStories: boolean;
+  usedByStoryTitles?: string[];
+}
+export interface EmbeddingConfigInput {
+  configId?: number;
+  displayName: string;
+  baseUrl: string;
+  apiKey: string;
+  model: string;
+  customHeaders: string;
+}
+export interface KnowledgeRecallPreview {
+  items: Array<{ knowledgeUnitId: number; version: number; type: KnowledgeUnitType; title: string; content: string; score: number }>;
+  context: string;
+  contextHash: string;
+  embeddingSpaceId: number;
+}
+
+function knowledgePayload(input: KnowledgeUnitInput): Record<string, unknown> {
+  return {
+    type: input.type,
+    title: input.title,
+    body: input.body,
+    summary: input.summary,
+    structured_data: input.structuredData,
+    importance: input.importance,
+    effective_from_chapter: input.effectiveFromChapter ?? null,
+    effective_to_chapter: input.effectiveToChapter ?? null,
+  };
+}
+export async function listKnowledge(storyId: number): Promise<KnowledgeUnit[]> {
+  const res = await authFetch(`${BASE}/api/stories/${storyId}/knowledge`);
+  if (!res.ok) throw new Error(parseApiError(await res.text()));
+  return res.json();
+}
+export async function createKnowledge(storyId: number, input: KnowledgeUnitInput): Promise<KnowledgeUnit> {
+  const res = await authFetch(`${BASE}/api/stories/${storyId}/knowledge`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(knowledgePayload(input)) });
+  if (!res.ok) throw new Error(parseApiError(await res.text()));
+  return res.json();
+}
+export async function updateKnowledge(storyId: number, id: number, input: KnowledgeUnitInput): Promise<KnowledgeUnit> {
+  const res = await authFetch(`${BASE}/api/stories/${storyId}/knowledge/${id}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(knowledgePayload(input)) });
+  if (!res.ok) throw new Error(parseApiError(await res.text()));
+  return res.json();
+}
+export async function archiveKnowledge(storyId: number, id: number): Promise<void> {
+  const res = await authFetch(`${BASE}/api/stories/${storyId}/knowledge/${id}`, { method: 'DELETE' });
+  if (!res.ok) throw new Error(parseApiError(await res.text()));
+}
+export async function getEmbeddingConfigs(): Promise<EmbeddingConfigInfo[]> {
+  const res = await authFetch(`${BASE}/api/user/embedding-configs`);
+  if (!res.ok) throw new Error(parseApiError(await res.text()));
+  const data = await res.json();
+  return Array.isArray(data) ? data.map(embeddingConfigFromResponse) : [];
+}
+function embeddingConfigPayload(input: EmbeddingConfigInput): Record<string, unknown> {
+  return { config_id: input.configId, display_name: input.displayName, base_url: input.baseUrl, api_key: input.apiKey, model: input.model, custom_headers: input.customHeaders };
+}
+function embeddingConfigFromResponse(item: any): EmbeddingConfigInfo {
+  return {
+    id: Number(item.id),
+    displayName: String(item.display_name ?? item.displayName ?? ''),
+    baseUrl: String(item.base_url ?? item.baseUrl ?? ''),
+    model: String(item.model ?? ''),
+    apiKeyMasked: String(item.api_key_masked ?? item.apiKeyMasked ?? ''),
+    customHeaders: String(item.custom_headers ?? item.customHeaders ?? '{}'),
+    status: String(item.status ?? 'UNVERIFIED') as EmbeddingConfigInfo['status'],
+    actualDimension: item.actual_dimension == null && item.actualDimension == null ? null : Number(item.actual_dimension ?? item.actualDimension),
+    configVersion: Number(item.config_version ?? item.configVersion ?? 1),
+    active: Boolean(item.active),
+    usedByStories: Boolean(item.used_by_stories ?? item.usedByStories),
+    usedByStoryTitles: (item.used_by_story_titles ?? item.usedByStoryTitles ?? []).map((title: unknown) => String(title)),
+  };
+}
+export async function saveEmbeddingConfig(input: EmbeddingConfigInput): Promise<EmbeddingConfigInfo> {
+  const res = await authFetch(`${BASE}/api/user/embedding-configs`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(embeddingConfigPayload(input)) });
+  if (!res.ok) throw new Error(parseApiError(await res.text()));
+  return embeddingConfigFromResponse(await res.json());
+}
+export async function testEmbeddingConfig(configId: number): Promise<{ config: EmbeddingConfigInfo; embeddingSpaceId: number; dimension: number }> {
+  const res = await authFetch(`${BASE}/api/user/embedding-configs/test`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ config_id: configId }) });
+  if (!res.ok) throw new Error(parseApiError(await res.text()));
+  const data = await res.json();
+  return { config: embeddingConfigFromResponse(data.config), embeddingSpaceId: Number(data.embedding_space_id ?? data.embeddingSpaceId), dimension: Number(data.dimension) };
+}
+export async function activateEmbeddingConfig(configId: number): Promise<EmbeddingConfigInfo> {
+  const res = await authFetch(`${BASE}/api/user/embedding-configs/${configId}/activate`, { method: 'POST' });
+  if (!res.ok) throw new Error(parseApiError(await res.text()));
+  return embeddingConfigFromResponse(await res.json());
+}
+export async function deactivateEmbeddingConfig(configId: number): Promise<EmbeddingConfigInfo> {
+  const res = await authFetch(`${BASE}/api/user/embedding-configs/${configId}/deactivate`, { method: 'POST' });
+  if (!res.ok) throw new Error(parseApiError(await res.text()));
+  return embeddingConfigFromResponse(await res.json());
+}
+export async function discoverEmbeddingModels(input: EmbeddingConfigInput): Promise<string[]> {
+  const res = await authFetch(`${BASE}/api/user/embedding-configs/models/discover`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(embeddingConfigPayload(input)) });
+  if (!res.ok) throw new Error(parseApiError(await res.text()));
+  const data = await res.json();
+  return Array.isArray(data.models) ? data.models.map((model: unknown) => String(model)).filter(Boolean) : [];
+}
+export async function rebuildKnowledge(storyId: number, configId: number): Promise<void> {
+  const res = await authFetch(`${BASE}/api/stories/${storyId}/knowledge/rebuild`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ config_id: configId }) });
+  if (!res.ok) throw new Error(parseApiError(await res.text()));
+}
+export async function previewKnowledge(storyId: number, chapterNumber: number, query: string): Promise<KnowledgeRecallPreview> {
+  const res = await authFetch(`${BASE}/api/stories/${storyId}/knowledge/preview?chapterNumber=${chapterNumber}&query=${encodeURIComponent(query)}`);
+  if (!res.ok) throw new Error(parseApiError(await res.text()));
+  return res.json();
+}
 
 export async function generateImage(prompt: string, referenceImages?: string[], size?: string, model?: string, signal?: AbortSignal): Promise<ImageGenRecord> {
   const res = await authFetch(BASE+'/api/image-gen/generate', {
@@ -1775,7 +2018,7 @@ export interface MangaAgentConversation {
   archivedAt?: string | null;
 }
 
-export type MangaWorkflowRoute = 'AUTO' | 'CHAT' | 'DIRECTOR' | 'HITL' | 'REVIEW';
+export type MangaWorkflowRoute = 'DIRECTOR';
 
 export type MangaAgentRunEvent =
   | { type: 'status'; data: { message?: string; requestId?: string; request_id?: string } }
@@ -1848,6 +2091,8 @@ export interface MangaAgentRunSnapshot {
   createdAt?: string;
   updatedAt?: string;
   completedAt?: string | null;
+  lastProgressAt?: string;
+  currentPhase?: 'MODEL' | 'TOOL' | string;
 }
 
 export interface AgentUserInputOption {
@@ -1909,13 +2154,12 @@ export async function runMangaAgent(
   chapterId: number,
   message: string,
   requestId?: string,
-  route?: MangaWorkflowRoute,
   model?: string,
 ): Promise<{ reply: string; request_id?: string; requestId?: string }> {
   const res = await authFetch(`${BASE}/api/chapters/${chapterId}/manga-agent/run`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ message, requestId, route, ...getProviderRequestPayload('llm', model) }),
+    body: JSON.stringify({ message, requestId, ...getProviderRequestPayload('llm', model) }),
   });
   if (!res.ok) throw new Error(parseApiError(await res.text()));
   return res.json();
@@ -1926,11 +2170,10 @@ export function runMangaAgentStream(
   message: string,
   requestId: string | undefined,
   onEvent: (event: MangaAgentRunEvent) => void,
-  route?: MangaWorkflowRoute,
 ): AbortController {
   return startMangaAgentEventStream(
     `${BASE}/api/chapters/${chapterId}/manga-agent/run-stream`,
-    { message, requestId, route },
+    { message, requestId },
     requestId,
     onEvent,
   );
@@ -1965,6 +2208,7 @@ class ArtVerseMangaAgentHttpAgent extends HttpAgent {
     const providerPayload = getProviderRequestPayload('llm', this.model);
     return {
       method: 'POST',
+      credentials: 'same-origin',
       headers: {
         ...this.headers,
         'Content-Type': 'application/json',

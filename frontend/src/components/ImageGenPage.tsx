@@ -140,6 +140,40 @@ function saveGenConfig(config: GenConfig) {
   localStorage.setItem(LS_GEN_CONFIG_KEY, JSON.stringify(config));
 }
 
+function historyMessages(records: ImageGenRecord[]): Message[] {
+  return [...records]
+    .reverse()
+    .flatMap((record) => [
+      { id: 'u-' + record.id, type: 'user' as const, prompt: record.prompt },
+      { id: 'a-' + record.id, type: 'ai' as const, record },
+    ]);
+}
+
+function mergeHistoryIntoThemes(themes: GenTheme[], records: ImageGenRecord[]): GenTheme[] {
+  if (themes.length === 0) return themes;
+
+  const recordsById = new Map(records.map((record) => [record.id, record]));
+  const knownRecordIds = new Set<number>();
+  const updatedThemes = themes.map((theme) => ({
+    ...theme,
+    messages: theme.messages.map((message) => {
+      if (!message.record) return message;
+      knownRecordIds.add(message.record.id);
+      const current = recordsById.get(message.record.id);
+      return current ? { ...message, record: current } : message;
+    }),
+  }));
+  const missingRecords = records.filter((record) => !knownRecordIds.has(record.id));
+  if (missingRecords.length === 0) return updatedThemes;
+
+  // The server does not persist client-side themes. Recover into the original
+  // history theme, which preserves the existing grouping for local messages.
+  const recoveredMessages = historyMessages(missingRecords);
+  return updatedThemes.map((theme, index) => (
+    index === 0 ? { ...theme, messages: [...recoveredMessages, ...theme.messages] } : theme
+  ));
+}
+
 function fmtRes(v: string | null | undefined): string {
   if (!v) return '';
   return v.split('x').join('×');
@@ -633,9 +667,11 @@ export default function ImageGenPage() {
       });
   }
 
-  // Initialize: load themes and config from localStorage
+  // Initialize from the local cache, then reconcile persisted history. A request
+  // can finish while this page is unmounted, so cache contents alone are stale.
   useEffect(() => {
     let stored = loadThemes();
+    let cancelled = false;
     if (stored.length === 0) {
       // First visit: seed default theme from backend history
       (async () => {
@@ -647,12 +683,7 @@ export default function ImageGenPage() {
         };
         try {
           const r = await listImageGenHistory(0, 50);
-          const msgs: Message[] = [];
-          for (const record of [...r.content].reverse()) {
-            msgs.push({ id: 'u-' + record.id, type: 'user', prompt: record.prompt });
-            msgs.push({ id: 'a-' + record.id, type: 'ai', record });
-          }
-          defaultTheme.messages = msgs;
+          defaultTheme.messages = historyMessages(r.content);
         } catch {
           // Empty history is fine.
         }
@@ -673,8 +704,21 @@ export default function ImageGenPage() {
       setActiveThemeId(activeId);
       setConfig(loadGenConfig());
       setLoaded(true);
-      setLoading(false);
     }
+    if (stored.length > 0) void (async () => {
+      try {
+        const response = await listImageGenHistory(0, 50);
+        if (!cancelled) {
+          setThemes((current) => mergeHistoryIntoThemes(current, response.content));
+        }
+      } catch {
+        // The cached conversation remains usable when history is unavailable.
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+
+    return () => { cancelled = true; };
   }, []);
 
   // When themes change, persist to localStorage
@@ -706,6 +750,22 @@ export default function ImageGenPage() {
     [generatingThemes],
   );
   const isActiveThemeGenerating = activeThemeId ? !!generatingThemes[activeThemeId] : false;
+
+  const hasRunningRecords = useMemo(
+    () => themes.some((theme) => theme.messages.some((message) => message.record?.status === 'RUNNING')),
+    [themes],
+  );
+
+  useEffect(() => {
+    if (!hasRunningRecords) return;
+    const refreshHistory = () => {
+      void listImageGenHistory(0, 50)
+        .then((response) => setThemes((current) => mergeHistoryIntoThemes(current, response.content)))
+        .catch(() => {});
+    };
+    const intervalId = window.setInterval(refreshHistory, 3000);
+    return () => window.clearInterval(intervalId);
+  }, [hasRunningRecords]);
 
   // Scroll to bottom on new messages
   useEffect(() => {
@@ -1236,7 +1296,7 @@ export default function ImageGenPage() {
 
                   const record = msg.record;
                   if (record) {
-                    const imageUrl = imageGenUrl(record.image_url);
+                    const imageUrl = record.image_url ? imageGenUrl(record.image_url) : '';
                     return (
                       <div key={msg.id} className="space-y-3">
                         <div className="flex items-center justify-between text-xs text-cream-dim">
@@ -1244,9 +1304,21 @@ export default function ImageGenPage() {
                             <span className="font-medium text-cream">{record.model || 'gpt-image-2'}</span>
                             <span>{record.size ? fmtRes(record.size) : '生成图片'}</span>
                           </div>
-                          <span>{new Date(record.created_at).toLocaleString()}</span>
+                          <span>{record.status === 'RUNNING' ? '姝ｅ湪鐢熸垚' : new Date(record.created_at).toLocaleString()}</span>
                         </div>
 
+                        {record.status === 'RUNNING' ? (
+                          <div className="flex justify-start">
+                            <div className="inline-flex items-center gap-2 rounded-2xl border border-ink-border bg-ink-light px-4 py-3 text-sm text-cream-dim shadow-sm">
+                              <Loader2 size={16} className="animate-spin text-coral" />
+                              姝ｅ湪鐢熸垚鍥剧墖...
+                            </div>
+                          </div>
+                        ) : record.status === 'FAILED' ? (
+                          <div className="rounded-xl border border-red-400/30 bg-red-400/10 px-4 py-3 text-sm text-red-300">
+                            生成失败：{record.failure_reason || '未知错误'}
+                          </div>
+                        ) : (
                         <div className="flex justify-start">
                           <div className="inline-flex max-w-full items-center justify-center overflow-hidden rounded-2xl border border-ink-border bg-ink-light shadow-sm">
                             <img
@@ -1257,8 +1329,9 @@ export default function ImageGenPage() {
                             />
                           </div>
                         </div>
+                        )}
 
-                        <div className="flex items-center gap-2 text-cream-dim">
+                        {record.status === 'SUCCEEDED' && <div className="flex items-center gap-2 text-cream-dim">
                           <button
                             className="rounded-lg p-2 hover:bg-ink-lighter transition-colors"
                             title="复制图片到剪贴板"
@@ -1283,7 +1356,7 @@ export default function ImageGenPage() {
                           <button onClick={() => handleDelete(record.id, msg.id)} className="rounded-lg p-2 hover:bg-ink-lighter" title="删除记录">
                             <Trash2 size={14} />
                           </button>
-                        </div>
+                        </div>}
                       </div>
                     );
                   }

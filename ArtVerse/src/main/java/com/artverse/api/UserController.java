@@ -8,6 +8,7 @@ import com.artverse.application.CurrentUserService;
 import com.artverse.application.UserProviderConfig;
 import com.artverse.domain.User;
 import lombok.RequiredArgsConstructor;
+import org.springframework.http.CacheControl;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
@@ -62,8 +63,16 @@ public class UserController {
         return ResponseEntity.ok(apiKeyService.getProviderConfigs(user));
     }
 
+    @GetMapping("/provider-configs/{configId}/api-key")
+    public ResponseEntity<Map<String, String>> getProviderApiKey(@PathVariable Long configId) {
+        String apiKey = apiKeyService.getProviderApiKey(currentUser(), configId);
+        return ResponseEntity.ok()
+                .cacheControl(CacheControl.noStore())
+                .body(Map.of("api_key", apiKey));
+    }
+
     @PutMapping("/provider-configs")
-    public ResponseEntity<Void> saveProviderConfig(@RequestBody Map<String, Object> body) {
+    public ResponseEntity<ProviderInfo> saveProviderConfig(@RequestBody Map<String, Object> body) {
         User user = currentUser();
         UserProviderConfig config = new UserProviderConfig(
                 str(body, "slot"),
@@ -73,17 +82,34 @@ public class UserController {
                 str(body, "base_url"),
                 str(body, "model")
         );
-        apiKeyService.saveProviderConfig(user, config);
-        return ResponseEntity.ok().build();
+        return ResponseEntity.ok(apiKeyService.saveProviderConfig(user, longValue(body, "config_id"), config, boolValue(body, "active")));
+    }
+
+    @DeleteMapping("/provider-configs/{configId}")
+    public ResponseEntity<Void> deleteProviderConfig(@PathVariable Long configId) {
+        apiKeyService.deleteProviderConfig(currentUser(), configId);
+        return ResponseEntity.noContent().build();
+    }
+
+    @PostMapping("/provider-configs/{configId}/activate")
+    public ResponseEntity<ProviderInfo> activateProviderConfig(@PathVariable Long configId) {
+        return ResponseEntity.ok(apiKeyService.activateProviderConfig(currentUser(), configId));
+    }
+
+    @PostMapping("/provider-configs/{configId}/deactivate")
+    public ResponseEntity<ProviderInfo> deactivateProviderConfig(@PathVariable Long configId) {
+        return ResponseEntity.ok(apiKeyService.deactivateProviderConfig(currentUser(), configId));
     }
 
     @PostMapping("/provider-models/discover")
     public ResponseEntity<Map<String, Object>> discoverModels(@RequestBody Map<String, Object> body) {
         List<String> models = apiKeyService.discoverModels(
+                currentUser(),
                 str(body, "slot"),
                 str(body, "provider"),
                 str(body, "api_key"),
-                str(body, "base_url")
+                str(body, "base_url"),
+                longValue(body, "config_id")
         );
         return ResponseEntity.ok(Map.of("models", models));
     }
@@ -95,5 +121,20 @@ public class UserController {
     private static String str(Map<String, Object> body, String key) {
         Object val = body.get(key);
         return val == null ? "" : val.toString();
+    }
+
+    private static Long longValue(Map<String, Object> body, String key) {
+        Object value = body.get(key);
+        if (value == null || value.toString().isBlank()) return null;
+        try {
+            return Long.valueOf(value.toString());
+        } catch (NumberFormatException e) {
+            throw new IllegalArgumentException(key + " must be a number");
+        }
+    }
+
+    private static boolean boolValue(Map<String, Object> body, String key) {
+        Object value = body.get(key);
+        return value != null && Boolean.parseBoolean(value.toString());
     }
 }

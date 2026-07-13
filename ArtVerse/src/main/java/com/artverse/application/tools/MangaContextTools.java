@@ -10,12 +10,14 @@ import com.artverse.persistence.MangaImageRepository;
 import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.tool.Tool;
 import lombok.RequiredArgsConstructor;
+import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
+@Component
 @RequiredArgsConstructor
 public class MangaContextTools {
 

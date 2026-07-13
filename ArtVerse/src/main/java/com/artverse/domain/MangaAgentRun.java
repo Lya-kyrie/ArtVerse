@@ -74,11 +74,18 @@ public class MangaAgentRun {
     @Column(name = "completed_at")
     private OffsetDateTime completedAt;
 
+    @Column(name = "last_progress_at", nullable = false)
+    private OffsetDateTime lastProgressAt;
+
+    @Column(name = "current_phase", nullable = false, length = 32)
+    private String currentPhase = "MODEL";
+
     @PrePersist
     protected void onCreate() {
         OffsetDateTime now = OffsetDateTime.now();
         createdAt = now;
         updatedAt = now;
+        lastProgressAt = now;
         if (requestId == null) requestId = UUID.randomUUID();
     }
 

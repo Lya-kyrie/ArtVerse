@@ -11,8 +11,7 @@ Bridges ArtVerse business logic to the AgentScope Java v2 SDK (`agentscope-core`
 
 | Class | Role |
 |-------|------|
-| `HarnessAgentGateway` | Interface: `streamChat()`, `streamEvents()`, `generate()` |
-| `AgentScopeHarnessAgentGateway` | Implementation: message prep, harness invocation, event mapping |
+| `AgentScopeHarnessAgentGateway` | Message prep, harness invocation, event mapping, resilience (circuit breaker + retry) |
 
 ## Code Map — Factory & Context
 
@@ -35,12 +34,10 @@ Bridges ArtVerse business logic to the AgentScope Java v2 SDK (`agentscope-core`
 | Class | Role |
 |-------|------|
 | `AgentRunRequest` | Immutable request record passed to gateway |
-| `AgentRunEvent` | Mapped agent event for SSE streaming |
-| `AgentScopeEventMapper` | Maps AgentScope SDK events → `AgentRunEvent` |
+| `AgentRunEvent` | Mapped agent event for SSE streaming; mapping is inlined in `MangaDirectorAgentNode` |
 | `AgentModelSpec` | Model configuration: provider, baseUrl, model, apiKeyHash |
 | `AgentTaskType` | Enum: `CHAT`, `NOVEL`, `MANGA_DIRECTOR` |
 | `AgentMessage` | Simple role + content record |
-| `AgentSessionIdFactory` | Session ID builder for AgentScope sessions |
 | `MangaAgentPromptProvider` | System prompt for Manga Director agent |
 | `MangaAgentRuntimeContext` | Per-call business context carried in `RuntimeContext` |
 

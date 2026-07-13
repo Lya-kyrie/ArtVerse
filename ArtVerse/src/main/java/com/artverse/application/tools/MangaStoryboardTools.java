@@ -11,11 +11,13 @@ import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.tool.Tool;
 import io.agentscope.core.tool.ToolParam;
 import lombok.RequiredArgsConstructor;
+import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
 import java.util.Map;
 
+@Component
 @RequiredArgsConstructor
 public class MangaStoryboardTools {
 

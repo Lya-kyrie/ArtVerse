@@ -89,6 +89,10 @@ artverse:
     enabled: true
     default-ttl-seconds: 30
   agent:
+    first-event-timeout-seconds: 90
+    model-idle-timeout-seconds: 180
+    tool-idle-timeout-seconds: 600
+    run-watchdog-interval-ms: 30000
     max-concurrent-runs: 8
     max-retries: 2
     retry-min-backoff-ms: 1000
@@ -115,6 +119,7 @@ sa-token:
   is-write-header: false
   is-log: true
   cookie:
+    path: /
     http-only: true
     same-site: lax
     secure: false

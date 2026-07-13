@@ -1,0 +1,35 @@
+- generic [ref=e3]:
+  - complementary [ref=e4]:
+    - generic [ref=e5]:
+      - generic [ref=e6]: ArtVerse
+      - button "Toggle sidebar" [ref=e10]
+    - navigation [ref=e15]:
+      - button "创作助手" [ref=e16]
+      - button "作品广场" [ref=e22]
+      - button "故事工作区" [ref=e28]
+      - button "作品管理" [ref=e33]
+      - button "AI 生图" [ref=e39]
+    - button "登录" [ref=e47]
+  - generic [ref=e53]:
+    - banner [ref=e54]:
+      - generic [ref=e60]:
+        - heading "创作工坊" [level=1] [ref=e61]
+        - paragraph [ref=e62]: AI 漫画创作工坊
+    - generic [ref=e63]:
+      - complementary [ref=e64]:
+        - generic [ref=e65]:
+          - paragraph [ref=e66]: 会话列表
+          - button "新建" [disabled] [ref=e67]
+        - generic [ref=e69]: 暂无会话
+      - main [ref=e71]:
+        - generic [ref=e77]:
+          - generic [ref=e78]: AI 对话
+          - generic [ref=e79]: 漫画创作助手
+        - generic [ref=e84]:
+          - generic [ref=e85]:
+            - button "暂无故事" [ref=e87]
+            - button "暂无章节" [disabled] [ref=e92]
+            - button "选择模型" [ref=e98] [cursor=pointer]
+          - generic [ref=e105]:
+            - textbox "请先选择故事和章节" [ref=e106]
+            - button "发送" [disabled] [ref=e107]

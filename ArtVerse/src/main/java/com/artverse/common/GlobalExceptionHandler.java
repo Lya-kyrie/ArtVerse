@@ -5,6 +5,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
+import jakarta.servlet.http.HttpServletRequest;
 
 import lombok.extern.slf4j.Slf4j;
 
@@ -27,8 +28,9 @@ public class GlobalExceptionHandler {
     }
 
     @ExceptionHandler(NotLoginException.class)
-    public ResponseEntity<Map<String, Object>> handleNotLogin(NotLoginException ex) {
-        log.info("Authentication required: {}", ex.getMessage());
+    public ResponseEntity<Map<String, Object>> handleNotLogin(NotLoginException ex, HttpServletRequest request) {
+        log.info("Authentication required: method={}, uri={}, reason={}",
+                request.getMethod(), request.getRequestURI(), ex.getMessage());
         return ResponseEntity.status(401).body(Map.of(
                 "detail", "Login expired",
                 "code", "AUTH_EXPIRED"));

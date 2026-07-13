@@ -50,10 +50,11 @@ import ImageEditor from './ImageEditor';
 
 interface Props {
   onSelectStory: (story: Story) => void;
-  createStorySignal?: number;
+  createStorySignal?: number | null;
+  onCreateStorySignalConsumed?: () => void;
 }
 
-export default function HomePage({ onSelectStory }: Props) {
+export default function HomePage({ onSelectStory, createStorySignal, onCreateStorySignalConsumed }: Props) {
   const [stories, setStories] = useState<Story[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -99,7 +100,6 @@ export default function HomePage({ onSelectStory }: Props) {
   const [refModalStoryId, setRefModalStoryId] = useState<number | null>(null);
   const [refModalImages, setRefModalImages] = useState<RefImage[]>([]);
   const [refModalMax, setRefModalMax] = useState(4);
-  const [refModalLoading] = useState(false);
   const [refModalUploading, setRefModalUploading] = useState(false);
   const [storyRefFlags, setStoryRefFlags] = useState<Record<number, boolean>>({});
   const refModalFileRef = useRef<HTMLInputElement>(null);
@@ -118,6 +118,12 @@ export default function HomePage({ onSelectStory }: Props) {
   const assetModalRequestRef = useRef(0);
 
   const activeAssetGroup = assetGroups.find((g) => String(g.id) === assetSelectedKey);
+
+  useEffect(() => {
+    if (createStorySignal == null) return;
+    setShowNew(true);
+    onCreateStorySignalConsumed?.();
+  }, [createStorySignal, onCreateStorySignalConsumed]);
 
 
   const syncActiveAssetDraft = (group: AssetGroup | undefined) => {
@@ -1228,11 +1234,7 @@ export default function HomePage({ onSelectStory }: Props) {
               <p className="text-xs text-cream-dim mb-4 leading-relaxed">
                 上传默认垫图（最多 {refModalMax} 张），所有章节默认继承，用作人物外貌和画面参考。章节内也可单独覆盖。
               </p>
-              {refModalLoading ? (
-                <div className="flex items-center justify-center py-12 text-cream-dim">
-                  <Loader2 size={24} className="animate-spin" />
-                </div>
-              ) : refModalImages.length === 0 ? (
+              {refModalImages.length === 0 ? (
                 <button
                   onClick={() => refModalFileRef.current?.click()}
                   disabled={refModalUploading}

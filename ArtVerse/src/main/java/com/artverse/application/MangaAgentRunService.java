@@ -49,6 +49,8 @@ public class MangaAgentRunService {
                         existing.setStatus(MangaAgentRunStatus.RUNNING);
                         existing.setUserInputRequestJson(null);
                         existing.setErrorMessage(null);
+                        existing.setCurrentPhase("MODEL");
+                        existing.setLastProgressAt(OffsetDateTime.now());
                         existing.setUpdatedAt(OffsetDateTime.now());
                     }
                     return runRepository.save(existing);
@@ -61,6 +63,7 @@ public class MangaAgentRunService {
                     run.setRequestId(requestId);
                     run.setInputMessage(inputMessage);
                     run.setStatus(MangaAgentRunStatus.RUNNING);
+                    run.setCurrentPhase("MODEL");
                     return runRepository.save(run);
                 });
     }
@@ -81,6 +84,8 @@ public class MangaAgentRunService {
                         existing.setStatus(MangaAgentRunStatus.RUNNING);
                         existing.setUserInputRequestJson(null);
                         existing.setErrorMessage(null);
+                        existing.setCurrentPhase("MODEL");
+                        existing.setLastProgressAt(OffsetDateTime.now());
                         existing.setUpdatedAt(OffsetDateTime.now());
                     }
                     return runRepository.save(existing);
@@ -95,6 +100,7 @@ public class MangaAgentRunService {
                     run.setInputMessage(inputMessage);
                     run.setRoute(effectiveRoute);
                     run.setStatus(MangaAgentRunStatus.RUNNING);
+                    run.setCurrentPhase("MODEL");
                     return runRepository.save(run);
                 });
     }
@@ -192,6 +198,8 @@ public class MangaAgentRunService {
         run.setStatus(MangaAgentRunStatus.RUNNING);
         run.setUserInputRequestJson(null);
         run.setErrorMessage(null);
+        run.setCurrentPhase("MODEL");
+        run.setLastProgressAt(OffsetDateTime.now());
         run.setUpdatedAt(OffsetDateTime.now());
         runRepository.save(run);
     }
@@ -203,6 +211,8 @@ public class MangaAgentRunService {
         run.setStatus(MangaAgentRunStatus.RUNNING);
         run.setUserInputRequestJson(null);
         run.setErrorMessage(null);
+        run.setCurrentPhase("MODEL");
+        run.setLastProgressAt(OffsetDateTime.now());
         run.setUpdatedAt(OffsetDateTime.now());
         runRepository.save(run);
     }
@@ -256,21 +266,35 @@ public class MangaAgentRunService {
     }
 
     @Transactional
-    public int interruptStaleRunningRuns(OffsetDateTime staleBefore) {
-        List<MangaAgentRun> staleRuns = runRepository.findByStatusAndUpdatedAtBefore(
+    public int interruptStalledRunningRuns(OffsetDateTime modelStaleBefore, OffsetDateTime toolStaleBefore) {
+        OffsetDateTime candidateBefore = modelStaleBefore.isAfter(toolStaleBefore)
+                ? modelStaleBefore
+                : toolStaleBefore;
+        List<MangaAgentRun> staleRuns = runRepository.findByStatusAndLastProgressAtBefore(
                 MangaAgentRunStatus.RUNNING,
-                staleBefore
-        );
+                candidateBefore
+        ).stream().filter(run -> "TOOL".equals(run.getCurrentPhase())
+                ? run.getLastProgressAt().isBefore(toolStaleBefore)
+                : run.getLastProgressAt().isBefore(modelStaleBefore))
+                .toList();
         OffsetDateTime now = OffsetDateTime.now();
         for (MangaAgentRun run : staleRuns) {
             run.setStatus(MangaAgentRunStatus.INTERRUPTED);
-            run.setErrorMessage("Agent run interrupted because no progress was recorded before " + staleBefore);
+            run.setErrorMessage("Agent run interrupted because no real progress was recorded in "
+                    + run.getCurrentPhase() + " phase");
             run.setUserInputRequestJson(null);
             run.setCompletedAt(now);
             run.setUpdatedAt(now);
             runRepository.save(run);
         }
         return staleRuns.size();
+    }
+
+    @Transactional
+    public void recordProgress(MangaAgentRun run, String phase) {
+        MangaAgentRun attachedRun = runRepository.getReferenceById(run.getId());
+        attachedRun.setCurrentPhase(normalizePhase(phase));
+        attachedRun.setLastProgressAt(OffsetDateTime.now());
     }
 
     @Transactional(readOnly = true)
@@ -324,7 +348,9 @@ public class MangaAgentRunService {
                 events,
                 run.getCreatedAt(),
                 run.getUpdatedAt(),
-                run.getCompletedAt()
+                run.getCompletedAt(),
+                run.getLastProgressAt(),
+                run.getCurrentPhase()
         );
     }
 
@@ -400,6 +426,10 @@ public class MangaAgentRunService {
                 || status == MangaAgentRunStatus.INTERRUPTED;
     }
 
+    private String normalizePhase(String phase) {
+        return "TOOL".equalsIgnoreCase(phase) ? "TOOL" : "MODEL";
+    }
+
     private RunEventSnapshot toPayload(MangaAgentRunEventRecord event) {
         try {
             Map<String, Object> payload = objectMapper.readValue(event.getPayloadJson(), new TypeReference<>() {
@@ -447,7 +477,9 @@ public class MangaAgentRunService {
             List<RunEventSnapshot> events,
             OffsetDateTime createdAt,
             OffsetDateTime updatedAt,
-            OffsetDateTime completedAt
+            OffsetDateTime completedAt,
+            OffsetDateTime lastProgressAt,
+            String currentPhase
     ) {
     }
 

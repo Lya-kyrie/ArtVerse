@@ -25,7 +25,7 @@ RateLimitAspect         → Redis Lua sliding window, per-IP or per-userId
 | Login | `POST /api/auth/login` → `StpUtil.login(userId, "PC")` → cookie `satoken` set (`httpOnly`, `SameSite=Lax`) |
 | Auto-renew | `active-timeout: 1800` (30 min) — any request within window auto-extends |
 | Hard expiry | `timeout: 43200` (12 h) — absolute max token lifetime |
-| Manual refresh | `POST /api/auth/refresh` → `StpUtil.renewTimeout(43200)` — extends by 12h |
+| Manual refresh | `POST /api/auth/refresh` consumes the refresh token, recreates the access session, and rotates both tokens |
 | Logout | `POST /api/auth/logout` → `StpUtil.logout()` — destroys current token only |
 | Kickout | `POST /api/auth/kickout?userId=X` → `StpUtil.kickout(userId)` — admin only, destroys all tokens for user |
 | Multi-device | `is-concurrent: true`, `is-share: false` — each device gets independent token |
@@ -34,8 +34,10 @@ RateLimitAspect         → Redis Lua sliding window, per-IP or per-userId
 
 - `timeout` is the hard ceiling for the current access token session. It is 12 hours.
 - `active-timeout` is the sliding idle window. Any authenticated request within 30 minutes extends the session automatically.
-- `/api/auth/refresh` is a compatibility and explicit renewal endpoint. It does not change the hard ceiling; it refreshes the current access token state up to the configured 12-hour limit.
-- Refresh tokens are separate from access tokens. They are rotated on use and revoked on logout, kickout, or reuse detection.
+- `/api/auth/refresh` can restore the access session when the `satoken` cookie is missing or expired. It must not require an existing access-token login when a valid refresh token is supplied.
+- The refresh request accepts the frontend's `refresh_token` JSON field and the Java-style `refreshToken` alias.
+- Refresh tokens are separate from access tokens, stored as SHA-256 Redis indexes, consumed once, and rotated on use. Detected reuse revokes all indexed refresh and access sessions for that user.
+- An authenticated request without a refresh token retains the compatibility behavior and renews the current access-token timeout.
 
 ## Cookie Strategy
 
@@ -48,6 +50,7 @@ sa-token:
   is-read-header: true    # also read from satoken header (deprecated, transitional)
   is-write-header: false  # do NOT write token to response header
   cookie:
+    path: /               # send cookie to every protected API path
     http-only: true       # JS cannot read cookie
     same-site: lax        # CSRF protection
     secure: false         # set true for HTTPS-only deployments
@@ -55,7 +58,7 @@ sa-token:
 
 Frontend:
 - `credentials: 'same-origin'` on all fetch calls (sends cookie automatically)
-- Token never stored in `localStorage`
+- Access token is never stored in `localStorage`; the rotating refresh token currently is
 - `isAuthenticated()` checks `getUser()` (from `LS_USER`) not token existence
 - `authFetch()` auto-calls `/api/auth/refresh` on 401
 
@@ -100,6 +103,7 @@ Hashing: BCrypt strength 10 (`BCryptPasswordEncoder`).
 | `api/AuthController.java` | REST endpoints (login, register, logout, refresh, kickout, me) |
 | `api/dto/AuthDtos.java` | Request/response DTOs with validation annotations |
 | `application/AuthService.java` | Registration + login business logic, password validation |
+| `application/RefreshTokenService.java` | Refresh token issue, one-time consumption, reuse detection, revocation |
 | `config/SaTokenConfig.java` | Sa-Token interceptor, password encoder, RedisTemplate |
 | `config/StpInterfaceImpl.java` | Role permission provider for Sa-Token |
 | `config/BCryptPasswordEncoder.java` | BCrypt hashing (jBCrypt, no Spring Security dep) |
@@ -115,6 +119,7 @@ Hashing: BCrypt strength 10 (`BCryptPasswordEncoder`).
 |------|----------|
 | `AuthServiceTest` | Registration validation, login success/failure, password policy, duplicate detection |
 | `AuthControllerTest` | Kickout auth (401/403/admin), refresh lifecycle, /me auth |
+| `RefreshTokenServiceTest` | Hashed token indexing, one-time consumption, reuse detection, legacy rotation, revocation |
 | `BCryptPasswordEncoderTest` | Encode/match correctness, null safety, salt uniqueness |
 | `RateLimitAspectTest` | Allow/block thresholds, disabled mode, IP/userId key resolution |
 
@@ -129,3 +134,4 @@ Run: `mvn test -pl .`
 - `is-share`: share token across devices (false)
 - `token-style`: uuid format
 - `cookie.http-only`: block JS access (true)
+- `cookie.path`: cookie scope (`/`)

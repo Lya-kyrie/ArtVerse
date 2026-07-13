@@ -18,6 +18,7 @@ import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.UUID;
 
 @Slf4j
 @Service
@@ -29,6 +30,7 @@ public class ChatService {
     private final AgentScopeHarnessAgentGateway harnessAgentGateway;
     private final AgentModelSpecFactory agentModelSpecFactory;
     private final ObjectMapper objectMapper;
+    private final KnowledgeService knowledgeService;
 
     @Transactional
     public void saveUserMessage(Long chapterId, String content) {
@@ -63,11 +65,16 @@ public class ChatService {
     public SseEmitter streamChat(Long chapterId, Long userId, UserProviderConfig llmConfig) {
         StreamContext ctx = loadStreamContext(chapterId);
         Chapter chapter = ctx.chapter();
-        List<AgentMessage> contextMessages = ctx.contextMessages();
+        List<AgentMessage> contextMessages = new ArrayList<>(ctx.contextMessages());
+        String recallQuery = contextMessages.stream().map(AgentMessage::content).reduce("", (left, right) -> left + "\n" + right);
+        knowledgeService.recallForGeneration(chapter.getStory().getId(), userId, chapter.getChapterNumber(), recallQuery, chapterId)
+                .ifPresent(preview -> contextMessages.add(new AgentMessage("system", preview.context())));
 
         SseEmitter emitter = new SseEmitter(0L); // no timeout
         StringBuilder accumulated = new StringBuilder();
 
+        UUID requestId = UUID.randomUUID();
+        UUID conversationId = conversationIdForChapter(chapterId);
         AgentRunRequest request = new AgentRunRequest(
                 String.valueOf(userId),
                 chapter.getStory().getId(),
@@ -76,7 +83,9 @@ public class ChatService {
                 contextMessages,
                 Map.of(),
                 agentModelSpecFactory.fromProviderConfig(llmConfig),
-                llmConfig.apiKey()
+                llmConfig.apiKey(),
+                requestId,
+                conversationId
         );
 
         Disposable subscription = harnessAgentGateway.streamChat(request)
@@ -190,4 +199,12 @@ public class ChatService {
     }
 
     private record StreamContext(Chapter chapter, List<AgentMessage> contextMessages) {}
+
+    /**
+     * Derive a stable conversation UUID from the chapter ID so the same chapter
+     * always uses the same AgentScope session.
+     */
+    private static UUID conversationIdForChapter(Long chapterId) {
+        return new UUID(chapterId, chapterId);
+    }
 }

@@ -10,6 +10,8 @@ import io.agentscope.core.tool.ToolBase;
 import io.agentscope.core.tool.ToolCallParam;
 import reactor.core.publisher.Mono;
 
+import org.springframework.stereotype.Component;
+
 import java.util.List;
 import java.util.Map;
 
@@ -25,6 +27,7 @@ import java.util.Map;
  * <p>This replaces the previous {@code @Tool} + {@code ToolSuspendException}
  * pattern with the official v2 external tool mechanism.</p>
  */
+@Component
 public class MangaHitlTools extends ToolBase {
 
     private final AgentToolAuditService agentToolAuditService;

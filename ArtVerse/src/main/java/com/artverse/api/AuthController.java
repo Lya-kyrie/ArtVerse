@@ -5,6 +5,8 @@ import cn.dev33.satoken.stp.StpUtil;
 import com.artverse.api.dto.AuthDtos.*;
 import com.artverse.application.AuthService;
 import com.artverse.application.RefreshTokenService;
+import com.artverse.application.RefreshTokenService.Consumption;
+import com.artverse.application.RefreshTokenService.ConsumptionStatus;
 import com.artverse.common.BusinessException;
 import com.artverse.common.aspect.RateLimit;
 import com.artverse.domain.User;
@@ -56,24 +58,37 @@ public class AuthController {
     @PostMapping("/refresh")
     @RateLimit(windowSeconds = 60, maxRequests = 20, key = "refresh")
     public AuthResponse refresh(@RequestBody(required = false) RefreshRequest req) {
-        if (!StpUtil.isLogin()) {
-            throw new BusinessException(401, "未登录");
-        }
-        long userId = StpUtil.getLoginIdAsLong();
         String refreshToken = req != null ? req.refreshToken() : null;
+        Long authenticatedUserId = StpUtil.isLogin() ? StpUtil.getLoginIdAsLong() : null;
 
         if (refreshToken != null && !refreshToken.isBlank()) {
-            if (!refreshTokenService.validateAndConsume(userId, refreshToken)) {
-                refreshTokenService.revokeAll(userId);
-                StpUtil.logout();
-                log.warn("Refresh token reuse detected for userId={}, all tokens revoked", userId);
+            Consumption consumption = refreshTokenService.consume(refreshToken, authenticatedUserId);
+            if (consumption.status() == ConsumptionStatus.REUSED) {
+                refreshTokenService.revokeAll(consumption.userId());
+                StpUtil.kickout(consumption.userId());
+                log.warn("Refresh token reuse detected for userId={}, all tokens revoked", consumption.userId());
                 throw new BusinessException(401, "Refresh token 已失效，请重新登录");
             }
+            if (consumption.status() != ConsumptionStatus.VALID) {
+                throw new BusinessException(401, "Refresh token 无效，请重新登录");
+            }
+
+            long userId = consumption.userId();
+            if (authenticatedUserId != null) {
+                StpUtil.logout();
+            }
+            StpUtil.login(userId, "PC");
+            SaTokenInfo tokenInfo = StpUtil.getTokenInfo();
+            String newRefreshToken = refreshTokenService.issue(userId);
+            return toResponse(tokenInfo, newRefreshToken);
         }
 
+        if (authenticatedUserId == null) {
+            throw new BusinessException(401, "未登录");
+        }
         StpUtil.renewTimeout(43200);
         SaTokenInfo tokenInfo = StpUtil.getTokenInfo();
-        String newRefreshToken = refreshTokenService.issue(userId);
+        String newRefreshToken = refreshTokenService.issue(authenticatedUserId);
         return toResponse(tokenInfo, newRefreshToken);
     }
 

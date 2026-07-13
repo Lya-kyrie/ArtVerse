@@ -211,6 +211,7 @@ public class MangaAgentController {
                         body.baseUrl(),
                         body.model()
                 ),
+                body.configId(),
                 "Please configure an LLM provider API key in Settings before using the manga agent."
         );
     }
@@ -226,6 +227,7 @@ public class MangaAgentController {
                         body.baseUrl(),
                         body.model()
                 ),
+                body.configId(),
                 "Please configure an LLM provider API key in Settings before using the manga agent."
         );
     }

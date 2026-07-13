@@ -37,7 +37,9 @@ REST controllers (18 controllers) and DTOs. All `/api/**` routes.
 
 - **SSE streaming**: `MangaAgentController` and `MangaGenerationController` return `SseEmitter` directly. Background work runs on `mangaGenerationExecutor` (virtual threads).
 - **Auth**: `SaTokenConfig` interceptor protects `/api/**` except `/api/auth/**`, `/api/square/**`, `/static/**`, `/actuator/health`.
+- **Provider secrets**: `GET /api/user/provider-configs/{configId}/api-key` is authenticated, checks profile ownership in `ApiKeyService`, and returns `Cache-Control: no-store`.
 - **Thin controllers**: Controllers resolve user, validate, then delegate to services. No business logic in controllers.
+- **Standalone image generation**: `POST /api/image-gen/generate` creates a durable `RUNNING` record and returns it immediately; `GET /api/image-gen/history` is the recovery/status endpoint.
 - **AG-UI protocol**: Manga agent streaming uses AG-UI event frames as default SSE protocol.
 
 ## Invariants
@@ -46,3 +48,4 @@ REST controllers (18 controllers) and DTOs. All `/api/**` routes.
 - SSE emitters must complete or error exactly once. Use `sink.complete()` in `finally` blocks.
 - `requestId` is the idempotency key across all streaming endpoints.
 - New endpoints must be added to `SaTokenConfig` interceptor exclude list if public.
+- Knowledge-base endpoints are protected under `/api/stories/{storyId}/knowledge`; controllers delegate ownership checks, structured-field validation, indexing, and recall to `KnowledgeService`.

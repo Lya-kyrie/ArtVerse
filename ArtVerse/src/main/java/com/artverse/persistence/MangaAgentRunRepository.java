@@ -32,5 +32,5 @@ public interface MangaAgentRunRepository extends JpaRepository<MangaAgentRun, Lo
             Pageable pageable
     );
 
-    List<MangaAgentRun> findByStatusAndUpdatedAtBefore(MangaAgentRunStatus status, OffsetDateTime updatedAt);
+    List<MangaAgentRun> findByStatusAndLastProgressAtBefore(MangaAgentRunStatus status, OffsetDateTime lastProgressAt);
 }

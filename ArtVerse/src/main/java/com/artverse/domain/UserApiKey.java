@@ -35,8 +35,11 @@ public class UserApiKey {
     @Column(name = "base_url", length = 500)
     private String baseUrl;
 
-    @Column(length = 100)
+    @Column(length = 2000)
     private String model;
+
+    @Column(nullable = false)
+    private boolean active;
 
     @Column(name = "created_at", nullable = false, updatable = false)
     private OffsetDateTime createdAt;

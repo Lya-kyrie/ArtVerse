@@ -4,10 +4,10 @@ import cn.dev33.satoken.stp.StpUtil;
 import com.artverse.ai.GeneratedImage;
 import com.artverse.ai.Image2Client;
 import com.artverse.ai.ImageGenerationRequest;
-import com.artverse.application.UserProviderConfig;
 import com.artverse.common.BusinessException;
 import com.artverse.config.ArtVerseProperties;
 import com.artverse.domain.ImageGenRecord;
+import com.artverse.domain.ImageGenStatus;
 import com.artverse.domain.User;
 import com.artverse.media.MediaStorageService;
 import com.artverse.persistence.ImageGenRecordRepository;
@@ -15,22 +15,30 @@ import com.artverse.persistence.UserRepository;
 import com.artverse.storage.ObjectStorageService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionTemplate;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.Duration;
+import java.time.OffsetDateTime;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.ExecutorService;
 
 @Slf4j
 @Service
 @RequiredArgsConstructor
 public class ImageGenService {
+
+    private static final int MAX_REF_IMAGES = 3;
+    private static final Duration MAX_RUNNING_DURATION = Duration.ofMinutes(12);
 
     private final ImageGenRecordRepository recordRepository;
     private final UserRepository userRepository;
@@ -38,106 +46,89 @@ public class ImageGenService {
     private final MediaStorageService mediaStorageService;
     private final ObjectStorageService objectStorageService;
     private final ArtVerseProperties properties;
+    private final TransactionTemplate transactionTemplate;
 
-    private static final int MAX_REF_IMAGES = 3;
+    @Qualifier("mangaGenerationExecutor")
+    private final ExecutorService executor;
 
     @Transactional
-    public Map<String, Object> generate(String prompt, List<String> referenceImagesBase64, UserProviderConfig imageConfig, String sizeOverride) {
+    public Map<String, Object> submit(String prompt, List<String> referenceImagesBase64, UserProviderConfig imageConfig, String sizeOverride) {
         Long userId = StpUtil.getLoginIdAsLong();
         User user = userRepository.findById(userId)
                 .orElseThrow(() -> new BusinessException(401, "User not found"));
-        String effectiveModel = imageConfig.primaryModel().isBlank() ? properties.getImage().getModel() : imageConfig.primaryModel();
-        String effectiveSize = sizeOverride == null || sizeOverride.isBlank() ? properties.getImage().getSize() : sizeOverride;
-
         if (referenceImagesBase64 != null && referenceImagesBase64.size() > MAX_REF_IMAGES) {
             throw new BusinessException(400, "Maximum " + MAX_REF_IMAGES + " reference images allowed");
         }
 
+        ImageGenRecord record = new ImageGenRecord();
+        record.setUser(user);
+        record.setPrompt(prompt);
+        record.setModel(imageConfig.primaryModel().isBlank() ? properties.getImage().getModel() : imageConfig.primaryModel());
+        record.setSize(sizeOverride == null || sizeOverride.isBlank() ? properties.getImage().getSize() : sizeOverride);
+        record.setStatus(ImageGenStatus.RUNNING);
+        record = recordRepository.save(record);
+
+        Long recordId = record.getId();
+        List<String> references = referenceImagesBase64 == null ? List.of() : List.copyOf(referenceImagesBase64);
+        executor.submit(() -> transactionTemplate.executeWithoutResult(
+                status -> generateInBackground(recordId, references, imageConfig)
+        ));
+        return recordToMap(record);
+    }
+
+    void generateInBackground(Long recordId, List<String> referenceImagesBase64, UserProviderConfig imageConfig) {
+        ImageGenRecord record = recordRepository.findById(recordId).orElse(null);
+        if (record == null || record.getIsDeleted() || record.getStatus() != ImageGenStatus.RUNNING) return;
+
         List<Path> refFiles = new ArrayList<>();
         try {
-            if (referenceImagesBase64 != null) {
-                for (String b64 : referenceImagesBase64) {
-                    if (b64 == null || b64.isBlank()) continue;
-                    try {
-                        byte[] data = mediaStorageService.decodeBase64Image(b64);
-                        mediaStorageService.validateImageBytes(data, properties.getUpload().getMaxImageBytes());
-                        Path tmp = Files.createTempFile("artverse-ref-", ".png");
-                        mediaStorageService.savePng(data, tmp);
-                        refFiles.add(tmp);
-                    } catch (java.io.IOException e) {
-                        throw new RuntimeException("Failed to process reference image", e);
-                    }
-                }
+            for (String b64 : referenceImagesBase64) {
+                if (b64 == null || b64.isBlank()) continue;
+                byte[] data = mediaStorageService.decodeBase64Image(b64);
+                mediaStorageService.validateImageBytes(data, properties.getUpload().getMaxImageBytes());
+                Path tmp = Files.createTempFile("artverse-ref-", ".png");
+                mediaStorageService.savePng(data, tmp);
+                refFiles.add(tmp);
             }
 
-            ImageGenerationRequest request = new ImageGenerationRequest(
-                    prompt,
-                    effectiveModel,
-                    effectiveSize,
-                    refFiles.isEmpty() ? null : refFiles,
-                    null
-            );
+            GeneratedImage generated = image2Client.generate(new ImageGenerationRequest(
+                    record.getPrompt(), record.getModel(), record.getSize(),
+                    refFiles.isEmpty() ? null : refFiles, null
+            ), imageConfig).block();
+            if (generated == null) throw new BusinessException(502, "Image generation returned no result");
 
-            GeneratedImage generated = image2Client.generate(request, imageConfig).block();
-            if (generated == null) {
-                throw new BusinessException(502, "Image generation returned no result");
-            }
-
-            String prefix = "image_gen/" + userId + "/";
-            String filename = mediaStorageService.generateUniqueFilename("gen", ".png");
-            String objectKey = prefix + filename;
-
+            String objectKey = "image_gen/" + record.getUser().getId() + "/"
+                    + mediaStorageService.generateUniqueFilename("gen", ".png");
             objectStorageService.putPng(objectKey, generated.localFile(), "image/png");
             try { Files.deleteIfExists(generated.localFile()); } catch (Exception ignored) {}
 
-            ImageGenRecord record = new ImageGenRecord();
-            record.setUser(user);
-            record.setPrompt(prompt);
             record.setImagePath(objectKey);
-            record.setModel(effectiveModel);
-            record.setSize(effectiveSize);
-            record = recordRepository.save(record);
-
-            Map<String, Object> result = new LinkedHashMap<>();
-            result.put("id", record.getId());
-            result.put("prompt", record.getPrompt());
-            result.put("image_url", record.getImagePath());
-            result.put("model", record.getModel());
-            result.put("size", record.getSize());
-            result.put("created_at", record.getCreatedAt().toString());
-            return result;
-
-        } catch (BusinessException e) {
-            throw e;
-        } catch (RuntimeException e) {
-            throw new BusinessException(500, "生成失败: " + e.getMessage());
+            record.setStatus(ImageGenStatus.SUCCEEDED);
+            record.setFailureReason(null);
+            record.setCompletedAt(OffsetDateTime.now());
+            recordRepository.save(record);
+        } catch (Exception e) {
+            log.warn("Image generation task {} failed", recordId, e);
+            record.setStatus(ImageGenStatus.FAILED);
+            record.setFailureReason(errorMessage(e));
+            record.setCompletedAt(OffsetDateTime.now());
+            recordRepository.save(record);
         } finally {
-            for (Path f : refFiles) {
-                try { Files.deleteIfExists(f); } catch (Exception ignored) {}
+            for (Path refFile : refFiles) {
+                try { Files.deleteIfExists(refFile); } catch (Exception ignored) {}
             }
         }
     }
 
-    @Transactional(readOnly = true)
+    @Transactional
     public Map<String, Object> listHistory(int page, int size) {
         Long userId = StpUtil.getLoginIdAsLong();
+        OffsetDateTime now = OffsetDateTime.now();
+        recordRepository.markExpiredRunningAsFailed(userId, now.minus(MAX_RUNNING_DURATION), now,
+                "Image generation was interrupted before completion. Please try again.");
         Page<ImageGenRecord> result = recordRepository.findByUserId(userId, PageRequest.of(page, size));
-
-        List<Map<String, Object>> content = result.getContent().stream()
-                .map(r -> {
-                    Map<String, Object> m = new LinkedHashMap<>();
-                    m.put("id", r.getId());
-                    m.put("prompt", r.getPrompt());
-                    m.put("image_url", r.getImagePath());
-                    m.put("model", r.getModel());
-                    m.put("size", r.getSize());
-                    m.put("created_at", r.getCreatedAt().toString());
-                    return m;
-                })
-                .toList();
-
         Map<String, Object> response = new LinkedHashMap<>();
-        response.put("content", content);
+        response.put("content", result.getContent().stream().map(this::recordToMap).toList());
         response.put("total_pages", result.getTotalPages());
         response.put("total_elements", result.getTotalElements());
         return response;
@@ -148,10 +139,31 @@ public class ImageGenService {
         Long userId = StpUtil.getLoginIdAsLong();
         ImageGenRecord record = recordRepository.findById(id)
                 .orElseThrow(() -> new BusinessException(404, "Record not found"));
-        if (!record.getUser().getId().equals(userId)) {
-            throw new BusinessException(403, "Access denied");
-        }
+        if (!record.getUser().getId().equals(userId)) throw new BusinessException(403, "Access denied");
         record.setIsDeleted(true);
         recordRepository.save(record);
+    }
+
+    private Map<String, Object> recordToMap(ImageGenRecord record) {
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("id", record.getId());
+        result.put("prompt", record.getPrompt());
+        result.put("image_url", record.getImagePath());
+        result.put("model", record.getModel());
+        result.put("size", record.getSize());
+        result.put("status", record.getStatus().name());
+        result.put("failure_reason", record.getFailureReason());
+        result.put("created_at", record.getCreatedAt().toString());
+        result.put("completed_at", record.getCompletedAt() == null ? null : record.getCompletedAt().toString());
+        return result;
+    }
+
+    private String errorMessage(Exception e) {
+        Throwable cause = e;
+        while (cause.getCause() != null && (cause.getMessage() == null || cause.getMessage().isBlank())) {
+            cause = cause.getCause();
+        }
+        String message = cause.getMessage();
+        return message == null || message.isBlank() ? "Image generation failed" : message;
     }
 }

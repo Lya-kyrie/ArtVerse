@@ -7,11 +7,13 @@ import com.artverse.common.BusinessException;
 import com.artverse.domain.Chapter;
 import io.agentscope.core.agent.RuntimeContext;
 import lombok.RequiredArgsConstructor;
+import org.springframework.stereotype.Component;
 
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 
+@Component
 @RequiredArgsConstructor
 public class MangaToolSupport {
 

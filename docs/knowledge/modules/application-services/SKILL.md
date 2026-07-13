@@ -12,7 +12,7 @@ Core business logic services excluding agent workflow and manga generation (see 
 | Class | Role |
 |-------|------|
 | `AuthService` | Registration, login, password validation, BCrypt |
-| `ApiKeyService` | Encrypt/decrypt user API keys (DeepSeek, Coze) |
+| `ApiKeyService` | Encrypt/decrypt user provider profiles and resolve runtime LLM/image/workflow configuration |
 | `ChapterService` | Chapter CRUD, content source management |
 | `ChapterAccessService` | Visibility checks (chapter ownership) |
 | `StoryService` | Story CRUD, workspace management |
@@ -36,9 +36,13 @@ Core business logic services excluding agent workflow and manga generation (see 
 - **Transaction boundaries**: `@Transactional(readOnly = true)` on query methods, `@Transactional` on mutations. Lazy fields must be extracted before crossing transaction boundaries.
 - **Visibility checks**: `ChapterAccessService.requireVisible()` enforces chapter ownership before mutations.
 - **API key encryption**: `ApiKeyService` encrypts user API keys at rest using AES, decrypts on demand.
+- **API key reveal**: Provider secrets are returned only by the authenticated, ownership-checked per-profile reveal endpoint and its response is marked `no-store`; provider list responses remain masked.
+- **Provider activation**: LLM and image profiles use `active` as an enabled set and may have several active entries. Workflow keeps a single active default.
+- **Runtime routing**: Modern AI requests send `config_id` plus one model. The server owns the saved provider, Base URL, and secret; client overrides cannot replace them.
 
 ## Invariants
 
 - Services must not depend on API-layer classes (controllers, DTOs).
 - `@Transactional` scope must not cross thread boundaries (`executor.submit()`).
 - Character profile resolution follows inheritance chain: chapter → asset group → story defaults.
+- A disabled provider profile must not be resolved by a runtime request, even when the caller supplies its `config_id`.

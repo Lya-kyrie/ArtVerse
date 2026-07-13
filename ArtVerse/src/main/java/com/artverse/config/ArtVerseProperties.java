@@ -130,8 +130,10 @@ public class ArtVerseProperties {
 
     @Data
     public static class Agent {
-        private int runTimeoutSeconds = 180;
-        private int staleRunningSeconds = 600;
+        private int firstEventTimeoutSeconds = 90;
+        private int modelIdleTimeoutSeconds = 180;
+        private int toolIdleTimeoutSeconds = 600;
+        private long runWatchdogIntervalMs = 30_000;
         private int maxConcurrentRuns = 8;
 
         // Retry

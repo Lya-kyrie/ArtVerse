@@ -1,5 +1,6 @@
 package com.artverse.api.dto;
 
+import com.fasterxml.jackson.annotation.JsonAlias;
 import jakarta.validation.constraints.Email;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Size;
@@ -30,6 +31,7 @@ public class AuthDtos {
     ) {}
 
     public record RefreshRequest(
+            @JsonAlias("refresh_token")
             String refreshToken
     ) {}
 

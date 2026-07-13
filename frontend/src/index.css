@@ -197,6 +197,27 @@ body::before {
   font-family: 'Noto Serif SC', serif;
 }
 
+.input-field {
+  width: 100%;
+  border: 1px solid var(--color-paper-border);
+  border-radius: 6px;
+  background: var(--color-paper-raised);
+  color: var(--color-sumi);
+  box-sizing: border-box;
+  padding: 0.625rem 0.75rem;
+  font-size: 0.875rem;
+  line-height: 1.25rem;
+}
+
+.input-field::placeholder {
+  color: var(--color-sumi-faint);
+}
+
+.input-field:focus {
+  border-color: var(--color-vermilion);
+  outline: none;
+}
+
 /* 焦点可见性 */
 :focus-visible {
   outline: 2px solid var(--color-vermilion);

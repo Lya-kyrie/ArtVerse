@@ -3,17 +3,24 @@ package com.artverse.application;
 import com.artverse.agent.AgentRunEvent;
 import com.artverse.domain.MangaAgentRun;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import jakarta.annotation.PreDestroy;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.MediaType;
 import org.springframework.stereotype.Service;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
+import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.ScheduledFuture;
+import java.util.concurrent.TimeUnit;
+import java.util.WeakHashMap;
 
 @Slf4j
 @Service
@@ -24,8 +31,22 @@ public class MangaAgentRunEventPublisher {
     private final ObjectMapper objectMapper;
     private final AgUiEventFactory agUiEventFactory;
     private final Set<String> activeTextMessages = ConcurrentHashMap.newKeySet();
+    private final Set<SseEmitter> completedEmitters =
+            Collections.newSetFromMap(Collections.synchronizedMap(new WeakHashMap<>()));
+    private final ScheduledExecutorService heartbeatExecutor = Executors.newSingleThreadScheduledExecutor(
+            Thread.ofVirtual().name("manga-agent-sse-heartbeat-", 0).factory()
+    );
 
     public RunEventSink newSink(SseEmitter emitter) {
+        emitter.onCompletion(() -> markCompleted(emitter));
+        emitter.onTimeout(() -> markCompleted(emitter));
+        emitter.onError(error -> markCompleted(emitter));
+        ScheduledFuture<?> heartbeat = heartbeatExecutor.scheduleAtFixedRate(
+                () -> sendHeartbeat(emitter), 15, 15, TimeUnit.SECONDS
+        );
+        emitter.onCompletion(() -> heartbeat.cancel(false));
+        emitter.onTimeout(() -> heartbeat.cancel(false));
+        emitter.onError(error -> heartbeat.cancel(false));
         return new RunEventSink(emitter);
     }
 
@@ -44,8 +65,16 @@ public class MangaAgentRunEventPublisher {
             MangaAgentRunEventPublisher.this.sendToolEvent(run, emitter, event);
         }
 
+        public void recordToolProgress(MangaAgentRun run) {
+            MangaAgentRunEventPublisher.this.recordToolProgress(run);
+        }
+
         public void sendRunEvent(MangaAgentRun run, AgentRunEvent event) {
             MangaAgentRunEventPublisher.this.sendRunEvent(run, emitter, event);
+        }
+
+        public void recordProgress(MangaAgentRun run, String phase) {
+            MangaAgentRunEventPublisher.this.recordProgress(run, phase);
         }
 
         public void sendUserInputRequested(MangaAgentRun run, UUID requestId, AgentUserInputRequest request) {
@@ -165,10 +194,17 @@ public class MangaAgentRunEventPublisher {
     }
 
     private void sendAgUi(SseEmitter emitter, Map<String, Object> event) {
+        if (emitter == null || isCompleted(emitter)) {
+            return;
+        }
         try {
             emitter.send(SseEmitter.event().data(objectMapper.writeValueAsString(event), MediaType.APPLICATION_JSON));
+        } catch (IllegalStateException e) {
+            markCompleted(emitter);
+            log.debug("Manga agent SSE was already closed before event could be sent");
         } catch (Exception e) {
-            log.warn("Failed to send manga agent SSE", e);
+            markCompleted(emitter);
+            log.debug("Manga agent SSE disconnected before event could be sent", e);
         }
     }
 
@@ -197,12 +233,53 @@ public class MangaAgentRunEventPublisher {
         if (emitter == null) {
             return;
         }
+        if (!markCompleted(emitter)) {
+            return;
+        }
         String emitterPrefix = System.identityHashCode(emitter) + ":";
         activeTextMessages.removeIf(key -> key.startsWith(emitterPrefix));
         try {
             emitter.complete();
         } catch (Exception e) {
-            log.warn("Failed to complete manga agent SSE", e);
+            log.debug("Manga agent SSE was already closed during completion", e);
         }
+    }
+
+    private void recordToolProgress(MangaAgentRun run) {
+        if (run != null) {
+            mangaAgentRunService.recordProgress(run, "TOOL");
+        }
+    }
+
+    private void recordProgress(MangaAgentRun run, String phase) {
+        if (run == null) {
+            return;
+        }
+        mangaAgentRunService.recordProgress(run, phase);
+    }
+
+    private void sendHeartbeat(SseEmitter emitter) {
+        if (emitter == null || isCompleted(emitter)) {
+            return;
+        }
+        try {
+            emitter.send(SseEmitter.event().comment("keepalive"));
+        } catch (Exception e) {
+            markCompleted(emitter);
+            log.debug("Manga agent SSE disconnected before heartbeat could be sent", e);
+        }
+    }
+
+    private boolean isCompleted(SseEmitter emitter) {
+        return completedEmitters.contains(emitter);
+    }
+
+    private boolean markCompleted(SseEmitter emitter) {
+        return completedEmitters.add(emitter);
+    }
+
+    @PreDestroy
+    void shutdownHeartbeatExecutor() {
+        heartbeatExecutor.shutdownNow();
     }
 }

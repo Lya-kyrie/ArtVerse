@@ -15,13 +15,13 @@ public final class MangaAgentDtos {
     private MangaAgentDtos() {
     }
 
-    public record RunRequest(String message, UUID requestId, String model, String provider, String label, String apiKey, String baseUrl) {
+    public record RunRequest(String message, UUID requestId, String model, String provider, String label, String apiKey, String baseUrl, Long configId) {
     }
 
     public record RunResponse(String reply, UUID requestId) {
     }
 
-    public record ResumeRequest(String answer, String model, String provider, String label, String apiKey, String baseUrl) {
+    public record ResumeRequest(String answer, String model, String provider, String label, String apiKey, String baseUrl, Long configId) {
     }
 
     public record OpenRunResponse(RunStateResponse run) {
@@ -58,7 +58,9 @@ public final class MangaAgentDtos {
                                    List<RunEventDto> events,
                                    OffsetDateTime createdAt,
                                    OffsetDateTime updatedAt,
-                                   OffsetDateTime completedAt) {
+                                   OffsetDateTime completedAt,
+                                   OffsetDateTime lastProgressAt,
+                                   String currentPhase) {
         public static RunStateResponse from(MangaAgentRunService.RunSnapshot snapshot) {
             return new RunStateResponse(
                     snapshot.requestId(),
@@ -71,7 +73,9 @@ public final class MangaAgentDtos {
                     snapshot.events().stream().map(RunEventDto::from).toList(),
                     snapshot.createdAt(),
                     snapshot.updatedAt(),
-                    snapshot.completedAt()
+                    snapshot.completedAt(),
+                    snapshot.lastProgressAt(),
+                    snapshot.currentPhase()
             );
         }
     }

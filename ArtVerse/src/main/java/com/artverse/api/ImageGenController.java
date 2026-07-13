@@ -3,7 +3,6 @@ package com.artverse.api;
 import com.artverse.application.ImageGenService;
 import com.artverse.application.ApiKeyService;
 import com.artverse.application.UserProviderConfig;
-import com.artverse.guard.GenerationGuardService;
 import com.artverse.application.CurrentUserService;
 import com.artverse.domain.User;
 import lombok.RequiredArgsConstructor;
@@ -19,7 +18,6 @@ public class ImageGenController {
 
     private final ImageGenService imageGenService;
     private final ApiKeyService apiKeyService;
-    private final GenerationGuardService generationGuardService;
     private final CurrentUserService currentUserService;
 
     @PostMapping("/generate")
@@ -32,16 +30,10 @@ public class ImageGenController {
         UserProviderConfig imageConfig = apiKeyService.requireProviderConfig(
                 user,
                 requestConfig(body),
+                configId(body),
                 "Please configure an image provider API key in Settings before using image generation."
         );
-        return generationGuardService.executeImageGeneration(
-                user.getId(),
-                prompt,
-                referenceImages,
-                size,
-                imageConfig.primaryModel(),
-                () -> imageGenService.generate(prompt, referenceImages, imageConfig, size)
-        );
+        return imageGenService.submit(prompt, referenceImages, imageConfig, size);
     }
 
     @GetMapping("/history")
@@ -79,5 +71,11 @@ public class ImageGenController {
             return first;
         }
         return second;
+    }
+
+    private Long configId(Map<String, Object> body) {
+        Object value = body.get("config_id");
+        if (value == null || value.toString().isBlank()) return null;
+        return Long.valueOf(value.toString());
     }
 }

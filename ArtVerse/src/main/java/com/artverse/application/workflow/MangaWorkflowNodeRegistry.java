@@ -5,6 +5,7 @@ import org.springframework.stereotype.Component;
 import java.util.EnumMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 
 @Component
 public class MangaWorkflowNodeRegistry {
@@ -20,14 +21,11 @@ public class MangaWorkflowNodeRegistry {
     }
 
     public MangaWorkflowNodeHandler handlerFor(MangaWorkflowRoute route) {
-        MangaWorkflowNodeHandler handler = handlers.get(route);
-        if (handler != null) {
-            return handler;
+        MangaWorkflowRoute effectiveRoute = Objects.requireNonNull(route, "route");
+        MangaWorkflowNodeHandler handler = handlers.get(effectiveRoute);
+        if (handler == null) {
+            throw new IllegalStateException("No Manga workflow node handler for route: " + effectiveRoute);
         }
-        MangaWorkflowNodeHandler director = handlers.get(MangaWorkflowRoute.DIRECTOR);
-        if (director != null) {
-            return director;
-        }
-        throw new IllegalStateException("No Manga workflow node handler for route: " + route);
+        return handler;
     }
 }

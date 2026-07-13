@@ -3,8 +3,6 @@ spring:
     url: jdbc:postgresql://localhost:5432/manga_novel
     username: postgres
     password: postgres
-  flyway:
-    enabled: false
 
 artverse:
   api-token: ""

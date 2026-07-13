@@ -26,14 +26,14 @@ public class ChatController {
     public SseEmitter chat(@PathVariable Long chapterId,
                            @RequestBody Map<String, String> body) {
         String content = body.get("message");
-        chatService.saveUserMessage(chapterId, content);
-
         User user = currentUserService.requireCurrentUser();
         UserProviderConfig llmConfig = apiKeyService.requireProviderConfig(
                 user,
                 requestConfig(body),
+                configId(body),
                 "Please configure an LLM provider API key in Settings before using story chat."
         );
+        chatService.saveUserMessage(chapterId, content);
         return chatService.streamChat(chapterId, user.getId(), llmConfig);
     }
 
@@ -58,5 +58,11 @@ public class ChatController {
             return first;
         }
         return second;
+    }
+
+    private Long configId(Map<String, String> body) {
+        String value = body.get("config_id");
+        if (value == null || value.isBlank()) return null;
+        return Long.valueOf(value);
     }
 }

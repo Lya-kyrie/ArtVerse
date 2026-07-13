@@ -74,8 +74,13 @@ class MangaDirectorAgentNodeTest {
         SseEmitter sseEmitter = mock(SseEmitter.class);
         MangaAgentRunEventPublisher eventPublisher = new MangaAgentRunEventPublisher(runService, new ObjectMapper(), new AgUiEventFactory());
         ArtVerseProperties properties = new ArtVerseProperties();
-        properties.getAgent().setRunTimeoutSeconds(5);
-        MangaDirectorAgentNode node = new MangaDirectorAgentNode(conversationService, gateway, workspaceSyncService, apiKeyService, properties, runService);
+        properties.getAgent().setFirstEventTimeoutSeconds(5);
+        properties.getAgent().setModelIdleTimeoutSeconds(5);
+        MangaDirectorAgentNode node = new MangaDirectorAgentNode(
+                gateway,
+                properties,
+                new MangaDirectorAgentSupport(conversationService, workspaceSyncService, apiKeyService)
+        );
 
         User user = new User();
         user.setId(1L);

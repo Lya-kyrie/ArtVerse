@@ -2,7 +2,6 @@
 import { Check, ChevronDown, Search, Sparkles } from 'lucide-react';
 import {
   API_KEY_CHANGE_EVENT,
-  getProviderModelSelectionMeta,
   getProviderModelSelections,
   type ApiCapability,
   type ProviderModelOption,
@@ -22,6 +21,7 @@ interface ProviderMeta {
 }
 
 interface GroupedModels {
+  id: string;
   provider: ProviderMeta;
   models: ProviderModelOption[];
 }
@@ -104,13 +104,14 @@ export default function ModelSwitcher({ capability, selectedModel, onSelect, dis
     for (const option of filteredModels) {
       const providerLabel = option.providerLabel;
       const providerMeta = detectProvider(option.providerPresetId);
-      if (!groups[providerLabel]) {
-        groups[providerLabel] = {
+      if (!groups[option.entryId]) {
+        groups[option.entryId] = {
+          id: option.entryId,
           provider: { ...providerMeta, label: providerLabel },
           models: [],
         };
       }
-      groups[providerLabel].models.push(option);
+      groups[option.entryId].models.push(option);
     }
     return Object.values(groups).sort((a, b) => a.provider.label.localeCompare(b.provider.label));
   }, [filteredModels]);
@@ -126,15 +127,15 @@ export default function ModelSwitcher({ capability, selectedModel, onSelect, dis
   }, []);
 
   const selectedOption = useMemo(
-    () => getProviderModelSelectionMeta(capability, selectedModel),
-    [capability, selectedModel],
+    () => models.find((option) => option.value === selectedModel) || null,
+    [models, selectedModel],
   );
   const selectedProvider = useMemo(
     () => detectProvider(selectedOption?.providerPresetId || selectedModel),
     [selectedOption?.providerPresetId, selectedModel],
   );
   const providerLabel = selectedOption?.providerLabel || selectedProvider.label;
-  const triggerLabel = selectedModel ? providerLabel : null;
+  const triggerLabel = selectedOption ? `${providerLabel} · ${selectedOption.model}` : null;
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (!open) return;
@@ -192,7 +193,7 @@ export default function ModelSwitcher({ capability, selectedModel, onSelect, dis
           if (!disabled) setOpen((prev) => !prev);
         }}
         className={
-          'inline-flex h-7 items-center gap-1.5 rounded-lg border px-2 text-sm font-medium transition-all duration-200 ' +
+          'inline-flex h-7 max-w-[180px] items-center gap-1.5 rounded-lg border px-2 text-sm font-medium transition-all duration-200 sm:max-w-[240px] ' +
           (open
             ? 'border-vermilion/40 bg-vermilion-light/20 text-vermilion shadow-sm'
             : 'border-paper-border bg-paper-surface/80 text-sumi-dim hover:border-sumi-faint/40 hover:bg-paper-base hover:text-sumi') +
@@ -203,7 +204,7 @@ export default function ModelSwitcher({ capability, selectedModel, onSelect, dis
         {triggerLabel ? (
           <>
             <span className="text-[12px] leading-none" aria-hidden>{selectedProvider.emoji}</span>
-            <span className="text-[12px]">{triggerLabel}</span>
+            <span className="truncate text-[12px]">{triggerLabel}</span>
           </>
         ) : (
           <>
@@ -261,7 +262,7 @@ export default function ModelSwitcher({ capability, selectedModel, onSelect, dis
               </div>
             ) : (
               groupedModels.map((group) => (
-                <div key={group.provider.label} className="mb-0.5 last:mb-0">
+                <div key={group.id} className="mb-0.5 last:mb-0">
                   <div className="flex items-center gap-1.5 px-2 py-1.5">
                     <span
                       className={`flex h-5 w-5 shrink-0 items-center justify-center rounded text-[11px] leading-none ${group.provider.color}`}

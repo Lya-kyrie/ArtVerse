@@ -15,6 +15,7 @@ import org.springframework.transaction.annotation.Transactional;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.UUID;
 
 @Service
 @RequiredArgsConstructor
@@ -48,6 +49,7 @@ public class NovelService {
             agentMessages.add(new AgentMessage(m.getRole().name().toLowerCase(), m.getContent()));
         }
 
+        UUID requestId = UUID.randomUUID();
         AgentRunRequest request = new AgentRunRequest(
                 userId == null ? "default" : String.valueOf(userId),
                 chapter.getStory().getId(),
@@ -56,7 +58,9 @@ public class NovelService {
                 agentMessages,
                 Map.of(),
                 agentModelSpecFactory.deepSeek(userApiKey),
-                userApiKey
+                userApiKey,
+                requestId,
+                null
         );
 
         String novelContent;

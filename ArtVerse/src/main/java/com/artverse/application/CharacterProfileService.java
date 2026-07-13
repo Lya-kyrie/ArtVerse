@@ -37,6 +37,7 @@ public class CharacterProfileService {
     private final MediaStorageService mediaStorageService;
     private final ObjectStorageService objectStorageService;
     private final ArtVerseProperties properties;
+    private final KnowledgeService knowledgeService;
 
     @Transactional(readOnly = true)
     public List<CharacterProfile> listByStory(Long storyId) {
@@ -62,7 +63,9 @@ public class CharacterProfileService {
         profile.setStory(story);
         profile.setName(name != null ? name : "");
         profile.setDescription(description != null ? description : "");
-        return profileRepository.save(profile);
+        CharacterProfile saved = profileRepository.save(profile);
+        knowledgeService.syncCharacterProfile(saved);
+        return saved;
     }
 
     @Transactional
@@ -70,7 +73,9 @@ public class CharacterProfileService {
         CharacterProfile profile = getRequired(id);
         if (name != null) profile.setName(name);
         if (description != null) profile.setDescription(description);
-        return profileRepository.save(profile);
+        CharacterProfile saved = profileRepository.save(profile);
+        knowledgeService.syncCharacterProfile(saved);
+        return saved;
     }
 
     @Transactional
@@ -87,6 +92,7 @@ public class CharacterProfileService {
         objectStorageService.list(properties.getMinio().getBucket(), prefix, 100).stream()
                 .filter(o -> isImageObject(o.objectKey()))
                 .forEach(o -> objectStorageService.deleteBestEffort(properties.getMinio().getBucket(), o.objectKey()));
+        knowledgeService.archiveCharacterProfile(profile.getId());
         profileRepository.delete(profile);
     }
 

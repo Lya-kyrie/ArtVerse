@@ -23,6 +23,7 @@ import reactor.core.scheduler.Schedulers;
 import reactor.netty.http.HttpProtocol;
 import reactor.netty.http.client.HttpClient;
 import reactor.netty.resources.ConnectionProvider;
+import reactor.netty.http.client.PrematureCloseException;
 
 import javax.imageio.ImageIO;
 import java.awt.image.BufferedImage;
@@ -45,6 +46,7 @@ public class WebClientImage2Client implements Image2Client {
     private static final Duration READ_TIMEOUT = Duration.ofSeconds(600);
     private static final int MAX_IN_MEMORY_SIZE = 128 * 1024 * 1024;
     private static final Duration CONNECT_TIMEOUT = Duration.ofSeconds(30);
+    private static final int TRANSIENT_RETRY_ATTEMPTS = 1;
 
     private WebClient webClient;
     private ConnectionProvider connectionProvider;
@@ -97,6 +99,12 @@ public class WebClientImage2Client implements Image2Client {
                 .bodyToMono(String.class)
                 .timeout(READ_TIMEOUT)
                 .flatMap(response -> parseImageResponse(response, config))
+                .retryWhen(reactor.util.retry.Retry.backoff(TRANSIENT_RETRY_ATTEMPTS, Duration.ofSeconds(1))
+                        .filter(this::isPrematureClose)
+                        .doBeforeRetry(signal -> log.warn("Image provider closed connection before a response; retrying once")))
+                .onErrorMap(this::isPrematureClose, error -> new BusinessException(502,
+                        config.displayName() + " closed the connection before returning an image. Please try again.",
+                        config.displayName()))
                 .onErrorMap(WebClientResponseException.class, ex -> mapHttpError(ex, config));
     }
 
@@ -126,6 +134,12 @@ public class WebClientImage2Client implements Image2Client {
                 .bodyToMono(String.class)
                 .timeout(READ_TIMEOUT)
                 .flatMap(response -> parseImageResponse(response, config))
+                .retryWhen(reactor.util.retry.Retry.backoff(TRANSIENT_RETRY_ATTEMPTS, Duration.ofSeconds(1))
+                        .filter(this::isPrematureClose)
+                        .doBeforeRetry(signal -> log.warn("Image provider closed connection before a response; retrying once")))
+                .onErrorMap(this::isPrematureClose, error -> new BusinessException(502,
+                        config.displayName() + " closed the connection before returning an image. Please try again.",
+                        config.displayName()))
                 .onErrorMap(WebClientResponseException.class, ex -> mapHttpError(ex, config));
     }
 
@@ -247,5 +261,14 @@ public class WebClientImage2Client implements Image2Client {
             return fallback == null ? "unknown error" : fallback;
         }
         return trimmed.length() > 180 ? trimmed.substring(0, 180) + "..." : trimmed;
+    }
+
+    private boolean isPrematureClose(Throwable error) {
+        Throwable current = error;
+        while (current != null) {
+            if (current instanceof PrematureCloseException) return true;
+            current = current.getCause();
+        }
+        return false;
     }
 }
