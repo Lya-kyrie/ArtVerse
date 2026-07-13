@@ -247,15 +247,15 @@ function PersistentImage({
           aria-label={`${alt}加载失败，点击重试`}
           title="点击重试"
         >
-          {compact ? <ImagePlus size={14} className="text-cream-dim" /> : (
-            <span className="px-3 text-center text-xs text-cream-dim">图片尚未缓存，点击重试</span>
+          {compact ? <ImagePlus size={14} className="text-text-secondary" /> : (
+            <span className="px-3 text-center text-xs text-text-secondary">图片尚未缓存，点击重试</span>
           )}
         </button>
       );
     }
     return (
       <div className={placeholderClassName} role="img" aria-label={alt}>
-        <Loader2 size={18} className="animate-spin text-coral" />
+        <Loader2 size={18} className="animate-spin text-accent" />
       </div>
     );
   }
@@ -287,9 +287,9 @@ async function toPngBlob(blob: Blob): Promise<Blob> {
 
 function AspectRatioLabel({ aspectRatio }: { aspectRatio: string }) {
   const found = ASPECT_RATIOS.find((a) => a.value === aspectRatio);
-  if (!found) return <span className="text-cream-dim">{aspectRatio}</span>;
+  if (!found) return <span className="text-text-secondary">{aspectRatio}</span>;
   return (
-    <span className="text-cream-dim">
+    <span className="text-text-secondary">
       {found.value} {found.sub}
     </span>
   );
@@ -319,14 +319,14 @@ function ConfigPopover({
 
   return (
     <div className="absolute left-0 bottom-full mb-2 z-50 w-72 origin-bottom-left animate-fade-in">
-      <div className="overflow-hidden rounded-2xl border border-ink-border bg-ink-light shadow-2xl shadow-black/50">
+      <div className="overflow-hidden rounded-2xl border border-border bg-bg-surface shadow-2xl shadow-black/50">
         {/* Header */}
-        <div className="flex items-center justify-between border-b border-ink-border px-4 py-3">
-          <h3 className="flex items-center gap-2 text-sm font-semibold text-cream">
-            <Settings2 size={14} className="text-coral" />
+        <div className="flex items-center justify-between border-b border-border px-4 py-3">
+          <h3 className="flex items-center gap-2 text-sm font-semibold text-text-primary">
+            <Settings2 size={14} className="text-accent" />
             图片配置
           </h3>
-          <button onClick={onClose} className="text-warm-gray hover:text-cream transition-colors" aria-label="关闭">
+          <button onClick={onClose} className="text-text-muted hover:text-text-primary transition-colors" aria-label="关闭">
             <X size={14} />
           </button>
         </div>
@@ -334,7 +334,7 @@ function ConfigPopover({
         <div className="max-h-80 overflow-y-auto px-4 py-3 space-y-4">
           {/* Resolution */}
           <div>
-            <div className="mb-2 text-xs font-medium text-cream-dim uppercase tracking-wider">分辨率</div>
+            <div className="mb-2 text-xs font-medium text-text-secondary uppercase tracking-wider">分辨率</div>
             <div className="grid grid-cols-2 gap-1.5">
               {RESOLUTIONS.map((res) => (
                 <button
@@ -343,8 +343,8 @@ function ConfigPopover({
                   className={
                     'flex items-center justify-between rounded-xl border px-3 py-2 text-xs transition-all duration-150 ' +
                     (config.resolution === res.value
-                      ? 'border-coral/40 bg-coral/10 text-coral'
-                      : 'border-ink-border text-cream-dim hover:border-ink-muted hover:text-cream bg-ink')
+                      ? 'border-accent/40 bg-accent/10 text-accent'
+                      : 'border-border text-text-secondary hover:border-border hover:text-text-primary bg-bg-base')
                   }
                 >
                   <span>{res.label}</span>
@@ -356,7 +356,7 @@ function ConfigPopover({
 
           {/* Aspect Ratio */}
           <div>
-            <div className="mb-2 text-xs font-medium text-cream-dim uppercase tracking-wider">宽高比</div>
+            <div className="mb-2 text-xs font-medium text-text-secondary uppercase tracking-wider">宽高比</div>
             <div className="flex flex-wrap gap-1.5">
               {ASPECT_RATIOS.map((ar) => (
                 <button
@@ -365,8 +365,8 @@ function ConfigPopover({
                   className={
                     'flex flex-col items-center gap-1 rounded-xl border px-3 py-2 text-xs transition-all duration-150 min-w-[64px] ' +
                     (config.aspectRatio === ar.value
-                      ? 'border-coral/40 bg-coral/10 text-coral'
-                      : 'border-ink-border text-cream-dim hover:border-ink-muted hover:text-cream bg-ink')
+                      ? 'border-accent/40 bg-accent/10 text-accent'
+                      : 'border-border text-text-secondary hover:border-border hover:text-text-primary bg-bg-base')
                   }
                 >
                   <svg viewBox="0 0 20 20" className="w-[18px] h-[18px] fill-none stroke-current stroke-[1.5] opacity-70">
@@ -384,7 +384,7 @@ function ConfigPopover({
           </div>
 
           {/* Current config summary */}
-          <div className="rounded-xl border border-ink-border bg-ink px-3 py-2 text-xs text-cream-dim">
+          <div className="rounded-xl border border-border bg-bg-base px-3 py-2 text-xs text-text-secondary">
             当前配置：{fmtRes(config.resolution)} · <AspectRatioLabel aspectRatio={config.aspectRatio} />
           </div>
         </div>
@@ -451,17 +451,17 @@ function Composer({
   return (
     <div className={compact ? 'w-full' : 'w-full max-w-5xl mx-auto'}>
       {/* Split the card: text section has overflow-hidden, footer does not */}
-      <div className="rounded-2xl border border-ink-border shadow-2xl shadow-coral/5">
-        <div className="overflow-hidden rounded-t-2xl bg-ink-light/85">
+      <div className="rounded-2xl border border-border shadow-2xl shadow-coral/5">
+        <div className="overflow-hidden rounded-t-2xl bg-bg-surface/85">
           <div className="relative p-4 sm:p-5">
             {refFiles.length > 0 && (
               <div className="mb-3 flex flex-wrap gap-2">
                 {refFiles.map((rf, i) => (
-                  <div key={i} className="relative h-14 w-14 shrink-0 overflow-hidden rounded-xl border border-ink-border bg-ink-lighter">
+                  <div key={i} className="relative h-14 w-14 shrink-0 overflow-hidden rounded-xl border border-border bg-bg-raised">
                     <img src={rf.preview} alt={`参考图 ${i + 1}`} className="h-full w-full object-cover" />
                     <button
                       onClick={() => onRemoveRef(i)}
-                      className="absolute right-0 top-0 rounded-bl-md bg-sumi/60 p-0.5 text-white"
+                      className="absolute right-0 top-0 rounded-bl-md bg-bg-base/60 p-0.5 text-white"
                       aria-label={`移除参考图 ${i + 1}`}
                     >
                       <X size={10} />
@@ -484,18 +484,18 @@ function Composer({
               placeholder="描述你想生成的画面、风格、主体和细节（支持粘贴图片作为参考图）"
               disabled={generating}
               rows={compact ? 4 : 5}
-              className="w-full resize-none bg-transparent text-[17px] leading-7 text-cream outline-none placeholder:text-cream-dim"
+              className="w-full resize-none bg-transparent text-[17px] leading-7 text-text-primary outline-none placeholder:text-text-secondary"
             />
             {pasteToast && (
-              <div className="absolute right-4 top-4 z-10 animate-fade-in rounded-lg bg-coral/90 px-3 py-1.5 text-xs text-white shadow-lg">
+              <div className="absolute right-4 top-4 z-10 animate-fade-in rounded-lg bg-accent/90 px-3 py-1.5 text-xs text-white shadow-lg">
                 已添加参考图
               </div>
             )}
           </div>
         </div>
 
-        <div className="flex items-center gap-2 border-t border-ink-border px-3 py-3 sm:px-4 bg-ink-light/85 rounded-b-2xl">
-          <label className={'flex cursor-pointer items-center gap-2 rounded-xl border border-ink-border px-3 py-2 text-cream-dim transition-colors hover:bg-ink-lighter ' + (refFiles.length >= 3 ? 'pointer-events-none opacity-40' : '')}>
+        <div className="flex items-center gap-2 border-t border-border px-3 py-3 sm:px-4 bg-bg-surface/85 rounded-b-2xl">
+          <label className={'flex cursor-pointer items-center gap-2 rounded-xl border border-border px-3 py-2 text-text-secondary transition-colors hover:bg-bg-raised ' + (refFiles.length >= 3 ? 'pointer-events-none opacity-40' : '')}>
             <ImagePlus size={16} />
             <span className="text-sm">参考图</span>
             <input type="file" accept="image/*" multiple onChange={onAddRef} className="hidden" />
@@ -506,7 +506,7 @@ function Composer({
             <button
               type="button"
               onClick={() => setConfigOpen(!configOpen)}
-              className="flex items-center gap-1.5 rounded-xl border border-ink-border px-3 py-2 text-cream-dim transition-colors hover:bg-ink-lighter hover:text-cream"
+              className="flex items-center gap-1.5 rounded-xl border border-border px-3 py-2 text-text-secondary transition-colors hover:bg-bg-raised hover:text-text-primary"
               title="图片配置"
             >
               <Settings2 size={15} />
@@ -532,7 +532,7 @@ function Composer({
             type="button"
             onClick={onSend}
             disabled={!canSend}
-            className="ml-auto inline-flex h-10 w-10 items-center justify-center rounded-xl bg-coral text-cream transition-colors hover:bg-coral-light disabled:cursor-not-allowed disabled:opacity-30"
+            className="ml-auto inline-flex h-10 w-10 items-center justify-center rounded-xl bg-accent text-text-primary transition-colors hover:bg-accent-soft disabled:cursor-not-allowed disabled:opacity-30"
             aria-label={generating ? '正在生成' : '发送生成请求'}
           >
             {generating ? <Loader2 size={16} className="animate-spin" /> : <Send size={16} />}
@@ -587,13 +587,13 @@ function ThemeSidebar({
   };
 
   return (
-    <aside className={'flex shrink-0 flex-col border-r border-ink-border bg-ink-light transition-all duration-300 ' + (sidebarOpen ? 'w-56' : 'w-0 overflow-hidden')}>
-      <div className="flex h-14 items-center justify-between border-b border-ink-border px-3">
-        <span className="flex items-center gap-1.5 text-sm font-bold tracking-wide text-coral">
+    <aside className={'flex shrink-0 flex-col border-r border-border bg-bg-surface transition-all duration-300 ' + (sidebarOpen ? 'w-56' : 'w-0 overflow-hidden')}>
+      <div className="flex h-14 items-center justify-between border-b border-border px-3">
+        <span className="flex items-center gap-1.5 text-sm font-bold tracking-wide text-accent">
           <Palette size={14} />
           主题列表
         </span>
-        <button onClick={onToggleSidebar} className="text-warm-gray hover:text-cream transition-colors" aria-label="收起侧边栏">
+        <button onClick={onToggleSidebar} className="text-text-muted hover:text-text-primary transition-colors" aria-label="收起侧边栏">
           <ChevronLeft size={16} />
         </button>
       </div>
@@ -601,7 +601,7 @@ function ThemeSidebar({
       <div className="px-2 py-3">
         <button
           onClick={onCreateTheme}
-          className="flex w-full items-center gap-2 rounded-lg border border-dashed border-ink-muted px-3 py-2.5 text-sm font-medium text-cream-dim hover:border-coral/40 hover:text-coral transition-colors"
+          className="flex w-full items-center gap-2 rounded-lg border border-dashed border-border px-3 py-2.5 text-sm font-medium text-text-secondary hover:border-accent/40 hover:text-accent transition-colors"
         >
           <Plus size={15} />
           创作新主题
@@ -610,7 +610,7 @@ function ThemeSidebar({
 
       <nav className="flex-1 overflow-y-auto px-2 pb-3 space-y-0.5">
         {themes.length === 0 && (
-          <p className="px-3 py-4 text-xs text-ink-muted text-center">暂无主题</p>
+          <p className="px-3 py-4 text-xs text-text-muted text-center">暂无主题</p>
         )}
         {themes.map((theme) => (
           <div key={theme.id} className="group relative">
@@ -619,8 +619,8 @@ function ThemeSidebar({
               className={
                 'w-full rounded-lg px-3 py-2.5 text-left text-sm transition-all duration-200 flex items-center gap-1 ' +
                 (theme.id === activeThemeId
-                  ? 'bg-coral/10 text-coral border border-coral/20'
-                  : 'text-cream-dim hover:bg-ink-lighter hover:text-cream border border-transparent')
+                  ? 'bg-accent/10 text-accent border border-accent/20'
+                  : 'text-text-secondary hover:bg-bg-raised hover:text-text-primary border border-transparent')
               }
             >
               {editingId === theme.id ? (
@@ -633,7 +633,7 @@ function ThemeSidebar({
                     if (e.key === 'Enter') handleFinishRename();
                     if (e.key === 'Escape') setEditingId(null);
                   }}
-                  className="min-w-0 flex-1 bg-ink rounded px-1 py-0.5 text-sm text-cream outline-none border border-coral/40"
+                  className="min-w-0 flex-1 bg-bg-base rounded px-1 py-0.5 text-sm text-text-primary outline-none border border-accent/40"
                   onClick={(e) => e.stopPropagation()}
                 />
               ) : (
@@ -646,7 +646,7 @@ function ThemeSidebar({
                     tabIndex={0}
                     onClick={(e) => { e.stopPropagation(); e.preventDefault(); handleStartRename(theme); }}
                     onKeyDown={(e) => { if (e.key === 'Enter') handleStartRename(theme); }}
-                    className="rounded p-0.5 text-ink-muted hover:text-cream hover:bg-ink-lighter transition-colors cursor-pointer"
+                    className="rounded p-0.5 text-text-muted hover:text-text-primary hover:bg-bg-raised transition-colors cursor-pointer"
                     title="重命名"
                   >
                     <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -658,7 +658,7 @@ function ThemeSidebar({
                     tabIndex={0}
                     onClick={(e) => { e.stopPropagation(); e.preventDefault(); onDeleteTheme(theme.id); }}
                     onKeyDown={(e) => { if (e.key === 'Enter') onDeleteTheme(theme.id); }}
-                    className="rounded p-0.5 text-ink-muted hover:text-coral hover:bg-ink-lighter transition-colors cursor-pointer"
+                    className="rounded p-0.5 text-text-muted hover:text-accent hover:bg-bg-raised transition-colors cursor-pointer"
                     title="删除主题"
                   >
                     <X size={12} />
@@ -1252,14 +1252,14 @@ export default function ImageGenPage() {
 
   if (!loaded || loading) {
     return (
-      <div className="flex-1 flex items-center justify-center bg-ink">
-        <Loader2 size={28} className="animate-spin text-coral" />
+      <div className="flex-1 flex items-center justify-center bg-bg-base">
+        <Loader2 size={28} className="animate-spin text-accent" />
       </div>
     );
   }
 
   return (
-    <div ref={containerRef} className="flex-1 min-h-0 bg-ink text-cream flex">
+    <div ref={containerRef} className="flex-1 min-h-0 bg-bg-base text-text-primary flex">
       {/* Theme Sidebar */}
       <ThemeSidebar
         themes={themes}
@@ -1275,10 +1275,10 @@ export default function ImageGenPage() {
       {/* Main Content */}
       <div className="flex min-h-0 flex-1 flex-col">
         {!sidebarOpen && (
-          <div className="flex h-12 items-center border-b border-ink-border px-3 bg-ink-light/80">
+          <div className="flex h-12 items-center border-b border-border px-3 bg-bg-surface/80">
             <button
               onClick={() => setSidebarOpen(true)}
-              className="flex items-center gap-1.5 text-sm text-cream-dim hover:text-cream transition-colors"
+              className="flex items-center gap-1.5 text-sm text-text-secondary hover:text-text-primary transition-colors"
             >
               <ChevronRight size={16} />
               <span>主题列表</span>
@@ -1289,10 +1289,10 @@ export default function ImageGenPage() {
         {!activeTheme ? (
           <div className="flex-1 flex items-center justify-center px-4">
             <div className="text-center">
-              <p className="text-cream-dim mb-4">请选择一个主题</p>
+              <p className="text-text-secondary mb-4">请选择一个主题</p>
               <button
                 onClick={handleCreateTheme}
-                className="inline-flex items-center gap-2 rounded-xl bg-coral px-5 py-3 text-sm font-medium text-white hover:bg-coral-light transition-colors"
+                className="inline-flex items-center gap-2 rounded-xl bg-accent px-5 py-3 text-sm font-medium text-white hover:bg-accent-soft transition-colors"
               >
                 <Plus size={16} />
                 创作新主题
@@ -1303,8 +1303,8 @@ export default function ImageGenPage() {
           <div className="flex-1 flex items-center justify-center px-4">
             <div className="w-full max-w-5xl">
               <div className="mb-8 text-center">
-                <h2 className="text-4xl font-semibold tracking-tight text-cream sm:text-5xl">即刻创作图片</h2>
-                <p className="mt-2 text-sm text-cream-dim">
+                <h2 className="text-4xl font-semibold tracking-tight text-text-primary sm:text-5xl">即刻创作图片</h2>
+                <p className="mt-2 text-sm text-text-secondary">
                   当前主题：{activeTheme.name}
                 </p>
               </div>
@@ -1327,11 +1327,11 @@ export default function ImageGenPage() {
           </div>
         ) : (
           <div className="flex-1 min-h-0 flex flex-col">
-            <div className="flex h-12 items-center justify-between border-b border-ink-border px-4 bg-ink-light/80">
+            <div className="flex h-12 items-center justify-between border-b border-border px-4 bg-bg-surface/80">
               <div className="flex items-center gap-2">
-                <Palette size={14} className="text-coral" />
-                <span className="text-sm font-medium text-cream truncate">{activeTheme.name}</span>
-                <span className="text-xs text-cream-dim">
+                <Palette size={14} className="text-accent" />
+                <span className="text-sm font-medium text-text-primary truncate">{activeTheme.name}</span>
+                <span className="text-xs text-text-secondary">
                   ({Math.ceil(messages.filter((m) => m.type === 'ai' && m.record).length)} 张图片)
                 </span>
               </div>
@@ -1339,7 +1339,7 @@ export default function ImageGenPage() {
                 {canvasOpen ? (
                   <button
                     onClick={() => setCanvasOpen(false)}
-                    className="flex items-center gap-1.5 rounded-lg border border-ink-border px-3 py-1.5 text-xs text-cream-dim hover:text-cream hover:bg-ink-lighter transition-colors"
+                    className="flex items-center gap-1.5 rounded-lg border border-border px-3 py-1.5 text-xs text-text-secondary hover:text-text-primary hover:bg-bg-raised transition-colors"
                     title="收起画布"
                   >
                     <Edit3 size={12} />
@@ -1348,7 +1348,7 @@ export default function ImageGenPage() {
                 ) : (
                   <button
                     onClick={() => setCanvasOpen(true)}
-                    className="flex items-center gap-1.5 rounded-lg border border-coral/30 px-3 py-1.5 text-xs text-coral hover:bg-coral/10 transition-colors"
+                    className="flex items-center gap-1.5 rounded-lg border border-accent/30 px-3 py-1.5 text-xs text-accent hover:bg-accent/10 transition-colors"
                     title="打开画布"
                   >
                     <Edit3 size={12} />
@@ -1366,7 +1366,7 @@ export default function ImageGenPage() {
                     return (
                       <div key={msg.id} className="group flex justify-end">
                         <div className="max-w-[78%]">
-                          <div className="inline-flex items-center gap-2 rounded-2xl border border-ink-border bg-ink-lighter px-4 py-3 text-sm text-cream shadow-sm">
+                          <div className="inline-flex items-center gap-2 rounded-2xl border border-border bg-bg-raised px-4 py-3 text-sm text-text-primary shadow-sm">
                             {referenceCount > 0 && (
                               <div className="flex gap-1">
                                 {Array.from({ length: referenceCount }, (_, index) => (
@@ -1376,7 +1376,7 @@ export default function ImageGenPage() {
                                     sourceUrl={msg.refThumbnails?.[index]}
                                     alt={`参考图 ${index + 1}`}
                                     className="h-10 w-10 rounded-lg object-cover"
-                                    placeholderClassName="flex h-10 w-10 items-center justify-center rounded-lg bg-ink-light"
+                                    placeholderClassName="flex h-10 w-10 items-center justify-center rounded-lg bg-bg-surface"
                                     compact
                                   />
                                 ))}
@@ -1390,18 +1390,18 @@ export default function ImageGenPage() {
                               className="rounded-md p-1.5 transition-colors"
                               title={copiedId === msg.id ? '已复制' : '复制提示词'}
                             >
-                              {copiedId === msg.id ? <Check size={14} className="text-coral" /> : <Copy size={14} className="text-cream-dim" />}
+                              {copiedId === msg.id ? <Check size={14} className="text-accent" /> : <Copy size={14} className="text-text-secondary" />}
                             </button>
                             <button
                               onClick={() => handleEditMessage(msg)}
-                              className="rounded-md p-1.5 text-cream-dim hover:text-coral hover:bg-ink-lighter transition-colors"
+                              className="rounded-md p-1.5 text-text-secondary hover:text-accent hover:bg-bg-raised transition-colors"
                               title="修改提示词"
                             >
                               <Edit3 size={14} />
                             </button>
                             <button
                               onClick={() => handleDeleteUserMessage(msg.id)}
-                              className="rounded-md p-1.5 text-cream-dim hover:text-red-400 hover:bg-ink-lighter transition-colors"
+                              className="rounded-md p-1.5 text-text-secondary hover:text-red-400 hover:bg-bg-raised transition-colors"
                               title="删除这条消息"
                             >
                               <Trash2 size={14} />
@@ -1418,9 +1418,9 @@ export default function ImageGenPage() {
                     const imageCacheKey = record.image_url ? generatedImageCacheKey(record.image_url) : '';
                     return (
                       <div key={msg.id} className="space-y-3">
-                        <div className="flex items-center justify-between text-xs text-cream-dim">
+                        <div className="flex items-center justify-between text-xs text-text-secondary">
                           <div className="flex items-center gap-2">
-                            <span className="font-medium text-cream">{record.model || 'gpt-image-2'}</span>
+                            <span className="font-medium text-text-primary">{record.model || 'gpt-image-2'}</span>
                             <span>{record.size ? fmtRes(record.size) : '生成图片'}</span>
                           </div>
                           <span>{record.status === 'RUNNING' ? '姝ｅ湪鐢熸垚' : new Date(record.created_at).toLocaleString()}</span>
@@ -1428,8 +1428,8 @@ export default function ImageGenPage() {
 
                         {record.status === 'RUNNING' ? (
                           <div className="flex justify-start">
-                            <div className="inline-flex items-center gap-2 rounded-2xl border border-ink-border bg-ink-light px-4 py-3 text-sm text-cream-dim shadow-sm">
-                              <Loader2 size={16} className="animate-spin text-coral" />
+                            <div className="inline-flex items-center gap-2 rounded-2xl border border-border bg-bg-surface px-4 py-3 text-sm text-text-secondary shadow-sm">
+                              <Loader2 size={16} className="animate-spin text-accent" />
                               姝ｅ湪鐢熸垚鍥剧墖...
                             </div>
                           </div>
@@ -1439,26 +1439,26 @@ export default function ImageGenPage() {
                           </div>
                         ) : (
                         <div className="flex justify-start">
-                          <div className="inline-flex max-w-full items-center justify-center overflow-hidden rounded-2xl border border-ink-border bg-ink-light shadow-sm">
+                          <div className="inline-flex max-w-full items-center justify-center overflow-hidden rounded-2xl border border-border bg-bg-surface shadow-sm">
                             <PersistentImage
                               cacheKey={imageCacheKey}
                               sourceUrl={imageUrl}
                               alt={record.prompt}
                               className="block h-auto max-h-[75vh] max-w-full object-contain"
-                              placeholderClassName="flex min-h-64 w-80 max-w-full items-center justify-center bg-ink-light"
+                              placeholderClassName="flex min-h-64 w-80 max-w-full items-center justify-center bg-bg-surface"
                             />
                           </div>
                         </div>
                         )}
 
-                        {record.status === 'SUCCEEDED' && <div className="flex items-center gap-2 text-cream-dim">
+                        {record.status === 'SUCCEEDED' && <div className="flex items-center gap-2 text-text-secondary">
                           <button
-                            className="rounded-lg p-2 hover:bg-ink-lighter transition-colors"
+                            className="rounded-lg p-2 hover:bg-bg-raised transition-colors"
                             title="复制图片到剪贴板"
                             onClick={() => copyImageToClipboard(imageCacheKey, imageUrl, record.id)}
                           >
                             {copiedId === String(record.id) ? (
-                              <Check size={14} className="text-coral" />
+                              <Check size={14} className="text-accent" />
                             ) : (
                               <Copy size={14} />
                             )}
@@ -1466,19 +1466,19 @@ export default function ImageGenPage() {
                           <button
                             type="button"
                             onClick={() => downloadImage(imageCacheKey, imageUrl, record.id)}
-                            className="rounded-lg p-2 hover:bg-ink-lighter"
+                            className="rounded-lg p-2 hover:bg-bg-raised"
                             title="下载图片"
                           >
                             <Download size={14} />
                           </button>
                           <button
                             onClick={() => handleOpenInCanvas(imageCacheKey, imageUrl)}
-                            className="rounded-lg p-2 hover:bg-ink-lighter transition-colors"
+                            className="rounded-lg p-2 hover:bg-bg-raised transition-colors"
                             title="在画布中标注"
                           >
                             <Edit3 size={14} />
                           </button>
-                          <button onClick={() => handleDelete(record.id, msg.id, record.image_url)} className="rounded-lg p-2 hover:bg-ink-lighter" title="删除记录">
+                          <button onClick={() => handleDelete(record.id, msg.id, record.image_url)} className="rounded-lg p-2 hover:bg-bg-raised" title="删除记录">
                             <Trash2 size={14} />
                           </button>
                         </div>}
@@ -1487,7 +1487,7 @@ export default function ImageGenPage() {
                   }
 
                   return (
-                    <div key={msg.id} className="rounded-md border border-vermilion/20 bg-vermilion-light/20 px-4 py-3 text-sm text-vermilion">
+                    <div key={msg.id} className="rounded-md border border-accent/20 bg-accent-soft px-4 py-3 text-sm text-accent">
                       {msg.prompt}
                     </div>
                   );
@@ -1495,8 +1495,8 @@ export default function ImageGenPage() {
 
                 {isActiveThemeGenerating && (
                   <div className="flex justify-start">
-                    <div className="inline-flex items-center gap-2 rounded-2xl border border-ink-border bg-ink-light px-4 py-3 text-sm text-cream-dim shadow-sm">
-                      <Loader2 size={16} className="animate-spin text-coral" />
+                    <div className="inline-flex items-center gap-2 rounded-2xl border border-border bg-bg-surface px-4 py-3 text-sm text-text-secondary shadow-sm">
+                      <Loader2 size={16} className="animate-spin text-accent" />
                       正在生成图片...
                     </div>
                   </div>
@@ -1504,7 +1504,7 @@ export default function ImageGenPage() {
               </div>
             </div>
 
-            <div className="border-t border-ink-border glass px-4 py-5 sm:px-6 lg:px-10">
+            <div className="border-t border-border glass px-4 py-5 sm:px-6 lg:px-10">
               <Composer
                 compact
                 refFiles={refFiles}
@@ -1529,14 +1529,14 @@ export default function ImageGenPage() {
       {/* Draggable Divider — always mounted, hidden when closed */}
       <div
         className={(
-          'flex w-[5px] shrink-0 cursor-col-resize items-center justify-center bg-transparent transition-colors hover:bg-coral/40 active:bg-coral/60 group touch-none '
+          'flex w-[5px] shrink-0 cursor-col-resize items-center justify-center bg-transparent transition-colors hover:bg-accent/40 active:bg-accent/60 group touch-none '
           + (canvasOpen ? '' : 'hidden')
         )}
         onPointerDown={handleDividerMouseDown}
         title="拖拽调整画布宽度"
       >
-        <div className="flex h-8 w-0.5 items-center justify-center rounded-full bg-ink-muted opacity-0 transition-opacity group-hover:opacity-100">
-          <GripVertical size={10} className="text-ink-muted" />
+        <div className="flex h-8 w-0.5 items-center justify-center rounded-full bg-bg-base-muted opacity-0 transition-opacity group-hover:opacity-100">
+          <GripVertical size={10} className="text-text-muted" />
         </div>
       </div>
 
@@ -1544,20 +1544,20 @@ export default function ImageGenPage() {
       <div
         ref={canvasPanelRef}
         className={(
-          'flex shrink-0 flex-col border-l border-ink-border bg-ink-light '
+          'flex shrink-0 flex-col border-l border-border bg-bg-surface '
           + (canvasOpen ? '' : 'hidden')
         )}
         style={{ width: canvasWidth }}
       >
           {/* Panel Header */}
-          <div className="flex h-12 shrink-0 items-center justify-between border-b border-ink-border px-4 bg-ink-light/80">
-            <span className="flex items-center gap-1.5 text-sm font-bold tracking-wide text-coral">
+          <div className="flex h-12 shrink-0 items-center justify-between border-b border-border px-4 bg-bg-surface/80">
+            <span className="flex items-center gap-1.5 text-sm font-bold tracking-wide text-accent">
               <Edit3 size={14} />
               画布
             </span>
             <button
               onClick={() => setCanvasOpen(false)}
-              className="rounded-lg p-1.5 text-cream-dim hover:text-cream hover:bg-ink-lighter transition-colors"
+              className="rounded-lg p-1.5 text-text-secondary hover:text-text-primary hover:bg-bg-raised transition-colors"
               title="收起画布"
             >
               <ChevronRight size={16} />
@@ -1565,11 +1565,11 @@ export default function ImageGenPage() {
           </div>
           {/* Paste hint banner */}
           {pasteHint && (
-            <div className="flex shrink-0 items-center justify-between gap-2 bg-coral/15 px-4 py-2 text-xs text-coral border-b border-coral/20 animate-fade-in">
+            <div className="flex shrink-0 items-center justify-between gap-2 bg-accent/15 px-4 py-2 text-xs text-accent border-b border-accent/20 animate-fade-in">
               <span>原图已添加到聊天框，在画布中标注后粘贴回来一起发送</span>
               <button
                 onClick={() => setPasteHint(false)}
-                className="shrink-0 rounded p-0.5 text-coral/60 hover:text-coral hover:bg-coral/20 transition-colors"
+                className="shrink-0 rounded p-0.5 text-accent/60 hover:text-accent hover:bg-accent/20 transition-colors"
                 aria-label="关闭提示"
               >
                 <X size={14} />

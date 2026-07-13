@@ -147,35 +147,35 @@ export default function AssetGroupManagerModal({ storyId, onClose, onGroupsChang
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-sumi/30 p-3 backdrop-blur-sm sm:p-4" onClick={onClose}>
-      <div className="flex h-[640px] max-h-[88vh] w-full max-w-6xl flex-col overflow-hidden rounded-lg border border-ink-border bg-ink-light shadow-2xl" onClick={(event) => event.stopPropagation()}>
-        <div className="flex shrink-0 items-center justify-between border-b border-ink-border px-4 py-3 sm:px-5 sm:py-4">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-bg-base/30 p-3 backdrop-blur-sm sm:p-4" onClick={onClose}>
+      <div className="flex h-[640px] max-h-[88vh] w-full max-w-6xl flex-col overflow-hidden rounded-lg border border-border bg-bg-surface shadow-2xl" onClick={(event) => event.stopPropagation()}>
+        <div className="flex shrink-0 items-center justify-between border-b border-border px-4 py-3 sm:px-5 sm:py-4">
           <h3 className="flex items-center gap-2 text-sm font-semibold">
-            <Layers size={16} className="text-coral" />
+            <Layers size={16} className="text-accent" />
             设置设定组
           </h3>
-          <button onClick={onClose} className="flex h-8 w-8 items-center justify-center rounded-md text-cream-dim transition-colors hover:bg-ink-lighter hover:text-cream" aria-label="关闭设定组管理">
+          <button onClick={onClose} className="flex h-8 w-8 items-center justify-center rounded-md text-text-secondary transition-colors hover:bg-bg-raised hover:text-text-primary" aria-label="关闭设定组管理">
             <X size={16} />
           </button>
         </div>
 
         {error && (
-          <div className="mx-4 mt-3 rounded-md border border-vermilion/20 bg-vermilion-light/20 px-3 py-2 text-xs text-vermilion sm:mx-5">
+          <div className="mx-4 mt-3 rounded-md border border-accent/20 bg-accent-soft px-3 py-2 text-xs text-accent sm:mx-5">
             {error}
           </div>
         )}
 
         {loading ? (
-          <div className="flex flex-1 items-center justify-center text-cream-dim">
+          <div className="flex flex-1 items-center justify-center text-text-secondary">
             <Loader2 size={24} className="animate-spin" />
           </div>
         ) : (
           <div className="grid min-h-0 flex-1 grid-cols-1 md:grid-cols-[220px_1fr]">
-            <div className="max-h-44 overflow-y-auto border-b border-ink-border p-3 md:max-h-none md:border-b-0 md:border-r">
+            <div className="max-h-44 overflow-y-auto border-b border-border p-3 md:max-h-none md:border-b-0 md:border-r">
               <button
                 onClick={addGroup}
                 disabled={saving}
-                className="flex w-full items-center justify-center gap-1.5 rounded-md bg-coral px-3 py-2 text-xs font-medium text-cream transition-colors hover:bg-coral-light disabled:opacity-40"
+                className="flex w-full items-center justify-center gap-1.5 rounded-md bg-accent px-3 py-2 text-xs font-medium text-text-primary transition-colors hover:bg-accent-soft disabled:opacity-40"
               >
                 {saving && !activeGroup ? <Loader2 size={13} className="animate-spin" /> : <Plus size={13} />}
                 添加设定组
@@ -190,8 +190,8 @@ export default function AssetGroupManagerModal({ storyId, onClose, onGroupsChang
                       onClick={() => selectGroup(group)}
                       className={`rounded-md border px-3 py-2 text-left transition-colors ${
                         active
-                          ? 'border-coral bg-coral/15 text-cream'
-                          : 'border-paper-border bg-paper-surface text-sumi-dim hover:border-sumi-faint hover:text-sumi'
+                          ? 'border-accent bg-accent/15 text-text-primary'
+                          : 'border-border bg-bg-surface text-text-secondary hover:border-accent/20 hover:text-text-primary'
                       }`}
                     >
                       <span className="block truncate text-xs font-medium">{group.name}</span>
@@ -206,32 +206,32 @@ export default function AssetGroupManagerModal({ storyId, onClose, onGroupsChang
                 <>
                   <div className="flex-1 space-y-4 overflow-y-auto p-4">
                     <div>
-                      <label className="mb-1.5 block text-xs text-cream-dim">设定组名称</label>
+                      <label className="mb-1.5 block text-xs text-text-secondary">设定组名称</label>
                       <input
                         value={draftName}
                         onChange={(event) => setDraftName(event.target.value)}
-                        className="w-full rounded-md border border-ink-border bg-ink-lighter px-3 py-2 text-sm focus:border-coral focus:outline-none focus:ring-2"
+                        className="w-full rounded-md border border-border bg-bg-raised px-3 py-2 text-sm focus:border-accent focus:outline-none focus:ring-2"
                         placeholder="输入设定组名称"
                       />
                     </div>
 
                     <div>
-                      <label className="mb-1.5 block text-xs text-cream-dim">描述</label>
+                      <label className="mb-1.5 block text-xs text-text-secondary">描述</label>
                       <textarea
                         value={draftDescription}
                         onChange={(event) => setDraftDescription(event.target.value)}
                         rows={4}
-                        className="w-full resize-none rounded-md border border-ink-border bg-ink-lighter p-3 text-sm leading-relaxed text-cream outline-none focus:border-coral"
+                        className="w-full resize-none rounded-md border border-border bg-bg-raised p-3 text-sm leading-relaxed text-text-primary outline-none focus:border-accent"
                         placeholder="设定组描述..."
                       />
                     </div>
 
                     <div>
-                      <label className="mb-2 block text-xs text-cream-dim">
+                      <label className="mb-2 block text-xs text-text-secondary">
                         选择角色卡 ({draftCharacterIds.size} 个已选)
                       </label>
                       {characters.length === 0 ? (
-                        <p className="rounded-md border border-dashed border-ink-border py-4 text-center text-xs text-warm-gray">
+                        <p className="rounded-md border border-dashed border-border py-4 text-center text-xs text-text-muted">
                           暂无角色卡
                         </p>
                       ) : (
@@ -252,23 +252,23 @@ export default function AssetGroupManagerModal({ storyId, onClose, onGroupsChang
                                 onClick={toggle}
                                 className={`relative overflow-hidden rounded-md border-2 text-left transition-colors ${
                                   checked
-                                    ? 'border-vermilion bg-vermilion-light/30'
-                                    : 'border-paper-border bg-paper-surface hover:border-sumi-faint'
+                                    ? 'border-accent bg-accent-muted/30'
+                                    : 'border-border bg-bg-surface hover:border-accent/20'
                                 }`}
                               >
                                 {checked && (
-                                  <span className="absolute right-1.5 top-1.5 z-10 flex h-5 w-5 items-center justify-center rounded-full bg-vermilion shadow">
-                                    <Check size={11} className="text-cream" />
+                                  <span className="absolute right-1.5 top-1.5 z-10 flex h-5 w-5 items-center justify-center rounded-full bg-accent shadow">
+                                    <Check size={11} className="text-text-primary" />
                                   </span>
                                 )}
-                                <span className="flex aspect-square items-center justify-center bg-ink-lighter">
+                                <span className="flex aspect-square items-center justify-center bg-bg-raised">
                                   {thumbnail ? (
                                     <img src={thumbnail} alt={character.name} className="h-full w-full object-contain" loading="lazy" />
                                   ) : (
-                                    <Users size={24} className="text-warm-gray" />
+                                    <Users size={24} className="text-text-muted" />
                                   )}
                                 </span>
-                                <span className="block truncate px-2 py-1.5 text-center text-xs text-cream-dim">{character.name}</span>
+                                <span className="block truncate px-2 py-1.5 text-center text-xs text-text-secondary">{character.name}</span>
                               </button>
                             );
                           })}
@@ -277,18 +277,18 @@ export default function AssetGroupManagerModal({ storyId, onClose, onGroupsChang
                     </div>
                   </div>
 
-                  <div className="flex shrink-0 justify-end gap-2 border-t border-ink-border px-4 py-3 sm:px-5">
+                  <div className="flex shrink-0 justify-end gap-2 border-t border-border px-4 py-3 sm:px-5">
                     <button
                       onClick={removeGroup}
                       disabled={saving}
-                      className="rounded-md border border-vermilion/20 bg-vermilion-light/30 px-4 py-2 text-sm font-medium text-vermilion transition-colors hover:bg-vermilion-light/50 disabled:opacity-40"
+                      className="rounded-md border border-accent/20 bg-accent-muted/30 px-4 py-2 text-sm font-medium text-accent transition-colors hover:bg-accent-muted/50 disabled:opacity-40"
                     >
                       删除
                     </button>
                     <button
                       onClick={saveGroup}
                       disabled={saving}
-                      className="flex min-w-20 items-center justify-center gap-1.5 rounded-md bg-coral px-5 py-2 text-sm font-medium text-cream transition-colors hover:bg-coral-light disabled:opacity-40"
+                      className="flex min-w-20 items-center justify-center gap-1.5 rounded-md bg-accent px-5 py-2 text-sm font-medium text-text-primary transition-colors hover:bg-accent-soft disabled:opacity-40"
                     >
                       {saving && <Loader2 size={14} className="animate-spin" />}
                       {saving ? '保存中...' : '保存'}
@@ -296,7 +296,7 @@ export default function AssetGroupManagerModal({ storyId, onClose, onGroupsChang
                   </div>
                 </>
               ) : (
-                <div className="flex flex-1 items-center justify-center p-6 text-center text-sm text-cream-dim">
+                <div className="flex flex-1 items-center justify-center p-6 text-center text-sm text-text-secondary">
                   点击“添加设定组”开始配置
                 </div>
               )}

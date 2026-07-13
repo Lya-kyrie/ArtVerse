@@ -38,7 +38,7 @@ export function detectProvider(modelId: string): ProviderMeta {
       return { label: pattern.label, emoji: pattern.emoji, color: pattern.color };
     }
   }
-  return { label: 'Custom', emoji: 'U', color: 'bg-gray-100 text-gray-700' };
+  return { label: 'Custom', emoji: 'U', color: 'bg-bg-raised text-text-secondary' };
 }
 
 export function groupModelsByProvider(models: string[]): GroupedModels[] {

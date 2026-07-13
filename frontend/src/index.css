@@ -1,263 +1,308 @@
 @import "tailwindcss";
 
-/* ── 轻量创作工作台 设计令牌 ── */
+/* ═══════════════════════════════════════════════════════════════════════════
+   ArtVerse — Multi-Theme Design System
+   5 themes × 2 modes (dark + light). Zero violet/purple.
+   Default: Emerald dark
+   ═══════════════════════════════════════════════════════════════════════════ */
 
 @theme {
-  /* 中性画布 */
-  --color-paper-base: #F6F7F5;
-  --color-paper-surface: #F0F2EF;
-  --color-paper-raised: #FFFFFF;
-  --color-paper-border: #E1E5E0;
-
-  /* 墨色系 */
-  --color-sumi: #181B19;
-  --color-sumi-dim: #5E6560;
-  --color-sumi-faint: #8C938E;
-
-  /* 朱砂色系 */
-  --color-vermilion: #D33A2C;
-  --color-vermilion-hover: #B92F24;
-  --color-vermilion-light: #FBE7E4;
-
-  /* 金泥色系 */
-  --color-kinpaku: #9A741D;
-  --color-kinpaku-light: #FBF0CC;
-
-  /* 蓝墨色系 */
-  --color-aizuri: #315F78;
-  --color-aizuri-light: #DFEDF2;
-
-  /* 功能色 */
-  --color-success: #2F7D5A;
-  --color-warning: #B86E18;
-  --color-danger: #D33A2C;
-
-  /* 保留兼容旧名称（逐步迁移） */
-  --color-ink: #F6F7F5;
-  --color-ink-light: #F0F2EF;
-  --color-ink-lighter: #FFFFFF;
-  --color-ink-surface: #E1E5E0;
-  --color-ink-border: #E1E5E0;
-  --color-ink-muted: #8C938E;
-  --color-cream: #181B19;
-  --color-cream-dim: #5E6560;
-  --color-coral: #D33A2C;
-  --color-coral-light: #B92F24;
-  --color-coral-dark: #98251D;
-  --color-amber-accent: #9A741D;
-  --color-amber-accent-light: #B28A2A;
-  --color-warm-gray: #8C938E;
+  /* Semantics — resolved at runtime via CSS variables below. Default: Ink Night dark */
+  --color-bg-base: #090A0C;
+  --color-bg-surface: #111318;
+  --color-bg-raised: #1A1D24;
+  --color-bg-overlay: rgba(9, 10, 12, 0.75);
+  --color-text-primary: #EBECEE;
+  --color-text-secondary: #9499A0;
+  --color-text-muted: #5E636B;
+  --color-border: #1E2128;
+  --color-border-strong: #333840;
+  --color-accent: #D4A853;
+  --color-accent-hover: #E0C06E;
+  --color-accent-muted: rgba(212, 168, 83, 0.14);
+  --color-accent-soft: rgba(212, 168, 83, 0.08);
+  --color-accent-secondary: #C9A84C;
+  --color-accent-secondary-hover: #DDB860;
+  --color-accent-tertiary: #5E9EC9;
+  --color-success: #22C55E;
+  --color-warning: #F59E0B;
+  --color-danger: #EF4444;
+  --glass-bg: rgba(26, 29, 36, 0.78);
+  --glass-border: rgba(255, 255, 255, 0.06);
+  --glass-shine: rgba(255, 255, 255, 0.03);
+  --font-display: 'Noto Serif JP', 'Noto Serif SC', 'Songti SC', serif;
+  --font-body: 'Inter', system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --font-mono: 'JetBrains Mono', 'SF Mono', 'Fira Code', monospace;
+  --radius-sm: 6px;
+  --radius-md: 8px;
+  --radius-lg: 12px;
+  --radius-xl: 16px;
+  --radius-2xl: 24px;
+  --shadow-xs: 0 1px 2px rgba(0, 0, 0, 0.3);
+  --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.35), 0 1px 2px rgba(0, 0, 0, 0.2);
+  --shadow-md: 0 4px 8px rgba(0, 0, 0, 0.4), 0 2px 4px rgba(0, 0, 0, 0.25);
+  --shadow-lg: 0 8px 24px rgba(0, 0, 0, 0.45), 0 4px 8px rgba(0, 0, 0, 0.3);
+  --shadow-xl: 0 16px 48px rgba(0, 0, 0, 0.5), 0 8px 16px rgba(0, 0, 0, 0.35);
 }
 
-/* ── 全局基础 ── */
+/* ═══════════════════════════════════════════════════════════════════════════
+   THEME 0: Ink Night 墨夜 (default)
+   Mood: Traditional ink painting × modern dark studio
+   Dark: Cool ink blue-black + warm gold accent
+   Light: Warm rice-paper beige + dark gold accent
+   ═══════════════════════════════════════════════════════════════════════════ */
+:root,
+[data-theme="inknight"] {
+  --color-bg-base: #090A0C;      --color-bg-surface: #111318;
+  --color-bg-raised: #1A1D24;     --color-bg-overlay: rgba(9, 10, 12, 0.75);
+  --color-text-primary: #EBECEE;  --color-text-secondary: #9499A0;
+  --color-text-muted: #5E636B;    --color-border: #1E2128;
+  --color-border-strong: #333840; --color-accent: #D4A853;
+  --color-accent-hover: #E0C06E;  --color-accent-muted: rgba(212, 168, 83, 0.14);
+  --color-accent-soft: rgba(212, 168, 83, 0.08);
+  --color-accent-secondary: #C9A84C; --color-accent-secondary-hover: #DDB860;
+  --color-accent-tertiary: #5E9EC9;
+  --glass-bg: rgba(26, 29, 36, 0.78); --glass-border: rgba(255, 255, 255, 0.06);
+}
+[data-theme="inknight"][data-mode="light"] {
+  --color-bg-base: #F7F5F1;      --color-bg-surface: #FFFFFF;
+  --color-bg-raised: #FFFFFF;     --color-bg-overlay: rgba(0, 0, 0, 0.25);
+  --color-text-primary: #1E1C18;  --color-text-secondary: #6B6560;
+  --color-text-muted: #9E9790;    --color-border: #E2DDD4;
+  --color-border-strong: #C4BEB4; --color-accent: #8B6914;
+  --color-accent-hover: #6B4F0C;  --color-accent-muted: rgba(139, 105, 20, 0.10);
+  --color-accent-soft: rgba(139, 105, 20, 0.06);
+  --color-accent-secondary: #A67C00; --color-accent-secondary-hover: #8B6500;
+  --color-accent-tertiary: #3B7CB8;
+  --glass-bg: rgba(255, 255, 255, 0.78); --glass-border: rgba(0, 0, 0, 0.05);
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   THEME 1: Terracotta 茜空
+   Mood: CC-Switch inspired warm earth tones × Japanese sunset
+   Dark: Warm coffee-black + terracotta orange accent
+   Light: Warm latte-white + burnt orange accent
+   ═══════════════════════════════════════════════════════════════════════════ */
+[data-theme="terracotta"] {
+  --color-bg-base: #0F0D0A;      --color-bg-surface: #171410;
+  --color-bg-raised: #211C16;     --color-bg-overlay: rgba(15, 13, 10, 0.75);
+  --color-text-primary: #EFEBE6;  --color-text-secondary: #A49A90;
+  --color-text-muted: #6E655B;    --color-border: #2D2620;
+  --color-border-strong: #463E36; --color-accent: #E87040;
+  --color-accent-hover: #F09060;  --color-accent-muted: rgba(232, 112, 64, 0.14);
+  --color-accent-soft: rgba(232, 112, 64, 0.08);
+  --color-accent-secondary: #F09060; --color-accent-secondary-hover: #F5A880;
+  --color-accent-tertiary: #D4956B;
+  --glass-bg: rgba(33, 28, 22, 0.78); --glass-border: rgba(255, 255, 255, 0.06);
+}
+[data-theme="terracotta"][data-mode="light"] {
+  --color-bg-base: #F9F5F0;      --color-bg-surface: #FFFFFF;
+  --color-bg-raised: #FFFFFF;     --color-bg-overlay: rgba(0, 0, 0, 0.25);
+  --color-text-primary: #2D2218;  --color-text-secondary: #7A6B5C;
+  --color-text-muted: #AD9D8C;    --color-border: #EBE4DA;
+  --color-border-strong: #D4C8B6; --color-accent: #C2410C;
+  --color-accent-hover: #9A2E08;  --color-accent-muted: rgba(194, 65, 12, 0.10);
+  --color-accent-soft: rgba(194, 65, 12, 0.06);
+  --color-accent-secondary: #D4622A; --color-accent-secondary-hover: #B84D1E;
+  --color-accent-tertiary: #A0603A;
+  --glass-bg: rgba(255, 255, 255, 0.78); --glass-border: rgba(0, 0, 0, 0.05);
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   THEME 2: Deep Blue 绀青
+   Mood: Professional creative tool, like DaVinci Resolve
+   Dark: Deep navy blue-black + clear blue accent
+   Light: Cool blue-gray white + deep blue accent
+   ═══════════════════════════════════════════════════════════════════════════ */
+[data-theme="deepblue"] {
+  --color-bg-base: #060A14;      --color-bg-surface: #0D111D;
+  --color-bg-raised: #161C2C;     --color-bg-overlay: rgba(6, 10, 20, 0.78);
+  --color-text-primary: #E6EAF2;  --color-text-secondary: #8E96AA;
+  --color-text-muted: #596078;    --color-border: #1A2032;
+  --color-border-strong: #2D3448; --color-accent: #4D94F0;
+  --color-accent-hover: #70ADF5;  --color-accent-muted: rgba(77, 148, 240, 0.14);
+  --color-accent-soft: rgba(77, 148, 240, 0.08);
+  --color-accent-secondary: #38BDF8; --color-accent-secondary-hover: #60CCFA;
+  --color-accent-tertiary: #818CF8;
+  --glass-bg: rgba(22, 28, 44, 0.78); --glass-border: rgba(255, 255, 255, 0.06);
+}
+[data-theme="deepblue"][data-mode="light"] {
+  --color-bg-base: #F4F6FA;      --color-bg-surface: #FFFFFF;
+  --color-bg-raised: #FFFFFF;     --color-bg-overlay: rgba(0, 0, 0, 0.25);
+  --color-text-primary: #111827;  --color-text-secondary: #5B6A85;
+  --color-text-muted: #939EB5;    --color-border: #E2E6F0;
+  --color-border-strong: #C0C8DA; --color-accent: #2563EB;
+  --color-accent-hover: #1D4ED8;  --color-accent-muted: rgba(37, 99, 235, 0.10);
+  --color-accent-soft: rgba(37, 99, 235, 0.06);
+  --color-accent-secondary: #0891B2; --color-accent-secondary-hover: #0E7490;
+  --color-accent-tertiary: #5B63D3;
+  --glass-bg: rgba(255, 255, 255, 0.78); --glass-border: rgba(0, 0, 0, 0.05);
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   THEME 3: Verdant 翠青
+   Mood: Ghibli-inspired natural palette × bamboo studio
+   Dark: Deep forest green-black + fresh green accent
+   Light: Misty green-white + emerald accent
+   ═══════════════════════════════════════════════════════════════════════════ */
+[data-theme="verdant"] {
+  --color-bg-base: #080E0B;      --color-bg-surface: #0F1612;
+  --color-bg-raised: #18201B;     --color-bg-overlay: rgba(8, 14, 11, 0.75);
+  --color-text-primary: #E8EDE9;  --color-text-secondary: #919E95;
+  --color-text-muted: #5B6B60;    --color-border: #1C2820;
+  --color-border-strong: #2E3E34; --color-accent: #3CB882;
+  --color-accent-hover: #5CCB9A;  --color-accent-muted: rgba(60, 184, 130, 0.14);
+  --color-accent-soft: rgba(60, 184, 130, 0.08);
+  --color-accent-secondary: #5EEAD4; --color-accent-secondary-hover: #80F0E0;
+  --color-accent-tertiary: #2D9D6F;
+  --glass-bg: rgba(24, 32, 27, 0.78); --glass-border: rgba(255, 255, 255, 0.06);
+}
+[data-theme="verdant"][data-mode="light"] {
+  --color-bg-base: #F4F7F3;      --color-bg-surface: #FFFFFF;
+  --color-bg-raised: #FFFFFF;     --color-bg-overlay: rgba(0, 0, 0, 0.25);
+  --color-text-primary: #1A2E20;  --color-text-secondary: #5C7A62;
+  --color-text-muted: #8FAC93;    --color-border: #DEE8DD;
+  --color-border-strong: #BBCFC0; --color-accent: #16A34A;
+  --color-accent-hover: #15803D;  --color-accent-muted: rgba(22, 163, 74, 0.10);
+  --color-accent-soft: rgba(22, 163, 74, 0.06);
+  --color-accent-secondary: #0D9488; --color-accent-secondary-hover: #0F766E;
+  --color-accent-tertiary: #1E7A4A;
+  --glass-bg: rgba(255, 255, 255, 0.78); --glass-border: rgba(0, 0, 0, 0.05);
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   Global Base
+   ═══════════════════════════════════════════════════════════════════════════ */
 body {
   margin: 0;
-  font-family: system-ui, -apple-system, 'Segoe UI', sans-serif;
-  background: var(--color-paper-base);
-  color: var(--color-sumi);
+  font-family: var(--font-body);
+  background: var(--color-bg-base);
+  color: var(--color-text-primary);
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+  transition: background-color 0.3s ease, color 0.3s ease;
 }
+#root { min-height: 100dvh; isolation: isolate; }
+button, [role='button'] { cursor: pointer; }
+button:disabled { cursor: not-allowed; }
 
-#root {
-  min-height: 100dvh;
-  isolation: isolate;
-}
+::-webkit-scrollbar { width: 5px; height: 5px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--color-accent); opacity: 0.25; border-radius: 10px; }
+::-webkit-scrollbar-thumb:hover { opacity: 0.45; }
+* { scrollbar-width: thin; scrollbar-color: var(--color-accent) transparent; }
 
-button,
-[role='button'] {
-  cursor: pointer;
-}
+::selection { background: var(--color-accent-muted); color: var(--color-text-primary); }
+:focus-visible { outline: 2px solid var(--color-accent); outline-offset: 2px; border-radius: 4px; }
 
-button:disabled {
-  cursor: not-allowed;
-}
+/* ═══════════════════════════════════════════════════════════════════════════
+   Animations
+   ═══════════════════════════════════════════════════════════════════════════ */
+@keyframes shimmer { 0% { background-position: -200% 0; } 100% { background-position: 200% 0; } }
+@keyframes fade-in { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: translateY(0); } }
+@keyframes fade-in-up { from { opacity: 0; transform: translateY(12px); } to { opacity: 1; transform: translateY(0); } }
+@keyframes scale-in { from { opacity: 0; transform: scale(0.95); } to { opacity: 1; transform: scale(1); } }
+@keyframes pulse-glow { 0%, 100% { box-shadow: 0 0 4px var(--color-accent); } 50% { box-shadow: 0 0 16px var(--color-accent); } }
+@keyframes cursor-blink { 0%, 100% { opacity: 1; } 50% { opacity: 0; } }
+@keyframes spin-slow { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
 
-/* ── 网点纹理 (Screen Tone) ── */
-body::before {
-  content: '';
-  position: fixed;
-  inset: 0;
-  opacity: 0;
-  background-image: radial-gradient(circle, var(--color-sumi) 0.5px, transparent 1px);
-  background-size: 6px 6px;
-  pointer-events: none;
-  z-index: 9998;
-}
+.animate-fade-in { animation: fade-in 0.3s ease-out; }
+.animate-fade-in-up { animation: fade-in-up 0.4s ease-out; }
+.animate-scale-in { animation: scale-in 0.3s cubic-bezier(0.34, 1.56, 0.64, 1); }
+.animate-spin-slow { animation: spin-slow 3s linear infinite; }
 
-/* ── 自定义滚动条 ── */
-::-webkit-scrollbar {
-  width: 5px;
-  height: 5px;
+/* ═══════════════════════════════════════════════════════════════════════════
+   Utility Classes
+   ═══════════════════════════════════════════════════════════════════════════ */
+.glass-panel {
+  background: var(--glass-bg);
+  border: 1px solid var(--glass-border);
+  backdrop-filter: blur(16px) saturate(120%);
+  -webkit-backdrop-filter: blur(16px) saturate(120%);
 }
-::-webkit-scrollbar-track {
-  background: transparent;
+.glass-surface {
+  background: var(--glass-bg);
+  border: 1px solid var(--glass-border);
+  backdrop-filter: blur(12px) saturate(120%);
+  -webkit-backdrop-filter: blur(12px) saturate(120%);
 }
-::-webkit-scrollbar-thumb {
-  background: rgba(192, 57, 43, 0.2);
-  border-radius: 10px;
+.bento-card {
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-xl);
+  background: var(--color-bg-surface);
+  transition: border-color 0.2s ease, box-shadow 0.2s ease, transform 0.2s ease;
 }
-::-webkit-scrollbar-thumb:hover {
-  background: rgba(192, 57, 43, 0.4);
+.bento-card:hover {
+  border-color: var(--color-accent);
+  box-shadow: 0 0 24px var(--color-accent-muted), 0 0 48px var(--color-accent-soft);
+  transform: translateY(-2px);
 }
-* {
-  scrollbar-width: thin;
-  scrollbar-color: rgba(192, 57, 43, 0.2) transparent;
+.surface-card {
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-xl);
+  background: var(--color-bg-surface);
+  box-shadow: var(--shadow-xs);
 }
+.elevated-card {
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-xl);
+  background: var(--color-bg-raised);
+  box-shadow: var(--shadow-lg);
+}
+.font-display { font-family: var(--font-display); }
 
-/* ── 选中文字 ── */
-::selection {
-  background: rgba(192, 57, 43, 0.15);
-  color: var(--color-sumi);
-}
-
-/* ── 动画关键帧 ── */
-@keyframes barbershop {
-  0% { background-position: 0 0; }
-  100% { background-position: 32px 0; }
-}
-
-@keyframes shimmer {
-  0% { background-position: -200% 0; }
-  100% { background-position: 200% 0; }
-}
-
-@keyframes fade-in {
-  from { opacity: 0; transform: translateY(6px); }
-  to { opacity: 1; transform: translateY(0); }
-}
-
-@keyframes ink-spread {
-  0% { clip-path: inset(0 100% 0 0); }
-  100% { clip-path: inset(0 0 0 0); }
-}
-
-@keyframes stamp-press {
-  0% { transform: scale(1.4); opacity: 0; }
-  60% { transform: scale(0.95); opacity: 1; }
-  100% { transform: scale(1); opacity: 1; }
-}
-
-@keyframes cursor-blink {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0; }
-}
-
-/* ── 工具类 ── */
-.animate-fade-in {
-  animation: fade-in 0.3s ease-out;
-}
-
-.animate-stamp {
-  animation: stamp-press 0.5s cubic-bezier(0.16, 1, 0.3, 1);
-}
-
-/* 笔触分割线 */
-.brush-divider {
+.accent-divider {
   height: 2px;
-  background: linear-gradient(
-    90deg,
-    transparent 0%,
-    var(--color-vermilion) 20%,
-    var(--color-vermilion) 80%,
-    transparent 100%
-  );
+  background: linear-gradient(90deg, transparent 0%, var(--color-accent) 20%, var(--color-accent) 80%, transparent 100%);
   opacity: 0.5;
   border-radius: 1px;
 }
 
-/* 漫画分格框 */
-.panel-frame {
-  border: 1px solid var(--color-paper-border);
-  border-radius: 8px;
-  background: var(--color-paper-raised);
-  box-shadow: 0 1px 2px rgba(24, 27, 25, 0.04);
-}
-
-.panel-frame:hover {
-  border-color: rgba(211, 58, 44, 0.3);
-  box-shadow: 0 12px 30px rgba(24, 27, 25, 0.08);
-}
-
-/* 网点纹理背景（用于卡片装饰） */
-.screen-tone-bg {
-  background-image: radial-gradient(circle, var(--color-sumi-faint) 0.5px, transparent 1px);
-  background-size: 6px 6px;
-  opacity: 0.06;
-}
-
-/* 毛玻璃效果（浅色版） */
-.glass {
-  background: rgba(246, 247, 245, 0.88);
-  backdrop-filter: blur(16px) saturate(120%);
-  -webkit-backdrop-filter: blur(16px) saturate(120%);
-}
-
-.glass-light {
-  background: rgba(255, 255, 255, 0.7);
-  backdrop-filter: blur(12px) saturate(120%);
-  -webkit-backdrop-filter: blur(12px) saturate(120%);
-}
-
-/* 闪光效果 */
-.shimmer-bg {
-  background: linear-gradient(90deg, transparent, rgba(192, 57, 43, 0.04), transparent);
-  background-size: 200% 100%;
-  animation: shimmer 2.5s infinite;
-}
-
-/* 显示字体 */
-.font-display {
-  font-family: 'Songti SC', 'Noto Serif SC', 'STSong', serif;
-}
-
-.surface-panel {
-  border: 1px solid var(--color-paper-border);
-  border-radius: 8px;
-  background: var(--color-paper-raised);
-  box-shadow: 0 1px 2px rgba(24, 27, 25, 0.04);
-}
-
-.command-surface {
-  border: 1px solid var(--color-paper-border);
-  border-radius: 8px;
-  background: var(--color-paper-raised);
-  box-shadow: 0 16px 44px rgba(24, 27, 25, 0.1);
-}
-
 .input-field {
   width: 100%;
-  border: 1px solid var(--color-paper-border);
-  border-radius: 6px;
-  background: var(--color-paper-raised);
-  color: var(--color-sumi);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  background: var(--color-bg-surface);
+  color: var(--color-text-primary);
   box-sizing: border-box;
   padding: 0.625rem 0.75rem;
   font-size: 0.875rem;
   line-height: 1.25rem;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease;
 }
-
-.input-field::placeholder {
-  color: var(--color-sumi-faint);
-}
-
+.input-field::placeholder { color: var(--color-text-muted); }
 .input-field:focus {
-  border-color: var(--color-vermilion);
+  border-color: var(--color-accent);
+  box-shadow: 0 0 0 3px var(--color-accent-muted);
   outline: none;
 }
 
-/* 焦点可见性 */
-:focus-visible {
-  outline: 2px solid var(--color-vermilion);
-  outline-offset: 2px;
-  border-radius: 4px;
+.shimmer-bg {
+  background: linear-gradient(90deg, transparent, var(--color-accent-soft), transparent);
+  background-size: 200% 100%;
+  animation: shimmer 2.5s infinite;
 }
 
-/* 减少动效 */
+.ambient-glow { position: relative; }
+.ambient-glow::before {
+  content: '';
+  position: absolute; inset: 0;
+  background: radial-gradient(ellipse 60% 50% at 50% 0%, var(--color-accent-soft), transparent 60%);
+  pointer-events: none;
+}
+
+/* Coze-inspired: subtle page-top atmosphere (dark mode only) */
+.page-atmosphere::before {
+  content: '';
+  position: fixed; top: 0; left: 0; right: 0;
+  height: 360px;
+  background: radial-gradient(ellipse 50% 80% at 50% 0%, var(--color-accent-soft), transparent 70%);
+  pointer-events: none; z-index: 0;
+}
+[data-mode="light"] .page-atmosphere::before { opacity: 0.35; }
+
 @media (prefers-reduced-motion: reduce) {
-  *,
-  *::before,
-  *::after {
+  *, *::before, *::after {
     animation-duration: 0.01ms !important;
     animation-iteration-count: 1 !important;
     transition-duration: 0.01ms !important;

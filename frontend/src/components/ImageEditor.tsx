@@ -226,19 +226,19 @@ function ImageEditor({
   } : null;
 
   return (
-    <div className="fixed inset-0 z-[60] flex items-center justify-center bg-sumi/40 backdrop-blur-sm p-3 sm:p-4">
+    <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/30 backdrop-blur-sm p-3 sm:p-4">
       <div
         ref={containerRef}
-        className="bg-paper-raised border border-paper-border rounded-xl w-full max-w-4xl shadow-modal overflow-hidden"
+        className="bg-bg-raised border border-border rounded-xl w-full max-w-4xl shadow-modal overflow-hidden"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header */}
-        <div className="flex items-center justify-between px-5 py-3 border-b border-paper-border">
-          <h3 className="text-sm font-semibold flex items-center gap-2 text-sumi">
-            <CropIcon size={16} className="text-vermilion" />
+        <div className="flex items-center justify-between px-5 py-3 border-b border-border">
+          <h3 className="text-sm font-semibold flex items-center gap-2 text-text-primary">
+            <CropIcon size={16} className="text-accent" />
             编辑封面
           </h3>
-          <button onClick={onCancel} className="p-1 text-sumi-faint hover:text-sumi-dim transition-colors">
+          <button onClick={onCancel} className="p-1 text-text-muted hover:text-text-secondary transition-colors">
             <X size={16} />
           </button>
         </div>
@@ -285,49 +285,49 @@ function ImageEditor({
               {cropRect && s && (
                 <div className="absolute pointer-events-none" style={s}>
                   <div className="absolute inset-0 border-2 border-white/90 rounded-sm shadow-[inset_0_0_0_1px_rgba(0,0,0,0.15)]" />
-                  <div className="absolute -top-[7px] -left-[7px] w-[14px] h-[14px] bg-white border-2 border-coral rounded-sm shadow-md" />
-                  <div className="absolute -top-[7px] -right-[7px] w-[14px] h-[14px] bg-white border-2 border-coral rounded-sm shadow-md" />
-                  <div className="absolute -bottom-[7px] -left-[7px] w-[14px] h-[14px] bg-white border-2 border-coral rounded-sm shadow-md" />
-                  <div className="absolute -bottom-[7px] -right-[7px] w-[14px] h-[14px] bg-white border-2 border-coral rounded-sm shadow-md" />
-                  <div className="absolute top-1/2 -left-[5px] -translate-y-1/2 w-[10px] h-[10px] bg-white border border-coral rounded-sm shadow-sm" />
-                  <div className="absolute top-1/2 -right-[5px] -translate-y-1/2 w-[10px] h-[10px] bg-white border border-coral rounded-sm shadow-sm" />
-                  <div className="absolute left-1/2 -top-[5px] -translate-x-1/2 w-[10px] h-[10px] bg-white border border-coral rounded-sm shadow-sm" />
-                  <div className="absolute left-1/2 -bottom-[5px] -translate-x-1/2 w-[10px] h-[10px] bg-white border border-coral rounded-sm shadow-sm" />
+                  <div className="absolute -top-[7px] -left-[7px] w-[14px] h-[14px] bg-bg-surface border-2 border-accent rounded-sm shadow-md" />
+                  <div className="absolute -top-[7px] -right-[7px] w-[14px] h-[14px] bg-bg-surface border-2 border-accent rounded-sm shadow-md" />
+                  <div className="absolute -bottom-[7px] -left-[7px] w-[14px] h-[14px] bg-bg-surface border-2 border-accent rounded-sm shadow-md" />
+                  <div className="absolute -bottom-[7px] -right-[7px] w-[14px] h-[14px] bg-bg-surface border-2 border-accent rounded-sm shadow-md" />
+                  <div className="absolute top-1/2 -left-[5px] -translate-y-1/2 w-[10px] h-[10px] bg-bg-surface border border-accent rounded-sm shadow-sm" />
+                  <div className="absolute top-1/2 -right-[5px] -translate-y-1/2 w-[10px] h-[10px] bg-bg-surface border border-accent rounded-sm shadow-sm" />
+                  <div className="absolute left-1/2 -top-[5px] -translate-x-1/2 w-[10px] h-[10px] bg-bg-surface border border-accent rounded-sm shadow-sm" />
+                  <div className="absolute left-1/2 -bottom-[5px] -translate-x-1/2 w-[10px] h-[10px] bg-bg-surface border border-accent rounded-sm shadow-sm" />
                 </div>
               )}
             </div>
           </div>
 
           {/* Right — Tool panel */}
-          <div className="w-full sm:w-56 shrink-0 border-t sm:border-t-0 sm:border-l border-paper-border bg-paper-surface/50 flex flex-col">
+          <div className="w-full sm:w-56 shrink-0 border-t sm:border-t-0 sm:border-l border-border bg-bg-surface/50 flex flex-col">
             {/* Rotate & Flip */}
             <div className="px-4 py-3">
-              <div className="text-[11px] font-medium text-sumi-dim uppercase tracking-wider mb-2">旋转 & 翻转</div>
+              <div className="text-[11px] font-medium text-text-secondary uppercase tracking-wider mb-2">旋转 & 翻转</div>
               <div className="flex flex-wrap gap-1.5">
                 <button
                   onClick={() => handleRotate(-1)}
-                  className="flex items-center gap-1.5 rounded-md border border-paper-border px-3 py-2 text-xs text-sumi-dim hover:text-sumi hover:bg-paper-base transition-colors bg-paper-base"
+                  className="flex items-center gap-1.5 rounded-md border border-border px-3 py-2 text-xs text-text-secondary hover:text-text-primary hover:bg-bg-base transition-colors bg-bg-base"
                 >
                   <RotateCcw size={14} />
                   左旋
                 </button>
                 <button
                   onClick={() => handleRotate(1)}
-                  className="flex items-center gap-1.5 rounded-md border border-paper-border px-3 py-2 text-xs text-sumi-dim hover:text-sumi hover:bg-paper-base transition-colors bg-paper-base"
+                  className="flex items-center gap-1.5 rounded-md border border-border px-3 py-2 text-xs text-text-secondary hover:text-text-primary hover:bg-bg-base transition-colors bg-bg-base"
                 >
                   <RotateCw size={14} />
                   右旋
                 </button>
                 <button
                   onClick={() => setFlipH((v) => !v)}
-                  className={'flex items-center gap-1.5 rounded-md border px-3 py-2 text-xs transition-colors ' + (flipH ? 'border-vermilion/40 bg-vermilion-light/30 text-vermilion' : 'border-paper-border text-sumi-dim hover:text-sumi hover:bg-paper-base bg-paper-base')}
+                  className={'flex items-center gap-1.5 rounded-md border px-3 py-2 text-xs transition-colors ' + (flipH ? 'border-accent/40 bg-accent-muted/30 text-accent' : 'border-border text-text-secondary hover:text-text-primary hover:bg-bg-base bg-bg-base')}
                 >
                   <FlipHorizontal size={14} />
                   翻转
                 </button>
                 <button
                   onClick={() => setFlipV((v) => !v)}
-                  className={'flex items-center gap-1.5 rounded-md border px-3 py-2 text-xs transition-colors ' + (flipV ? 'border-vermilion/40 bg-vermilion-light/30 text-vermilion' : 'border-paper-border text-sumi-dim hover:text-sumi hover:bg-paper-base bg-paper-base')}
+                  className={'flex items-center gap-1.5 rounded-md border px-3 py-2 text-xs transition-colors ' + (flipV ? 'border-accent/40 bg-accent-muted/30 text-accent' : 'border-border text-text-secondary hover:text-text-primary hover:bg-bg-base bg-bg-base')}
                 >
                   <FlipVertical size={14} />
                   垂直
@@ -338,16 +338,16 @@ function ImageEditor({
             <div className="flex-1" />
 
             {/* Actions */}
-            <div className="px-4 py-3 border-t border-paper-border flex items-center gap-2">
+            <div className="px-4 py-3 border-t border-border flex items-center gap-2">
               <button
                 onClick={onCancel}
-                className="flex-1 px-3 py-2 text-sm text-sumi-dim hover:text-sumi transition-colors rounded-md border border-paper-border bg-paper-base"
+                className="flex-1 px-3 py-2 text-sm text-text-secondary hover:text-text-primary transition-colors rounded-md border border-border bg-bg-base"
               >
                 取消
               </button>
               <button
                 onClick={handleConfirm}
-                className="flex-1 flex items-center justify-center gap-1.5 px-3 py-2 bg-vermilion hover:bg-vermilion-hover text-white text-sm font-medium rounded-md transition-colors"
+                className="flex-1 flex items-center justify-center gap-1.5 px-3 py-2 bg-accent hover:bg-accent-hover text-white text-sm font-medium rounded-md transition-colors"
               >
                 <Check size={14} />
                 应用

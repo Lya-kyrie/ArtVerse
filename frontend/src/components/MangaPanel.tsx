@@ -86,7 +86,7 @@ function ScenePagePreview({ scene, expanded = false }: { scene: string; expanded
   const parsed = parseScenePage(scene);
   if (parsed.panels.length === 0) {
     return (
-      <p className={`text-xs text-cream-dim leading-relaxed ${expanded ? '' : 'line-clamp-2'}`}>
+      <p className={`text-xs text-text-secondary leading-relaxed ${expanded ? '' : 'line-clamp-2'}`}>
         {scene}
       </p>
     );
@@ -96,34 +96,34 @@ function ScenePagePreview({ scene, expanded = false }: { scene: string; expanded
   return (
     <div className="space-y-2">
       <div className="flex items-center justify-between gap-2">
-        <span className="text-[11px] font-semibold text-amber-accent-light">{parsed.title}</span>
-        <span className="text-[10px] text-cream-dim">{parsed.panels.length} 格</span>
+        <span className="text-[11px] font-semibold text-accent-secondary-light">{parsed.title}</span>
+        <span className="text-[10px] text-text-secondary">{parsed.panels.length} 格</span>
       </div>
       <div className="space-y-2">
         {visiblePanels.map((panel) => (
-          <div key={panel.number} className="rounded-md border border-ink-border bg-ink/80 p-2">
+          <div key={panel.number} className="rounded-md border border-border bg-bg-base/80 p-2">
             <div className="mb-1 flex items-center gap-1.5">
-              <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded bg-ink-lighter text-[10px] font-mono text-cream-dim">
+              <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded bg-bg-raised text-[10px] font-mono text-text-secondary">
                 {panel.number}
               </span>
               {panel.shot && (
-                <span className="rounded border border-coral/20 bg-coral/10 px-1.5 py-0.5 text-[10px] text-coral-light">
+                <span className="rounded border border-accent/20 bg-accent/10 px-1.5 py-0.5 text-[10px] text-accent-hover">
                   {panel.shot}
                 </span>
               )}
             </div>
             {panel.description && (
-              <p className="text-xs leading-relaxed text-cream-dim">{panel.description}</p>
+              <p className="text-xs leading-relaxed text-text-secondary">{panel.description}</p>
             )}
             {(panel.dialogues.length > 0 || panel.sounds.length > 0) && (
               <div className="mt-2 flex flex-wrap gap-1.5">
                 {panel.dialogues.map((line, idx) => (
-                  <span key={`d-${idx}`} className="rounded-full border border-aizuri/30 bg-aizuri-light/50 px-2 py-0.5 text-[10px] text-aizuri">
+                  <span key={`d-${idx}`} className="rounded-full border border-accent-tertiary/30 bg-accent-tertiary/10/50 px-2 py-0.5 text-[10px] text-accent-tertiary">
                     {line}
                   </span>
                 ))}
                 {panel.sounds.map((sound, idx) => (
-                  <span key={`s-${idx}`} className="rounded-full border border-amber-accent/20 bg-amber-accent/10 px-2 py-0.5 text-[10px] text-amber-accent-light">
+                  <span key={`s-${idx}`} className="rounded-full border border-amber-accent/20 bg-accent-secondary/10 px-2 py-0.5 text-[10px] text-accent-secondary-light">
                     音效：{sound}
                   </span>
                 ))}
@@ -133,7 +133,7 @@ function ScenePagePreview({ scene, expanded = false }: { scene: string; expanded
         ))}
       </div>
       {!expanded && parsed.panels.length > visiblePanels.length && (
-        <div className="text-[10px] text-warm-gray">还有 {parsed.panels.length - visiblePanels.length} 格，展开查看完整分镜</div>
+        <div className="text-[10px] text-text-muted">还有 {parsed.panels.length - visiblePanels.length} 格，展开查看完整分镜</div>
       )}
     </div>
   );
@@ -750,17 +750,17 @@ export default function MangaPanel({ chapter, onChapterRefresh }: Props) {
   const activeImageCount = isLiveGenerating ? liveProgress.total : (scenes.length > 0 ? scenes.length : (hasImages ? displayImages.length : imageCount));
 
   return (
-    <div className="flex flex-col h-full bg-paper-base">
+    <div className="flex flex-col h-full bg-bg-base">
       {/* Header */}
-      <div className="px-3 md:px-4 py-2.5 border-b border-paper-border flex items-center justify-between gap-2 flex-wrap">
-        <h2 className="text-sm font-semibold text-sumi-dim tracking-wide shrink-0 hidden md:block">
+      <div className="px-3 md:px-4 py-2.5 border-b border-border flex items-center justify-between gap-2 flex-wrap">
+        <h2 className="text-sm font-semibold text-text-secondary tracking-wide shrink-0 hidden md:block">
           第 {chapter?.chapter_number ?? '–'} 话 · 漫画
         </h2>
         <div className="flex items-center gap-1.5 md:gap-2 flex-wrap justify-end">
           {chapter && assetGroupLoadState === 'loading' && (
             <button
               disabled
-              className="flex h-8 min-w-28 items-center justify-center gap-1.5 rounded-md border border-paper-border bg-paper-surface px-2 text-xs font-medium text-sumi-faint opacity-70"
+              className="flex h-8 min-w-28 items-center justify-center gap-1.5 rounded-md border border-border bg-bg-surface px-2 text-xs font-medium text-text-muted opacity-70"
             >
               <Loader2 size={13} className="animate-spin" />
               加载设定组
@@ -771,7 +771,7 @@ export default function MangaPanel({ chapter, onChapterRefresh }: Props) {
               value={selectedAssetGroupId ?? ''}
               onChange={(e) => handleSelectAssetGroup(e.target.value)}
               disabled={!chapter || generating || assetGroupSaving}
-              className="max-w-[160px] px-2 py-1.5 text-xs font-medium rounded-md bg-paper-surface text-sumi-dim border border-paper-border outline-none focus:border-vermilion transition-colors disabled:opacity-50"
+              className="max-w-[160px] px-2 py-1.5 text-xs font-medium rounded-md bg-bg-surface text-text-secondary border border-border outline-none focus:border-accent transition-colors disabled:opacity-50"
               title="选择本话继承的全局角色卡和垫图组"
             >
               <option value="">选择设定组</option>
@@ -786,7 +786,7 @@ export default function MangaPanel({ chapter, onChapterRefresh }: Props) {
             <button
               onClick={() => setShowAssetGroupManager(true)}
               disabled={generating}
-              className="flex h-8 items-center gap-1.5 rounded-md border border-paper-border bg-paper-surface px-2.5 text-xs font-medium text-sumi-dim transition-colors hover:border-vermilion hover:text-vermilion disabled:opacity-40"
+              className="flex h-8 items-center gap-1.5 rounded-md border border-border bg-bg-surface px-2.5 text-xs font-medium text-text-secondary transition-colors hover:border-accent hover:text-accent disabled:opacity-40"
             >
               <Plus size={13} />
               新建设定组
@@ -795,7 +795,7 @@ export default function MangaPanel({ chapter, onChapterRefresh }: Props) {
           {chapter && assetGroupLoadState === 'error' && (
             <button
               disabled
-              className="flex h-8 items-center rounded-md border border-paper-border bg-paper-surface px-2.5 text-xs font-medium text-sumi-faint opacity-70"
+              className="flex h-8 items-center rounded-md border border-border bg-bg-surface px-2.5 text-xs font-medium text-text-muted opacity-70"
             >
               设定组不可用
             </button>
@@ -818,7 +818,7 @@ export default function MangaPanel({ chapter, onChapterRefresh }: Props) {
                 }
               }}
               disabled={!canChangeImageCount}
-              className="px-2 py-1.5 text-xs font-medium rounded-md bg-paper-surface text-sumi-dim border border-paper-border outline-none focus:border-vermilion transition-colors disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
+              className="px-2 py-1.5 text-xs font-medium rounded-md bg-bg-surface text-text-secondary border border-border outline-none focus:border-accent transition-colors disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
               title={canChangeImageCount ? '生成张数' : '已有图片时不能修改生成张数'}
             >
               {ALLOWED_IMAGE_COUNTS.map((n) => (
@@ -837,7 +837,7 @@ export default function MangaPanel({ chapter, onChapterRefresh }: Props) {
                 });
               }}
               className="flex items-center gap-1 px-3 py-1.5 text-xs font-medium rounded-md
-                         bg-paper-surface hover:bg-paper-border text-sumi-dim transition-colors"
+                         bg-bg-surface hover:bg-border text-text-secondary transition-colors"
             >
               <Download size={13} />
               下载
@@ -846,7 +846,7 @@ export default function MangaPanel({ chapter, onChapterRefresh }: Props) {
           {!generating && storyboardLoadState === 'loading' && (
             <button
               disabled
-              className="flex h-8 min-w-28 items-center justify-center gap-1.5 rounded-md bg-vermilion px-3 text-xs font-medium text-white opacity-40"
+              className="flex h-8 min-w-28 items-center justify-center gap-1.5 rounded-md bg-accent px-3 text-xs font-medium text-white opacity-40"
             >
               <Loader2 size={13} className="animate-spin" />
               读取分镜
@@ -855,7 +855,7 @@ export default function MangaPanel({ chapter, onChapterRefresh }: Props) {
           {!generating && storyboardLoadState === 'error' && (
             <button
               disabled
-              className="flex h-8 items-center rounded-md bg-vermilion px-3 text-xs font-medium text-white opacity-40"
+              className="flex h-8 items-center rounded-md bg-accent px-3 text-xs font-medium text-white opacity-40"
             >
               分镜状态不可用
             </button>
@@ -865,7 +865,7 @@ export default function MangaPanel({ chapter, onChapterRefresh }: Props) {
               onClick={handleGenerateScenes}
               disabled={!hasSourceContent}
               className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-md
-                         bg-vermilion hover:bg-vermilion-hover text-white disabled:opacity-40
+                         bg-accent hover:bg-accent-hover text-white disabled:opacity-40
                          disabled:cursor-not-allowed transition-colors"
             >
               {scenes.length > 0 ? <RefreshCw size={13} /> : <Sparkles size={13} />}
@@ -878,14 +878,14 @@ export default function MangaPanel({ chapter, onChapterRefresh }: Props) {
               <div className="relative" ref={mangaStyleMenuRef}>
                 <button
                   onClick={() => setShowMangaStyleMenu((v) => !v)}
-                  className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-md bg-paper-surface hover:bg-paper-border text-sumi-dim transition-colors"
+                  className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-md bg-bg-surface hover:bg-border text-text-secondary transition-colors"
                   title="漫画风格"
                 >
                   {MANGA_STYLE_LABELS[mangaStyle]}
                   <ChevronDown size={11} className={`transition-transform ${showMangaStyleMenu ? 'rotate-180' : ''}`} />
                 </button>
                 {showMangaStyleMenu && (
-                  <div className="absolute right-0 top-full mt-1 w-40 rounded-lg border border-paper-border bg-paper-raised shadow-dropdown z-50 overflow-hidden">
+                  <div className="absolute right-0 top-full mt-1 w-40 rounded-lg border border-border bg-bg-raised shadow-dropdown z-50 overflow-hidden">
                     {(Object.keys(MANGA_STYLE_LABELS) as MangaStyle[]).map((style) => (
                       <button
                         key={style}
@@ -900,11 +900,11 @@ export default function MangaPanel({ chapter, onChapterRefresh }: Props) {
                             setMangaStyleState(mangaStyle);
                           }
                         }}
-                        className={`w-full flex items-center gap-2 px-3 py-2 text-xs transition-colors hover:bg-paper-surface
-                          ${style === mangaStyle ? 'text-kinpaku font-semibold' : 'text-sumi-dim'}`}
+                        className={`w-full flex items-center gap-2 px-3 py-2 text-xs transition-colors hover:bg-bg-surface
+                          ${style === mangaStyle ? 'text-accent-secondary font-semibold' : 'text-text-secondary'}`}
                       >
                         {MANGA_STYLE_LABELS[style]}
-                        {style === mangaStyle && <Check size={12} className="ml-auto text-kinpaku" />}
+                        {style === mangaStyle && <Check size={12} className="ml-auto text-accent-secondary" />}
                       </button>
                     ))}
                   </div>
@@ -914,23 +914,23 @@ export default function MangaPanel({ chapter, onChapterRefresh }: Props) {
               <div className="relative" ref={colorMenuRef}>
                 <button
                   onClick={() => setShowColorMenu((v) => !v)}
-                  className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-md bg-paper-surface hover:bg-paper-border text-sumi-dim transition-colors"
+                  className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-md bg-bg-surface hover:bg-border text-text-secondary transition-colors"
                   title="色彩模式"
                 >
                   {COLOR_MODE_LABELS[colorMode]}
                   <ChevronDown size={11} className={`transition-transform ${showColorMenu ? 'rotate-180' : ''}`} />
                 </button>
                 {showColorMenu && (
-                  <div className="absolute right-0 top-full mt-1 w-36 rounded-lg border border-paper-border bg-paper-raised shadow-dropdown z-50 overflow-hidden">
+                  <div className="absolute right-0 top-full mt-1 w-36 rounded-lg border border-border bg-bg-raised shadow-dropdown z-50 overflow-hidden">
                     {(Object.keys(COLOR_MODE_LABELS) as ColorMode[]).map((mode) => (
                       <button
                         key={mode}
                         onClick={() => handleSelectColorMode(mode)}
-                        className={`w-full flex items-center gap-2 px-3 py-2 text-xs transition-colors hover:bg-paper-surface
-                          ${mode === colorMode ? 'text-kinpaku font-semibold' : 'text-sumi-dim'}`}
+                        className={`w-full flex items-center gap-2 px-3 py-2 text-xs transition-colors hover:bg-bg-surface
+                          ${mode === colorMode ? 'text-accent-secondary font-semibold' : 'text-text-secondary'}`}
                       >
                         {COLOR_MODE_LABELS[mode]}
-                        {mode === colorMode && <Check size={12} className="ml-auto text-kinpaku" />}
+                        {mode === colorMode && <Check size={12} className="ml-auto text-accent-secondary" />}
                       </button>
                     ))}
                   </div>
@@ -940,7 +940,7 @@ export default function MangaPanel({ chapter, onChapterRefresh }: Props) {
               <button
                 onClick={handleGenerateImages}
                 className="flex items-center gap-1.5 px-4 py-1.5 text-xs font-medium rounded-md
-                           bg-kinpaku hover:bg-kinpaku/80 text-white transition-colors"
+                           bg-accent-secondary hover:bg-accent-secondary/80 text-white transition-colors"
               >
                 <Sparkles size={13} />
                 {existingImages.length > 0 ? '重新生成漫画' : '生成漫画'}
@@ -949,14 +949,14 @@ export default function MangaPanel({ chapter, onChapterRefresh }: Props) {
           )}
           {phase === 'generating-scenes' && (
             <div className="flex items-center gap-2">
-              <span className="flex items-center gap-1.5 text-xs text-cream-dim">
+              <span className="flex items-center gap-1.5 text-xs text-text-secondary">
                 <Loader2 size={13} className="animate-spin" />
                 AI 生成分镜中…
               </span>
               <button
                 onClick={handleAbortScenes}
                 className="flex items-center gap-1 px-2.5 py-1.5 text-xs font-medium rounded-md
-                           bg-vermilion-light/30 hover:bg-vermilion-light/50 text-vermilion border border-vermilion/20 transition-colors"
+                           bg-accent-muted/30 hover:bg-accent-muted/50 text-accent border border-accent/20 transition-colors"
                 title="停止生成分镜"
               >
                 <Square size={11} />
@@ -969,13 +969,13 @@ export default function MangaPanel({ chapter, onChapterRefresh }: Props) {
 
       {/* Progress bar — segmented: N+1 dots with N segments for N images */}
       {generating && (
-        <div className="px-5 py-4 border-b border-paper-border bg-paper-surface/50">
+        <div className="px-5 py-4 border-b border-border bg-bg-surface/50">
           <div className="flex items-center justify-between text-xs mb-3 gap-3">
             <div className="flex items-center gap-2 min-w-0">
-              <span className="text-sumi-dim font-medium truncate">{liveStatusMsg}</span>
+              <span className="text-text-secondary font-medium truncate">{liveStatusMsg}</span>
               {isStalled && (
                 <span
-                  className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-kinpaku-light/50 border border-kinpaku/30 text-kinpaku text-[10px] font-medium whitespace-nowrap"
+                  className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-accent-secondary/10 border border-accent-secondary/30 text-accent-secondary text-[10px] font-medium whitespace-nowrap"
                   title="图片服务响应较慢，正在继续等待（上游可能在排队）"
                 >
                   <Loader2 size={10} className="animate-spin" />
@@ -987,13 +987,13 @@ export default function MangaPanel({ chapter, onChapterRefresh }: Props) {
               <button
                 onClick={handleAbortManga}
                 className="flex items-center gap-1 px-2.5 py-1 text-[11px] font-medium rounded-md
-                           bg-vermilion-light/30 hover:bg-vermilion-light/50 text-vermilion border border-vermilion/20 transition-colors"
+                           bg-accent-muted/30 hover:bg-accent-muted/50 text-accent border border-accent/20 transition-colors"
                 title="停止生成漫画"
               >
                 <Square size={10} />
                 停止
               </button>
-              <span className="text-kinpaku font-mono font-bold">
+              <span className="text-accent-secondary font-mono font-bold">
                 {Math.round((liveProgress.current / liveProgress.total) * 100)}%
               </span>
             </div>
@@ -1009,19 +1009,19 @@ export default function MangaPanel({ chapter, onChapterRefresh }: Props) {
                   <div
                     className={`shrink-0 rounded-full transition-all duration-500 ${
                       segFilled
-                        ? 'bg-kinpaku shadow-[0_0_6px_rgba(184,149,58,0.4)]'
-                        : 'bg-paper-border'
+                        ? 'bg-accent-secondary shadow-[0_0_6px_rgba(184,149,58,0.4)]'
+                        : 'bg-border'
                     }`}
                     style={{ width: 10, height: 10 }}
                   />
                   {/* Segment bar */}
-                  <div className="flex-1 mx-0.5 h-1.5 rounded-full bg-paper-border overflow-hidden">
+                  <div className="flex-1 mx-0.5 h-1.5 rounded-full bg-border overflow-hidden">
                     <div
                       className={`h-full rounded-full transition-all duration-700 ease-out ${
                         segFilled
-                          ? 'w-full bg-gradient-to-r from-kinpaku to-kinpaku/70'
+                          ? 'w-full bg-gradient-to-r from-accent-secondary to-accent-secondary/70'
                           : segActive
-                            ? 'w-1/2 bg-kinpaku/60 animate-pulse'
+                            ? 'w-1/2 bg-accent-secondary/60 animate-pulse'
                             : 'w-0'
                       }`}
                     />
@@ -1033,18 +1033,18 @@ export default function MangaPanel({ chapter, onChapterRefresh }: Props) {
             <div
               className={`shrink-0 rounded-full transition-all duration-500 ${
                 liveProgress.current >= liveProgress.total
-                  ? 'bg-kinpaku shadow-[0_0_6px_rgba(184,149,58,0.4)]'
-                  : 'bg-paper-border'
+                  ? 'bg-accent-secondary shadow-[0_0_6px_rgba(184,149,58,0.4)]'
+                  : 'bg-border'
               }`}
               style={{ width: 10, height: 10 }}
             />
           </div>
           {/* Number labels under dots */}
-          <div className="flex justify-between mt-1 text-[10px] text-sumi-faint">
+          <div className="flex justify-between mt-1 text-[10px] text-text-muted">
             {Array.from({ length: liveProgress.total + 1 }, (_, i) => (
               <span
                 key={i}
-                className={i <= liveProgress.current && liveProgress.current > 0 ? 'text-kinpaku font-medium' : ''}
+                className={i <= liveProgress.current && liveProgress.current > 0 ? 'text-accent-secondary font-medium' : ''}
               >
                 {i}
               </span>
@@ -1055,11 +1055,11 @@ export default function MangaPanel({ chapter, onChapterRefresh }: Props) {
 
       {/* Error banner */}
       {liveErrorMsg && (
-        <div className="mx-5 mt-3 px-4 py-3 rounded-lg bg-vermilion-light/20 border border-vermilion/20 text-vermilion text-sm flex items-start gap-2">
+        <div className="mx-5 mt-3 px-4 py-3 rounded-lg bg-accent-soft border border-accent/20 text-accent text-sm flex items-start gap-2">
           <span className="shrink-0 mt-0.5">⚠</span>
           <div>
             <div className="font-medium mb-0.5">生成出错</div>
-            <div className="text-xs text-vermilion/80">{liveErrorMsg}</div>
+            <div className="text-xs text-accent/80">{liveErrorMsg}</div>
           </div>
         </div>
       )}
@@ -1068,15 +1068,15 @@ export default function MangaPanel({ chapter, onChapterRefresh }: Props) {
       <div className="flex-1 overflow-y-auto px-3 md:px-5 py-4">
         {/* Character cards from selected asset group */}
         {(phase === 'idle' || phase === 'editing-scenes') && (
-          <div className="mb-4 rounded-lg border border-paper-border bg-paper-surface/60 overflow-hidden">
+          <div className="mb-4 rounded-lg border border-border bg-bg-surface/60 overflow-hidden">
             <button
               onClick={() => setCharCardsExpanded((v) => !v)}
-              className="w-full flex items-center justify-between px-3 py-2 text-xs font-semibold text-sumi-dim uppercase tracking-wide hover:bg-paper-surface transition-colors"
+              className="w-full flex items-center justify-between px-3 py-2 text-xs font-semibold text-text-secondary uppercase tracking-wide hover:bg-bg-surface transition-colors"
             >
               <span className="flex items-center gap-1.5">
                 🎭 角色外貌卡
                 {selectedGroupCharacters.length > 0 && (
-                  <span className="text-[10px] font-normal normal-case px-1.5 py-0.5 rounded bg-vermilion-light/30 text-vermilion border border-vermilion/20">
+                  <span className="text-[10px] font-normal normal-case px-1.5 py-0.5 rounded bg-accent-muted/30 text-accent border border-accent/20">
                     {selectedGroupCharacters.length} 个角色
                   </span>
                 )}
@@ -1094,10 +1094,10 @@ export default function MangaPanel({ chapter, onChapterRefresh }: Props) {
                       return (
                         <div
                           key={ch.id}
-                          className="rounded-lg border border-paper-border bg-paper-raised overflow-hidden cursor-pointer hover:border-vermilion transition-colors group shadow-card"
+                          className="rounded-lg border border-border bg-bg-raised overflow-hidden cursor-pointer hover:border-accent transition-colors group shadow-card"
                           onClick={() => openCharEditor(ch)}
                         >
-                          <div className="aspect-square bg-paper-surface flex items-center justify-center">
+                          <div className="aspect-square bg-bg-surface flex items-center justify-center">
                             {thumb ? (
                               <img
                                 src={thumb}
@@ -1106,20 +1106,20 @@ export default function MangaPanel({ chapter, onChapterRefresh }: Props) {
                                 loading="lazy"
                               />
                             ) : (
-                              <Users size={24} className="text-sumi-faint" />
+                              <Users size={24} className="text-text-muted" />
                             )}
                           </div>
                           <div className="px-2 py-1.5 text-center">
-                            <span className="text-xs text-sumi-dim truncate block">{ch.name}</span>
+                            <span className="text-xs text-text-secondary truncate block">{ch.name}</span>
                           </div>
                         </div>
                       );
                     })}
                   </div>
                 ) : selectedAssetGroupId ? (
-                  <p className="text-xs text-sumi-faint py-6 text-center">该设定组暂无角色卡，请在小说卡片处添加</p>
+                  <p className="text-xs text-text-muted py-6 text-center">该设定组暂无角色卡，请在小说卡片处添加</p>
                 ) : (
-                  <p className="text-xs text-sumi-faint py-6 text-center">请在上方选择一个设定组</p>
+                  <p className="text-xs text-text-muted py-6 text-center">请在上方选择一个设定组</p>
                 )}
               </div>
             )}
@@ -1130,11 +1130,11 @@ export default function MangaPanel({ chapter, onChapterRefresh }: Props) {
         {scenes.length > 0 && displayImages.length === 0 && !generating && (
           <div className="mb-6">
             <div className="flex items-center justify-between mb-3">
-              <h3 className="text-xs font-semibold text-sumi-dim uppercase tracking-wide">分镜脚本（可编辑）</h3>
+              <h3 className="text-xs font-semibold text-text-secondary uppercase tracking-wide">分镜脚本（可编辑）</h3>
               <button
                 onClick={handleSaveAllScenes}
                 disabled={savingScenes}
-                className="text-xs text-vermilion hover:text-vermilion-hover transition-colors"
+                className="text-xs text-accent hover:text-accent-hover transition-colors"
               >
                 {savingScenes ? '保存中…' : '保存修改'}
               </button>
@@ -1143,14 +1143,14 @@ export default function MangaPanel({ chapter, onChapterRefresh }: Props) {
               {scenes.map((scene, idx) => (
                 <div key={idx} className="panel-frame overflow-hidden">
                   <div className="flex items-start gap-2 p-3">
-                    <span className="shrink-0 w-6 h-6 flex items-center justify-center rounded bg-paper-surface text-[10px] text-sumi-dim font-mono mt-0.5">
+                    <span className="shrink-0 w-6 h-6 flex items-center justify-center rounded bg-bg-surface text-[10px] text-text-secondary font-mono mt-0.5">
                       {idx + 1}
                     </span>
                     {editingIdx === idx ? (
                       <textarea
                         value={editText}
                         onChange={(e) => setEditText(e.target.value)}
-                        className="flex-1 bg-paper-surface text-sm text-sumi rounded p-2 resize-none outline-none border border-paper-border focus:border-vermilion"
+                        className="flex-1 bg-bg-surface text-sm text-text-primary rounded p-2 resize-none outline-none border border-border focus:border-accent"
                         rows={4}
                         autoFocus
                       />
@@ -1160,7 +1160,7 @@ export default function MangaPanel({ chapter, onChapterRefresh }: Props) {
                         <button
                           type="button"
                           onClick={() => toggleSceneExpanded(idx)}
-                          className="mt-1 text-xs text-vermilion hover:text-vermilion-hover transition-colors"
+                          className="mt-1 text-xs text-accent hover:text-accent-hover transition-colors"
                         >
                           {expandedScenes.has(idx) ? '收起' : '展开'}
                         </button>
@@ -1169,11 +1169,11 @@ export default function MangaPanel({ chapter, onChapterRefresh }: Props) {
                     <div className="shrink-0 flex gap-1">
                       {editingIdx === idx ? (
                         <>
-                          <button onClick={() => handleSceneSave(idx)} className="p-1 rounded hover:bg-paper-surface text-success transition-colors"><Check size={14} /></button>
-                          <button onClick={() => setEditingIdx(-1)} className="p-1 rounded hover:bg-paper-surface text-sumi-dim transition-colors"><X size={14} /></button>
+                          <button onClick={() => handleSceneSave(idx)} className="p-1 rounded hover:bg-bg-surface text-success transition-colors"><Check size={14} /></button>
+                          <button onClick={() => setEditingIdx(-1)} className="p-1 rounded hover:bg-bg-surface text-text-secondary transition-colors"><X size={14} /></button>
                         </>
                       ) : (
-                        <button onClick={() => handleSceneEdit(idx)} className="p-1 rounded hover:bg-paper-surface text-sumi-faint hover:text-sumi-dim transition-colors"><Pencil size={12} /></button>
+                        <button onClick={() => handleSceneEdit(idx)} className="p-1 rounded hover:bg-bg-surface text-text-muted hover:text-text-secondary transition-colors"><Pencil size={12} /></button>
                       )}
                     </div>
                   </div>
@@ -1185,7 +1185,7 @@ export default function MangaPanel({ chapter, onChapterRefresh }: Props) {
 
         {/* Empty state */}
         {displayImages.length === 0 && !generating && scenes.length === 0 && (
-          <div className="flex flex-col items-center justify-center h-full text-sumi-faint gap-3">
+          <div className="flex flex-col items-center justify-center h-full text-text-muted gap-3">
             <ImageIcon size={48} strokeWidth={1} />
             <span className="text-sm">对话或导入小说后点击上方按钮生成分镜</span>
           </div>
@@ -1201,8 +1201,8 @@ export default function MangaPanel({ chapter, onChapterRefresh }: Props) {
               <div key={image_number} className="group">
                 {img ? (
                 <div
-                  className="relative rounded-lg overflow-hidden border border-paper-border bg-paper-surface cursor-pointer
-                             hover:border-sumi-faint transition-colors shadow-sm"
+                  className="relative rounded-lg overflow-hidden border border-border bg-bg-surface cursor-pointer
+                             hover:border-accent/20 transition-colors shadow-sm"
                   onClick={() => {
                     const idx = imageIndexByNumber.get(image_number);
                     if (idx !== undefined) setLightboxIdx(idx);
@@ -1215,7 +1215,7 @@ export default function MangaPanel({ chapter, onChapterRefresh }: Props) {
                     loading="lazy"
                     decoding="async"
                   />
-                  <div className="absolute top-3 left-3 z-10 px-2 py-0.5 bg-sumi/70 rounded text-[10px] text-white font-mono">
+                  <div className="absolute top-3 left-3 z-10 px-2 py-0.5 bg-black/50 rounded text-[10px] text-white font-mono">
                     {image_number}/{activeImageCount}
                   </div>
                   {!isRegenerating && !generating && (
@@ -1224,50 +1224,50 @@ export default function MangaPanel({ chapter, onChapterRefresh }: Props) {
                         e.stopPropagation();
                         handleRegenImage(image_number);
                       }}
-                      className="absolute top-3 right-3 z-10 p-1.5 rounded-md bg-sumi/70 hover:bg-kinpaku text-white hover:text-white transition-colors"
+                      className="absolute top-3 right-3 z-10 p-1.5 rounded-md bg-black/50 hover:bg-accent-secondary text-white hover:text-white transition-colors"
                       title="重新生成此图"
                     >
                       <RefreshCw size={12} />
                     </button>
                   )}
                   {isRegenerating && (
-                    <div className="absolute inset-0 flex items-center justify-center bg-paper-base/60">
+                    <div className="absolute inset-0 flex items-center justify-center bg-bg-base/60">
                       <div className="flex flex-col items-center gap-2">
-                        <Loader2 size={32} className="animate-spin text-kinpaku" />
-                        <span className="text-sm text-sumi-dim">重新生成中…</span>
+                        <Loader2 size={32} className="animate-spin text-accent-secondary" />
+                        <span className="text-sm text-text-secondary">重新生成中…</span>
                       </div>
                     </div>
                   )}
                   {!isRegenerating && (
-                    <div className="absolute inset-0 bg-transparent hover:bg-sumi/5 transition-colors flex items-center justify-center opacity-0 hover:opacity-100">
-                      <span className="bg-sumi/60 text-white text-xs px-3 py-1 rounded-full">点击放大</span>
+                    <div className="absolute inset-0 bg-transparent hover:bg-bg-base/5 transition-colors flex items-center justify-center opacity-0 hover:opacity-100">
+                      <span className="bg-bg-base/60 text-white text-xs px-3 py-1 rounded-full">点击放大</span>
                     </div>
                   )}
                 </div>
                 ) : (
-                <div className="relative rounded-lg overflow-hidden border border-dashed border-paper-border bg-paper-surface/60 h-64 flex items-center justify-center">
-                  <div className="absolute top-3 left-3 px-2 py-0.5 bg-sumi/50 rounded text-[10px] text-white font-mono">
+                <div className="relative rounded-lg overflow-hidden border border-dashed border-border bg-bg-surface/60 h-64 flex items-center justify-center">
+                  <div className="absolute top-3 left-3 px-2 py-0.5 bg-bg-base/50 rounded text-[10px] text-white font-mono">
                     {image_number}/{activeImageCount}
                   </div>
                   {!isRegenerating && !generating && (
                     <button
                       onClick={() => handleRegenImage(image_number)}
-                      className="absolute top-3 right-3 p-1.5 rounded-md bg-sumi/70 hover:bg-kinpaku text-white transition-colors"
+                      className="absolute top-3 right-3 p-1.5 rounded-md bg-black/50 hover:bg-accent-secondary text-white transition-colors"
                       title="生成此图"
                     >
                       <RefreshCw size={12} />
                     </button>
                   )}
                   {isRegenerating && (
-                    <div className="absolute inset-0 flex items-center justify-center bg-ink/70">
+                    <div className="absolute inset-0 flex items-center justify-center bg-bg-base/70">
                       <div className="flex flex-col items-center gap-2">
-                        <Loader2 size={32} className="animate-spin text-amber-accent" />
-                        <span className="text-sm text-cream-dim">生成中…</span>
+                        <Loader2 size={32} className="animate-spin text-accent-secondary" />
+                        <span className="text-sm text-text-secondary">生成中…</span>
                       </div>
                     </div>
                   )}
                   {!isRegenerating && (
-                    <div className="flex flex-col items-center gap-2 text-warm-gray">
+                    <div className="flex flex-col items-center gap-2 text-text-muted">
                       {generating ? <Loader2 size={24} className="animate-spin" /> : <ImageIcon size={28} strokeWidth={1.5} />}
                       <span className="text-xs">{generating ? '等待生成…' : '未生成'}</span>
                     </div>
@@ -1275,13 +1275,13 @@ export default function MangaPanel({ chapter, onChapterRefresh }: Props) {
                 </div>
                 )}
                 {scene && (
-                  <div className="mt-2 rounded-lg border border-paper-border bg-paper-surface/60 p-2.5">
+                  <div className="mt-2 rounded-lg border border-border bg-bg-surface/60 p-2.5">
                     <div className="flex items-start gap-2">
                       {isEditing ? (
                         <textarea
                           value={editText}
                           onChange={(e) => setEditText(e.target.value)}
-                          className="flex-1 bg-paper-base text-xs text-sumi rounded p-2 resize-none outline-none border border-paper-border focus:border-vermilion leading-relaxed"
+                          className="flex-1 bg-bg-base text-xs text-text-primary rounded p-2 resize-none outline-none border border-border focus:border-accent leading-relaxed"
                           rows={3}
                           autoFocus
                         />
@@ -1291,7 +1291,7 @@ export default function MangaPanel({ chapter, onChapterRefresh }: Props) {
                           <button
                             type="button"
                             onClick={() => toggleSceneExpanded(sceneIdx)}
-                            className="mt-1 text-xs text-coral hover:text-coral-light transition-colors"
+                            className="mt-1 text-xs text-accent hover:text-accent-hover transition-colors"
                           >
                             {expandedScenes.has(sceneIdx) ? '收起' : '展开'}
                           </button>
@@ -1300,11 +1300,11 @@ export default function MangaPanel({ chapter, onChapterRefresh }: Props) {
                       <div className="shrink-0 flex items-center gap-1">
                         {isEditing ? (
                           <>
-                            <button onClick={() => handleSceneSave(sceneIdx)} className="p-1 rounded hover:bg-paper-surface text-success transition-colors" title="保存"><Check size={13} /></button>
-                            <button onClick={() => setEditingIdx(-1)} className="p-1 rounded hover:bg-paper-surface text-sumi-dim transition-colors" title="取消"><X size={13} /></button>
+                            <button onClick={() => handleSceneSave(sceneIdx)} className="p-1 rounded hover:bg-bg-surface text-success transition-colors" title="保存"><Check size={13} /></button>
+                            <button onClick={() => setEditingIdx(-1)} className="p-1 rounded hover:bg-bg-surface text-text-secondary transition-colors" title="取消"><X size={13} /></button>
                           </>
                         ) : (
-                          <button onClick={() => handleSceneEdit(sceneIdx)} className="p-1 rounded hover:bg-paper-surface text-sumi-faint hover:text-sumi-dim transition-colors" title="编辑分镜"><Pencil size={12} /></button>
+                          <button onClick={() => handleSceneEdit(sceneIdx)} className="p-1 rounded hover:bg-bg-surface text-text-muted hover:text-text-secondary transition-colors" title="编辑分镜"><Pencil size={12} /></button>
                         )}
                       </div>
                     </div>
@@ -1321,9 +1321,9 @@ export default function MangaPanel({ chapter, onChapterRefresh }: Props) {
             {Array.from({ length: Math.max(activeImageCount - displayImages.length, 0) }, (_, i) => (
               <div
                 key={`placeholder-${i}`}
-                className="rounded-lg border border-paper-border bg-paper-surface/50 h-64 flex items-center justify-center"
+                className="rounded-lg border border-border bg-bg-surface/50 h-64 flex items-center justify-center"
               >
-                <div className="flex flex-col items-center gap-2 text-sumi-faint">
+                <div className="flex flex-col items-center gap-2 text-text-muted">
                   <Loader2 size={24} className="animate-spin" />
                   <span className="text-xs">等待生成…</span>
                 </div>
@@ -1337,24 +1337,24 @@ export default function MangaPanel({ chapter, onChapterRefresh }: Props) {
       {lightboxImg && (
         <div
           ref={lightboxRef}
-          className="fixed inset-0 z-50 bg-sumi/95 flex flex-col items-center justify-center cursor-pointer select-none"
+          className="fixed inset-0 z-50 bg-bg-base/95 flex flex-col items-center justify-center cursor-pointer select-none"
           onClick={() => setLightboxIdx(-1)}
         >
           {/* Close */}
           <button
-            className="absolute top-4 right-4 p-2 rounded-full bg-white/10 hover:bg-white/20 text-cream transition-colors z-10"
+            className="absolute top-4 right-4 p-2 rounded-full bg-bg-surface/10 hover:bg-bg-surface/20 text-text-primary transition-colors z-10"
             onClick={(e) => { e.stopPropagation(); setLightboxIdx(-1); }}
           >
             <X size={24} />
           </button>
           {/* Counter */}
-          <div className="absolute top-4 left-4 px-3 py-1 bg-white/10 rounded-full text-sm text-cream font-mono">
+          <div className="absolute top-4 left-4 px-3 py-1 bg-bg-surface/10 rounded-full text-sm text-text-primary font-mono">
             {lightboxImg.image_number} / {activeImageCount}
           </div>
           {/* Nav up */}
           {lightboxIdx > 0 && (
             <button
-              className="absolute top-16 left-1/2 -translate-x-1/2 p-2 rounded-full bg-white/10 hover:bg-white/20 text-cream transition-colors z-10"
+              className="absolute top-16 left-1/2 -translate-x-1/2 p-2 rounded-full bg-bg-surface/10 hover:bg-bg-surface/20 text-text-primary transition-colors z-10"
               onClick={(e) => { e.stopPropagation(); handleLightboxNav('prev'); }}
             >
               <ChevronUp size={20} />
@@ -1370,7 +1370,7 @@ export default function MangaPanel({ chapter, onChapterRefresh }: Props) {
           {/* Nav down */}
           {lightboxIdx < displayImages.length - 1 && (
             <button
-              className="absolute bottom-16 left-1/2 -translate-x-1/2 p-2 rounded-full bg-white/10 hover:bg-white/20 text-cream transition-colors z-10"
+              className="absolute bottom-16 left-1/2 -translate-x-1/2 p-2 rounded-full bg-bg-surface/10 hover:bg-bg-surface/20 text-text-primary transition-colors z-10"
               onClick={(e) => { e.stopPropagation(); handleLightboxNav('next'); }}
             >
               <ChevronDown size={20} />
@@ -1381,15 +1381,15 @@ export default function MangaPanel({ chapter, onChapterRefresh }: Props) {
 
       {/* Character edit modal */}
       {editingCharacter !== null && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-sumi/30 backdrop-blur-sm p-3 sm:p-4" onClick={() => setEditingCharacter(null)}>
-          <div className="bg-paper-raised border border-paper-border rounded-xl w-full max-w-lg h-[580px] shadow-modal flex flex-col" onClick={(e) => e.stopPropagation()}>
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-bg-base/30 backdrop-blur-sm p-3 sm:p-4" onClick={() => setEditingCharacter(null)}>
+          <div className="bg-bg-raised border border-border rounded-xl w-full max-w-lg h-[580px] shadow-modal flex flex-col" onClick={(e) => e.stopPropagation()}>
             {/* Header */}
-            <div className="flex items-center justify-between px-5 py-4 border-b border-paper-border flex-shrink-0">
-              <h3 className="text-sm font-semibold flex items-center gap-2 text-sumi">
-                <Users size={16} className="text-vermilion" />
+            <div className="flex items-center justify-between px-5 py-4 border-b border-border flex-shrink-0">
+              <h3 className="text-sm font-semibold flex items-center gap-2 text-text-primary">
+                <Users size={16} className="text-accent" />
                 编辑角色卡
               </h3>
-              <button onClick={() => setEditingCharacter(null)} className="p-1 text-sumi-faint hover:text-sumi-dim transition-colors">
+              <button onClick={() => setEditingCharacter(null)} className="p-1 text-text-muted hover:text-text-secondary transition-colors">
                 <X size={16} />
               </button>
             </div>
@@ -1397,29 +1397,29 @@ export default function MangaPanel({ chapter, onChapterRefresh }: Props) {
             {/* Body */}
             <div className="flex-1 overflow-y-auto px-5 py-4 space-y-4">
               <div>
-                <label className="block text-xs text-sumi-dim mb-1.5">角色名称</label>
+                <label className="block text-xs text-text-secondary mb-1.5">角色名称</label>
                 <input
                   value={editCharName}
                   onChange={(e) => setEditCharName(e.target.value)}
-                  className="w-full px-3 py-2 bg-paper-surface border border-paper-border rounded-md text-sm text-sumi focus:outline-none focus:border-vermilion"
+                  className="w-full px-3 py-2 bg-bg-surface border border-border rounded-md text-sm text-text-primary focus:outline-none focus:border-accent"
                   placeholder="输入角色名称"
                 />
               </div>
 
               <div>
-                <label className="block text-xs text-sumi-dim mb-1.5">角色描述</label>
+                <label className="block text-xs text-text-secondary mb-1.5">角色描述</label>
                 <textarea
                   value={editCharDesc}
                   onChange={(e) => setEditCharDesc(e.target.value)}
                   rows={4}
-                  className="w-full bg-paper-surface text-sm text-sumi rounded-md p-3 resize-none outline-none border border-paper-border focus:border-vermilion"
+                  className="w-full bg-bg-surface text-sm text-text-primary rounded-md p-3 resize-none outline-none border border-border focus:border-accent"
                   placeholder="描述角色的性格、外貌、背景等..."
                 />
               </div>
 
               <div>
                 <div className="flex items-center justify-between mb-2">
-                  <label className="text-xs text-sumi-dim">人物参考图 ({editCharRefs.length}/5)</label>
+                  <label className="text-xs text-text-secondary">人物参考图 ({editCharRefs.length}/5)</label>
                   <input
                     ref={editCharFileRef}
                     type="file"
@@ -1430,21 +1430,21 @@ export default function MangaPanel({ chapter, onChapterRefresh }: Props) {
                   <button
                     onClick={() => editCharFileRef.current?.click()}
                     disabled={editCharRefUploading || editCharRefs.length >= 5}
-                    className="flex items-center gap-1 px-2.5 py-1.5 text-xs rounded-md bg-vermilion hover:bg-vermilion-hover text-white disabled:opacity-40 transition-colors"
+                    className="flex items-center gap-1 px-2.5 py-1.5 text-xs rounded-md bg-accent hover:bg-accent-hover text-white disabled:opacity-40 transition-colors"
                   >
                     {editCharRefUploading ? <Loader2 size={12} className="animate-spin" /> : <ImagePlus size={12} />}
                     上传图片
                   </button>
                 </div>
                 {editCharRefs.length === 0 ? (
-                  <div className="flex flex-col items-center justify-center py-8 text-sumi-faint text-sm gap-2 border border-dashed border-paper-border rounded-md">
+                  <div className="flex flex-col items-center justify-center py-8 text-text-muted text-sm gap-2 border border-dashed border-border rounded-md">
                     <ImagePlus size={28} className="opacity-50" />
                     <span>暂无参考图</span>
                   </div>
                 ) : (
                   <div className="grid grid-cols-5 gap-2">
                     {editCharRefs.map((ref) => (
-                      <div key={ref.filename} className="relative group aspect-square rounded-md overflow-hidden border border-paper-border bg-paper-surface">
+                      <div key={ref.filename} className="relative group aspect-square rounded-md overflow-hidden border border-border bg-bg-surface">
                         <img
                           src={mangaThumbUrl(ref.object_key, 200) || ""}
                           alt={ref.filename}
@@ -1453,7 +1453,7 @@ export default function MangaPanel({ chapter, onChapterRefresh }: Props) {
                         />
                         <button
                           onClick={() => handleEditCharRefDelete(ref.filename)}
-                          className="absolute top-1 right-1 p-1 rounded-md bg-vermilion hover:bg-vermilion-hover text-white shadow-lg transition-colors opacity-0 group-hover:opacity-100"
+                          className="absolute top-1 right-1 p-1 rounded-md bg-accent hover:bg-accent-hover text-white shadow-lg transition-colors opacity-0 group-hover:opacity-100"
                           title="删除"
                         >
                           <Trash2 size={10} />
@@ -1466,11 +1466,11 @@ export default function MangaPanel({ chapter, onChapterRefresh }: Props) {
             </div>
 
             {/* Footer */}
-            <div className="px-5 py-3 border-t border-paper-border flex-shrink-0 flex justify-end">
+            <div className="px-5 py-3 border-t border-border flex-shrink-0 flex justify-end">
               <button
                 onClick={handleEditCharSave}
                 disabled={editCharSaving || !editCharName.trim()}
-                className="px-5 py-2 bg-vermilion hover:bg-vermilion-hover text-white text-sm font-medium rounded-md transition-colors disabled:opacity-40"
+                className="px-5 py-2 bg-accent hover:bg-accent-hover text-white text-sm font-medium rounded-md transition-colors disabled:opacity-40"
               >
                 {editCharSaving ? "保存中..." : "保存"}
               </button>

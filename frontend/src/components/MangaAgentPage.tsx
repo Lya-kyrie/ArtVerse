@@ -107,13 +107,13 @@ function SelectUpward<T extends string>({
         type="button"
         disabled={disabled}
         onClick={() => { if (!disabled) setOpen(v => !v); }}
-        className={`flex w-full items-center gap-1 truncate rounded-xl border px-3 py-1.5 text-xs font-medium transition outline-none ${open ? 'border-vermilion/40 bg-vermilion-light/10 text-vermilion' : 'border-paper-border bg-paper-surface/80 text-sumi hover:border-sumi-faint/40'}`}
+        className={`flex w-full items-center gap-1 truncate rounded-xl border px-3 py-1.5 text-xs font-medium transition outline-none ${open ? 'border-accent/40 bg-accent-muted/10 text-accent' : 'border-border bg-bg-surface/80 text-text-primary hover:border-accent/30'}`}
       >
         <span className="truncate flex-1 text-left">{display}</span>
-        <svg className={`shrink-0 text-sumi-faint transition-transform ${open ? 'rotate-180' : ''}`} width="12" height="12" viewBox="0 0 20 20" fill="none"><path stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.5" d="M6 8l4 4 4-4"/></svg>
+        <svg className={`shrink-0 text-text-muted transition-transform ${open ? 'rotate-180' : ''}`} width="12" height="12" viewBox="0 0 20 20" fill="none"><path stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.5" d="M6 8l4 4 4-4"/></svg>
       </button>
       {open && (
-        <div className="absolute bottom-[calc(100%+4px)] left-0 z-40 w-full max-h-[200px] overflow-y-auto overscroll-contain rounded-xl border border-paper-border bg-paper-raised shadow-lg animate-fade-in p-1">
+        <div className="absolute bottom-[calc(100%+4px)] left-0 z-40 w-full max-h-[200px] overflow-y-auto overscroll-contain rounded-xl border border-border bg-bg-raised shadow-lg animate-fade-in p-1">
           {options.map(o => {
             const sel = o.value === value;
             return (
@@ -121,7 +121,7 @@ function SelectUpward<T extends string>({
                 key={o.value}
                 type="button"
                 onClick={() => { onChange(o.value); setOpen(false); }}
-                className={`w-full truncate rounded-lg px-2.5 py-2 text-xs text-left transition-colors ${sel ? 'bg-vermilion-light/20 text-vermilion font-medium' : 'text-sumi hover:bg-paper-surface'}`}
+                className={`w-full truncate rounded-lg px-2.5 py-2 text-xs text-left transition-colors ${sel ? 'bg-accent-soft text-accent font-medium' : 'text-text-primary hover:bg-bg-surface'}`}
               >
                 {o.label}
               </button>
@@ -335,27 +335,27 @@ function inferExecutionEvent(event: Record<string, any>): ExecutionEventItem {
 
 function executionBadgeClass(tone: AgUiEventTone): string {
   return {
-    info: 'border-paper-border bg-paper-surface text-sumi-dim',
-    neutral: 'border-paper-border bg-paper-surface text-sumi-dim',
-    thinking: 'border-kinpaku/30 bg-kinpaku-light/50 text-kinpaku',
-    tool: 'border-aizuri/30 bg-aizuri-light/50 text-aizuri',
-    waiting: 'border-vermilion/30 bg-vermilion-light/50 text-vermilion',
+    info: 'border-border bg-bg-surface text-text-secondary',
+    neutral: 'border-border bg-bg-surface text-text-secondary',
+    thinking: 'border-accent-secondary/30 bg-accent-secondary/10 text-accent-secondary',
+    tool: 'border-accent-tertiary/30 bg-accent-tertiary/10/50 text-accent-tertiary',
+    waiting: 'border-accent/30 bg-accent-muted/50 text-accent',
     success: 'border-success/30 bg-success/10 text-success',
     warning: 'border-warning/30 bg-warning/10 text-warning',
-    error: 'border-vermilion/30 bg-vermilion-light/30 text-vermilion',
+    error: 'border-accent/30 bg-accent-muted/30 text-accent',
   }[tone];
 }
 
 function executionIcon(tone: AgUiEventTone, icon: ExecutionEventItem['icon']) {
   const className = {
-    info: 'text-sumi-dim',
-    neutral: 'text-sumi-dim',
-    thinking: 'text-kinpaku',
-    tool: 'text-aizuri',
-    waiting: 'text-vermilion',
+    info: 'text-text-secondary',
+    neutral: 'text-text-secondary',
+    thinking: 'text-accent-secondary',
+    tool: 'text-accent-tertiary',
+    waiting: 'text-accent',
     success: 'text-success',
     warning: 'text-warning',
-    error: 'text-vermilion',
+    error: 'text-accent',
   }[tone];
   const size = 15;
   switch (icon) {
@@ -903,31 +903,31 @@ export default function MangaAgentPage({ onCreateStory }: { onCreateStory?: () =
 
   if (showWelcome) {
     return (
-      <div className="flex min-h-0 flex-1 overflow-y-auto bg-paper-base px-5 py-10 sm:px-8 sm:py-14">
+      <div className="flex min-h-0 flex-1 overflow-y-auto bg-bg-base px-5 py-10 sm:px-8 sm:py-14">
         <div className="mx-auto flex w-full max-w-4xl flex-col items-center justify-center text-center">
-          <div className="mb-7 flex h-12 w-12 items-center justify-center rounded-md bg-vermilion text-white shadow-sm">
+          <div className="mb-7 flex h-12 w-12 items-center justify-center rounded-md bg-accent text-white shadow-sm">
             <Sparkles size={24} />
           </div>
-          <p className="mb-3 text-xs font-semibold text-vermilion">AI 漫画创作工作台</p>
-          <h1 className="font-display text-4xl font-semibold text-sumi sm:text-5xl">
+          <p className="mb-3 text-xs font-semibold text-accent">AI 漫画创作工作台</p>
+          <h1 className="font-display text-4xl font-semibold text-text-primary sm:text-5xl">
             把故事写成画面
           </h1>
-          <p className="mt-4 max-w-xl text-sm leading-7 text-sumi-dim sm:text-base">
+          <p className="mt-4 max-w-xl text-sm leading-7 text-text-secondary sm:text-base">
             从一个人物、一段情节或一句灵感开始，建立你的第一部漫画故事。
           </p>
 
           <button
             type="button"
             onClick={onCreateStory}
-            className="command-surface mt-9 w-full max-w-3xl p-3 text-left transition-transform duration-200 hover:-translate-y-0.5 hover:border-vermilion/30 sm:p-4"
+            className="command-surface mt-9 w-full max-w-3xl p-3 text-left transition-transform duration-200 hover:-translate-y-0.5 hover:border-accent/30 sm:p-4"
           >
-            <div className="flex items-center justify-between border-b border-paper-border px-1 pb-3 text-xs text-sumi-faint">
-              <span className="flex items-center gap-2 font-medium text-sumi-dim"><BookOpenText size={14} /> 新故事</span>
+            <div className="flex items-center justify-between border-b border-border px-1 pb-3 text-xs text-text-muted">
+              <span className="flex items-center gap-2 font-medium text-text-secondary"><BookOpenText size={14} /> 新故事</span>
               <span>创建后即可与 AI 对话</span>
             </div>
             <div className="flex min-h-20 items-center gap-3 px-1 pt-3 sm:min-h-24">
-              <span className="min-w-0 flex-1 text-sm text-sumi-faint sm:text-base">写下故事名称，开始构建角色与世界...</span>
-              <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-md bg-vermilion text-white">
+              <span className="min-w-0 flex-1 text-sm text-text-muted sm:text-base">写下故事名称，开始构建角色与世界...</span>
+              <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-md bg-accent text-white">
                 <Send size={17} />
               </span>
             </div>
@@ -943,9 +943,9 @@ export default function MangaAgentPage({ onCreateStory }: { onCreateStory?: () =
                 key={item.label}
                 type="button"
                 onClick={onCreateStory}
-                className="flex min-h-11 items-center justify-center gap-2 rounded-md border border-paper-border bg-paper-raised px-4 text-xs font-medium text-sumi-dim transition-colors hover:border-vermilion/30 hover:text-vermilion"
+                className="flex min-h-11 items-center justify-center gap-2 rounded-md border border-border bg-bg-raised px-4 text-xs font-medium text-text-secondary transition-colors hover:border-accent/30 hover:text-accent"
               >
-                <span className="text-vermilion">{item.icon}</span>
+                <span className="text-accent">{item.icon}</span>
                 {item.label}
               </button>
             ))}
@@ -955,10 +955,10 @@ export default function MangaAgentPage({ onCreateStory }: { onCreateStory?: () =
             {['故事设定', '章节创作', '漫画生成'].map((label, index) => (
               <div key={label} className="flex min-w-0 flex-1 items-center last:flex-none">
                 <div className="flex items-center gap-2">
-                  <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full border border-paper-border bg-paper-raised text-[10px] font-semibold text-sumi-dim">{index + 1}</span>
-                  <span className="hidden text-xs text-sumi-faint sm:inline">{label}</span>
+                  <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full border border-border bg-bg-raised text-[10px] font-semibold text-text-secondary">{index + 1}</span>
+                  <span className="hidden text-xs text-text-muted sm:inline">{label}</span>
                 </div>
-                {index < 2 && <span className="mx-3 h-px min-w-4 flex-1 bg-paper-border sm:mx-5" />}
+                {index < 2 && <span className="mx-3 h-px min-w-4 flex-1 bg-border sm:mx-5" />}
               </div>
             ))}
           </div>
@@ -968,29 +968,29 @@ export default function MangaAgentPage({ onCreateStory }: { onCreateStory?: () =
   }
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col bg-paper-base">
+    <div className="flex min-h-0 flex-1 flex-col bg-bg-base">
       {/* Header */}
-      <header className="border-b border-paper-border bg-paper-raised px-4 py-3 sm:px-5">
+      <header className="border-b border-border bg-bg-raised px-4 py-3 sm:px-5">
         <div className="flex flex-wrap items-center gap-3">
-          <div className="flex h-9 w-9 items-center justify-center rounded-md bg-vermilion text-white">
+          <div className="flex h-9 w-9 items-center justify-center rounded-md bg-accent text-white">
             <Sparkles size={16} />
           </div>
           <div className="min-w-0">
-            <h1 className="font-display text-base font-semibold text-sumi">创作工坊</h1>
-            <p className="text-xs text-sumi-dim">AI 漫画创作工坊</p>
+            <h1 className="font-display text-base font-semibold text-text-primary">创作工坊</h1>
+            <p className="text-xs text-text-secondary">AI 漫画创作工坊</p>
           </div>
         </div>
       </header>
 
       <div className="flex min-h-0 flex-1 flex-col md:flex-row">
         {/* Left sidebar — conversation list only */}
-        <aside className="flex h-[132px] w-full min-w-0 shrink-0 flex-col border-b border-paper-border bg-paper-surface/70 p-3 md:h-auto md:w-[250px] md:border-b-0 md:border-r md:p-4">
+        <aside className="flex h-[132px] w-full min-w-0 shrink-0 flex-col border-b border-border bg-bg-surface/70 p-3 md:h-auto md:w-[250px] md:border-b-0 md:border-r md:p-4">
           <div className="mb-3 flex items-center justify-between">
-            <p className="text-[11px] font-semibold uppercase tracking-wider text-sumi-faint">会话列表</p>
+            <p className="text-[11px] font-semibold uppercase tracking-wider text-text-muted">会话列表</p>
             <button
               onClick={() => void startNewConversation()}
               disabled={!chapterId || conversationLoading}
-              className="inline-flex items-center gap-1 rounded-md border border-paper-border bg-paper-base px-2 py-1 text-[11px] text-sumi-dim transition hover:border-vermilion/30 hover:text-vermilion disabled:cursor-not-allowed disabled:opacity-40"
+              className="inline-flex items-center gap-1 rounded-md border border-border bg-bg-base px-2 py-1 text-[11px] text-text-secondary transition hover:border-accent/30 hover:text-accent disabled:cursor-not-allowed disabled:opacity-40"
             >
               <Plus size={12} />
               新建
@@ -999,7 +999,7 @@ export default function MangaAgentPage({ onCreateStory }: { onCreateStory?: () =
 
           <div className="flex min-h-0 flex-1 gap-2 overflow-x-auto pb-1 md:block md:space-y-1.5 md:overflow-x-hidden md:overflow-y-auto md:pb-0 md:pr-1">
             {conversations.length === 0 ? (
-              <div className="w-full rounded-md border border-paper-border bg-paper-raised/70 px-3 py-4 text-center text-xs text-sumi-faint">
+              <div className="w-full rounded-md border border-border bg-bg-raised/70 px-3 py-4 text-center text-xs text-text-muted">
                 暂无会话
               </div>
             ) : conversations.map((conversation) => {
@@ -1008,33 +1008,33 @@ export default function MangaAgentPage({ onCreateStory }: { onCreateStory?: () =
               return (
                 <div
                   key={conversation.conversationId}
-                  className={`flex min-w-[220px] items-start gap-2 rounded-md border px-3 py-2.5 transition md:min-w-0 ${selected ? 'border-vermilion/40 bg-vermilion-light/30' : 'border-paper-border bg-paper-raised hover:border-sumi-faint/40'} ${pending ? 'ring-1 ring-vermilion/30' : ''}`}
+                  className={`flex min-w-[220px] items-start gap-2 rounded-md border px-3 py-2.5 transition md:min-w-0 ${selected ? 'border-accent/40 bg-accent-muted/30' : 'border-border bg-bg-raised hover:border-accent/30'} ${pending ? 'ring-1 ring-accent/30' : ''}`}
                 >
                   <button
                     type="button"
                     onClick={() => void loadSelectedConversation(conversation.conversationId)}
                     className="flex min-w-0 flex-1 items-start gap-2.5 text-left"
                   >
-                    <div className={`mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-md ${selected ? 'bg-vermilion text-white' : 'bg-paper-surface text-sumi-dim'}`}>
+                    <div className={`mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-md ${selected ? 'bg-accent text-white' : 'bg-bg-surface text-text-secondary'}`}>
                       {pending ? <Loader2 size={13} className="animate-spin" /> : <MessageSquareText size={13} />}
                     </div>
                     <div className="min-w-0 flex-1">
                       <div className="flex items-center gap-1.5">
-                        <div className="truncate text-xs font-medium text-sumi">{conversation.title || '新会话'}</div>
+                        <div className="truncate text-xs font-medium text-text-primary">{conversation.title || '新会话'}</div>
                         {conversation.isActive && <span className="shrink-0 rounded-full border border-success/20 bg-success/10 px-1.5 py-0.5 text-[10px] text-success">进行中</span>}
-                        {pending && <span className="shrink-0 rounded-full border border-kinpaku/20 bg-kinpaku-light/50 px-1.5 py-0.5 text-[10px] text-kinpaku">切换中</span>}
+                        {pending && <span className="shrink-0 rounded-full border border-accent-secondary/20 bg-accent-secondary/10 px-1.5 py-0.5 text-[10px] text-accent-secondary">切换中</span>}
                       </div>
-                      <div className="mt-0.5 text-[10px] text-sumi-faint">
+                      <div className="mt-0.5 text-[10px] text-text-muted">
                         {conversationStatusLabel(conversation.status)}
                         {conversation.updatedAt && <span> · {formatTimestamp(conversation.updatedAt)}</span>}
                       </div>
                     </div>
-                    <ChevronRight size={12} className="mt-1 shrink-0 text-sumi-faint" />
+                    <ChevronRight size={12} className="mt-1 shrink-0 text-text-muted" />
                   </button>
                   <button
                     type="button"
                     onClick={() => void deleteConversation(conversation)}
-                    className="mt-0.5 rounded p-0.5 text-sumi-faint transition hover:bg-vermilion-light/30 hover:text-vermilion"
+                    className="mt-0.5 rounded p-0.5 text-text-muted transition hover:bg-accent-muted/30 hover:text-accent"
                     title="删除会话"
                   >
                     <Archive size={12} />
@@ -1046,31 +1046,31 @@ export default function MangaAgentPage({ onCreateStory }: { onCreateStory?: () =
         </aside>
 
         {/* Main chat area */}
-        <main className="flex min-h-0 min-w-0 flex-1 flex-col bg-paper-raised">
-          <div className="flex items-center gap-2.5 border-b border-paper-border px-4 py-3">
-            <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-paper-surface">
-              <Bot size={16} className="text-sumi-dim" />
+        <main className="flex min-h-0 min-w-0 flex-1 flex-col bg-bg-raised">
+          <div className="flex items-center gap-2.5 border-b border-border px-4 py-3">
+            <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-bg-surface">
+              <Bot size={16} className="text-text-secondary" />
             </div>
             <div className="min-w-0">
-              <div className="text-sm font-medium text-sumi">AI 对话</div>
-              <div className="text-[11px] text-sumi-faint">漫画创作助手</div>
+              <div className="text-sm font-medium text-text-primary">AI 对话</div>
+              <div className="text-[11px] text-text-muted">漫画创作助手</div>
             </div>
           </div>
 
-          {error && <div className="mx-4 mt-3 rounded-md border border-vermilion/20 bg-vermilion-light/20 px-3 py-2 text-xs text-vermilion">{error}</div>}
+          {error && <div className="mx-4 mt-3 rounded-md border border-accent/20 bg-accent-soft px-3 py-2 text-xs text-accent">{error}</div>}
 
           <div className="min-h-0 flex-1 overflow-y-auto px-4 py-4">
             {bootLoading || conversationLoading ? (
               <div className="flex h-full items-center justify-center">
-                <Loader2 size={24} className="animate-spin text-vermilion" />
+                <Loader2 size={24} className="animate-spin text-accent" />
               </div>
             ) : messages.length === 0 && !showExecutionPanel ? (
               <div className="flex h-full flex-col items-center justify-center px-6 text-center">
-                <div className="mb-5 flex h-16 w-16 items-center justify-center rounded-md border border-paper-border bg-paper-surface">
-                  <BookOpenText size={30} className="text-vermilion/60" />
+                <div className="mb-5 flex h-16 w-16 items-center justify-center rounded-md border border-border bg-bg-surface">
+                  <BookOpenText size={30} className="text-accent/60" />
                 </div>
-                <h2 className="font-display text-2xl font-semibold text-sumi">开始创作</h2>
-                <p className="mt-2 max-w-md text-sm leading-relaxed text-sumi-dim">
+                <h2 className="font-display text-2xl font-semibold text-text-primary">开始创作</h2>
+                <p className="mt-2 max-w-md text-sm leading-relaxed text-text-secondary">
                   在下方选择故事和章节，输入创作指令，AI 将协助你推进剧情、生成分镜和漫画。
                 </p>
               </div>
@@ -1078,7 +1078,7 @@ export default function MangaAgentPage({ onCreateStory }: { onCreateStory?: () =
               <div className="space-y-3">
                 {messages.map((msg, idx) => (
                   <div key={`${msg.requestId || 'msg'}-${idx}`} className={msg.role === 'user' ? 'flex justify-end' : 'flex justify-start'}>
-                    <div className={'max-w-[85%] rounded-xl px-4 py-2.5 text-sm leading-relaxed ' + (msg.role === 'user' ? 'bg-vermilion text-white' : msg.role === 'system' ? 'border border-paper-border bg-paper-surface text-sumi-dim' : 'border border-paper-border bg-paper-raised text-sumi shadow-sm')}>
+                    <div className={'max-w-[85%] rounded-xl px-4 py-2.5 text-sm leading-relaxed ' + (msg.role === 'user' ? 'bg-accent text-white' : msg.role === 'system' ? 'border border-border bg-bg-surface text-text-secondary' : 'border border-border bg-bg-raised text-text-primary shadow-sm')}>
                       {msg.role === 'assistant' || msg.role === 'system' ? <MarkdownRenderer content={msg.content} /> : msg.content}
                     </div>
                   </div>
@@ -1086,39 +1086,39 @@ export default function MangaAgentPage({ onCreateStory }: { onCreateStory?: () =
 
                 {showExecutionPanel && (
                   <div className="flex justify-start">
-                    <div className="max-w-[90%] min-w-0 rounded-xl border border-paper-border bg-paper-surface px-4 py-3 text-sm">
+                    <div className="max-w-[90%] min-w-0 rounded-xl border border-border bg-bg-surface px-4 py-3 text-sm">
                       <div className="flex flex-wrap items-center gap-1.5">
                         <span className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 text-[11px] font-medium ${executionBadgeClass(latestExecutionEvent?.tone || (waitingForHuman ? 'waiting' : sending ? 'thinking' : 'neutral'))}`}>
                           {executionIcon(latestExecutionEvent?.tone || (waitingForHuman ? 'waiting' : sending ? 'thinking' : 'neutral'), latestExecutionEvent?.icon || 'clock')}
                           {waitingForHuman ? '等待确认' : runStatus}
                         </span>
-                        {businessStatus && <span className="rounded-full border border-paper-border bg-paper-base px-2.5 py-0.5 text-[11px] text-sumi-dim">状态 {businessStatus}</span>}
-                        {currentPhase && <span className="rounded-full border border-paper-border bg-paper-base px-2.5 py-0.5 text-[11px] text-sumi-dim">阶段 {currentPhase === 'TOOL' ? '工具调用' : '模型推理'}</span>}
-                        {activeRequestId && <span className="text-[10px] text-sumi-faint font-mono">{formatRequestId(activeRequestId)}</span>}
+                        {businessStatus && <span className="rounded-full border border-border bg-bg-base px-2.5 py-0.5 text-[11px] text-text-secondary">状态 {businessStatus}</span>}
+                        {currentPhase && <span className="rounded-full border border-border bg-bg-base px-2.5 py-0.5 text-[11px] text-text-secondary">阶段 {currentPhase === 'TOOL' ? '工具调用' : '模型推理'}</span>}
+                        {activeRequestId && <span className="text-[10px] text-text-muted font-mono">{formatRequestId(activeRequestId)}</span>}
                         {activeRequestId && (sending || waitingForHuman) && (
-                          <button onClick={() => void cancelActiveRun()} className="inline-flex items-center gap-1 rounded-full border border-vermilion/30 bg-vermilion-light/20 px-2.5 py-0.5 text-[11px] text-vermilion transition hover:bg-vermilion-light/40">
+                          <button onClick={() => void cancelActiveRun()} className="inline-flex items-center gap-1 rounded-full border border-accent/30 bg-accent-soft px-2.5 py-0.5 text-[11px] text-accent transition hover:bg-accent-muted/40">
                             <Square size={10} />
                             停止
                           </button>
                         )}
                       </div>
-                      {lastProgressAt && <div className="mt-1.5 text-[10px] text-sumi-faint">最后有效进度：{formatTimestamp(lastProgressAt)}</div>}
+                      {lastProgressAt && <div className="mt-1.5 text-[10px] text-text-muted">最后有效进度：{formatTimestamp(lastProgressAt)}</div>}
 
                       {executionEvents.length > 0 && (
                         <details className="mt-2">
-                          <summary className="cursor-pointer text-xs text-sumi-faint hover:text-sumi-dim transition-colors">查看运行日志 ({executionEvents.length} 条事件)</summary>
+                          <summary className="cursor-pointer text-xs text-text-muted hover:text-text-secondary transition-colors">查看运行日志 ({executionEvents.length} 条事件)</summary>
                           <div className="mt-2 grid gap-1.5">
                             {executionEvents.slice(-10).map((event) => (
-                              <div key={event.id} className="flex items-start gap-2 rounded-md border border-paper-border bg-paper-base/50 px-2.5 py-2 text-xs">
+                              <div key={event.id} className="flex items-start gap-2 rounded-md border border-border bg-bg-base/50 px-2.5 py-2 text-xs">
                                 <div className="mt-0.5 shrink-0">{executionIcon(event.tone, event.icon)}</div>
                                 <div className="min-w-0 flex-1">
                                   <div className="flex flex-wrap items-center gap-1.5">
-                                    <span className="font-medium text-sumi">{event.title}</span>
-                                    <span className="text-[10px] uppercase text-sumi-faint">{event.type}</span>
+                                    <span className="font-medium text-text-primary">{event.title}</span>
+                                    <span className="text-[10px] uppercase text-text-muted">{event.type}</span>
                                   </div>
-                                  <div className="mt-0.5 text-sumi-dim">{event.detail}</div>
+                                  <div className="mt-0.5 text-text-secondary">{event.detail}</div>
                                 </div>
-                                {event.createdAt && <div className="shrink-0 text-[10px] text-sumi-faint">{formatTimestamp(event.createdAt)}</div>}
+                                {event.createdAt && <div className="shrink-0 text-[10px] text-text-muted">{formatTimestamp(event.createdAt)}</div>}
                               </div>
                             ))}
                           </div>
@@ -1130,7 +1130,7 @@ export default function MangaAgentPage({ onCreateStory }: { onCreateStory?: () =
 
                 {draftReply && (
                   <div className="flex justify-start">
-                    <div className="max-w-[85%] rounded-xl border border-paper-border bg-paper-raised px-4 py-2.5 text-sm leading-relaxed shadow-sm">
+                    <div className="max-w-[85%] rounded-xl border border-border bg-bg-raised px-4 py-2.5 text-sm leading-relaxed shadow-sm">
                       <MarkdownRenderer content={draftReply} />
                     </div>
                   </div>
@@ -1138,18 +1138,18 @@ export default function MangaAgentPage({ onCreateStory }: { onCreateStory?: () =
 
                 {userInputRequest && (
                   <div className="flex justify-start">
-                    <div className="max-w-[85%] rounded-xl border border-kinpaku/30 bg-kinpaku-light/40 px-4 py-3 text-sm">
-                      <div className="text-[11px] font-semibold uppercase tracking-wider text-kinpaku/80">需要确认</div>
-                      <div className="mt-1.5 text-sm font-medium text-sumi">{userInputRequest.question}</div>
-                      {userInputRequest.reason && <div className="mt-1 text-xs text-sumi-dim">{userInputRequest.reason}</div>}
+                    <div className="max-w-[85%] rounded-xl border border-accent-secondary/30 bg-accent-secondary/10 px-4 py-3 text-sm">
+                      <div className="text-[11px] font-semibold uppercase tracking-wider text-accent-secondary/80">需要确认</div>
+                      <div className="mt-1.5 text-sm font-medium text-text-primary">{userInputRequest.question}</div>
+                      {userInputRequest.reason && <div className="mt-1 text-xs text-text-secondary">{userInputRequest.reason}</div>}
                       <div className="mt-3 space-y-1.5">
                         {userInputRequest.options.map((option) => (
-                          <button key={option.id} onClick={() => void resumeWithAnswer(option.label)} className="w-full rounded-md border border-paper-border bg-paper-base px-3 py-2.5 text-left text-xs transition hover:border-vermilion/30 hover:bg-vermilion-light/10">
-                            <div className="flex items-center gap-2 font-medium text-sumi">
+                          <button key={option.id} onClick={() => void resumeWithAnswer(option.label)} className="w-full rounded-md border border-border bg-bg-base px-3 py-2.5 text-left text-xs transition hover:border-accent/30 hover:bg-accent-muted/10">
+                            <div className="flex items-center gap-2 font-medium text-text-primary">
                               <span>{option.label}</span>
-                              {option.recommended && <span className="rounded-full bg-kinpaku-light px-1.5 py-0.5 text-[10px] text-kinpaku">推荐</span>}
+                              {option.recommended && <span className="rounded-full bg-accent-secondary/10 px-1.5 py-0.5 text-[10px] text-accent-secondary">推荐</span>}
                             </div>
-                            {option.description && <div className="mt-0.5 text-sumi-dim">{option.description}</div>}
+                            {option.description && <div className="mt-0.5 text-text-secondary">{option.description}</div>}
                           </button>
                         ))}
                       </div>
@@ -1159,9 +1159,9 @@ export default function MangaAgentPage({ onCreateStory }: { onCreateStory?: () =
                             value={customAnswer}
                             onChange={(e) => setCustomAnswer(e.target.value)}
                             placeholder="输入你的回答"
-                            className="min-w-0 flex-1 rounded-md border border-paper-border bg-paper-base px-3 py-2 text-xs text-sumi outline-none transition focus:border-vermilion"
+                            className="min-w-0 flex-1 rounded-md border border-border bg-bg-base px-3 py-2 text-xs text-text-primary outline-none transition focus:border-accent"
                           />
-                          <button onClick={() => void resumeWithAnswer(customAnswer)} disabled={!customAnswer.trim()} className="rounded-md bg-vermilion px-3 py-2 text-xs font-medium text-white disabled:cursor-not-allowed disabled:opacity-40 hover:bg-vermilion-hover transition-colors">
+                          <button onClick={() => void resumeWithAnswer(customAnswer)} disabled={!customAnswer.trim()} className="rounded-md bg-accent px-3 py-2 text-xs font-medium text-white disabled:cursor-not-allowed disabled:opacity-40 hover:bg-accent-hover transition-colors">
                             继续
                           </button>
                         </div>
@@ -1175,7 +1175,7 @@ export default function MangaAgentPage({ onCreateStory }: { onCreateStory?: () =
             )}
           </div>
 
-          <div className="border-t border-paper-border px-4 py-3">
+          <div className="border-t border-border px-4 py-3">
             {/* Story / Chapter / Model row */}
             <div className="mb-3 flex flex-wrap items-center gap-2">
               {/* Story selector — opens upward */}
@@ -1198,7 +1198,7 @@ export default function MangaAgentPage({ onCreateStory }: { onCreateStory?: () =
               />
 
               {/* Divider */}
-              <span className="mx-0.5 h-5 w-px shrink-0 bg-paper-border" />
+              <span className="mx-0.5 h-5 w-px shrink-0 bg-border" />
 
               {/* Spacer — pushes model switcher to the right */}
               <div className="flex-1" />
@@ -1222,12 +1222,12 @@ export default function MangaAgentPage({ onCreateStory }: { onCreateStory?: () =
                 }}
                 rows={2}
                 placeholder={chapterId ? '输入创作指令，例如：检查这一章能否直接转成分镜？' : '请先选择故事和章节'}
-                className="min-h-[52px] flex-1 resize-none rounded-lg border border-paper-border bg-paper-surface px-3.5 py-2.5 text-sm text-sumi outline-none transition placeholder:text-sumi-faint focus:border-vermilion"
+                className="min-h-[52px] flex-1 resize-none rounded-lg border border-border bg-bg-surface px-3.5 py-2.5 text-sm text-text-primary outline-none transition placeholder:text-text-muted focus:border-accent"
               />
               <button
                 onClick={() => void startRun()}
                 disabled={sending || conversationLoading || !chapterId || !input.trim()}
-                className="inline-flex h-auto min-w-12 items-center justify-center gap-1.5 rounded-md bg-vermilion px-3 py-2.5 text-sm font-medium text-white transition hover:bg-vermilion-hover disabled:cursor-not-allowed disabled:opacity-40 sm:min-w-[100px] sm:px-4"
+                className="inline-flex h-auto min-w-12 items-center justify-center gap-1.5 rounded-md bg-accent px-3 py-2.5 text-sm font-medium text-white transition hover:bg-accent-hover disabled:cursor-not-allowed disabled:opacity-40 sm:min-w-[100px] sm:px-4"
               >
                 {sending ? <Loader2 size={15} className="animate-spin" /> : <Send size={15} />}
                 <span className="hidden sm:inline">发送</span>

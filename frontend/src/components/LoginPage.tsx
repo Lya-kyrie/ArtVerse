@@ -45,44 +45,44 @@ export default function LoginPage({ onAuthSuccess, variant = 'page', message, on
   };
 
   return (
-    <div className={(isModal ? '' : 'min-h-screen bg-paper-base ') + 'flex items-center justify-center p-4'}>
+    <div className={(isModal ? '' : 'min-h-screen bg-bg-base ') + 'flex items-center justify-center p-4'}>
       <div className="w-full max-w-sm">
         <div className="mb-4 flex items-center justify-center gap-3">
-          <div className="flex h-10 w-10 items-center justify-center rounded-md bg-vermilion text-white shadow-sm">
+          <div className="flex h-10 w-10 items-center justify-center rounded-md bg-accent text-white shadow-sm">
             <Sparkles size={20} />
           </div>
           <div className="text-left">
-            <h1 className="font-display text-lg font-bold text-sumi">ArtVerse</h1>
-            <p className="text-xs text-sumi-faint">AI 漫画创作工坊</p>
+            <h1 className="font-display text-lg font-bold text-text-primary">ArtVerse</h1>
+            <p className="text-xs text-text-muted">AI 漫画创作工坊</p>
           </div>
         </div>
 
-        <form onSubmit={handleSubmit} className="space-y-4 rounded-lg border border-paper-border bg-paper-raised p-6 shadow-[0_18px_60px_rgba(24,27,25,0.16)]">
+        <form onSubmit={handleSubmit} className="space-y-4 rounded-lg border border-border bg-bg-raised p-6 shadow-[0_18px_60px_rgba(24,27,25,0.16)]">
           {message && (
-            <p className="rounded-md border border-kinpaku/20 bg-kinpaku-light/50 px-3 py-2 text-sm text-kinpaku">
+            <p className="rounded-md border border-accent-secondary/20 bg-accent-secondary/10 px-3 py-2 text-sm text-accent-secondary">
               {message}
             </p>
           )}
 
-          <div className="grid grid-cols-2 gap-1 rounded-md bg-paper-surface p-1" aria-label="账号操作">
+          <div className="grid grid-cols-2 gap-1 rounded-md bg-bg-surface p-1" aria-label="账号操作">
             <button
               type="button"
               onClick={() => { setMode('login'); setError(''); }}
-              className={'rounded px-3 py-2 text-xs font-medium transition-colors ' + (mode === 'login' ? 'bg-paper-raised text-sumi shadow-sm' : 'text-sumi-faint hover:text-sumi')}
+              className={'rounded px-3 py-2 text-xs font-medium transition-colors ' + (mode === 'login' ? 'bg-bg-raised text-text-primary shadow-sm' : 'text-text-muted hover:text-text-primary')}
             >
               登录
             </button>
             <button
               type="button"
               onClick={() => { setMode('register'); setError(''); }}
-              className={'rounded px-3 py-2 text-xs font-medium transition-colors ' + (mode === 'register' ? 'bg-paper-raised text-sumi shadow-sm' : 'text-sumi-faint hover:text-sumi')}
+              className={'rounded px-3 py-2 text-xs font-medium transition-colors ' + (mode === 'register' ? 'bg-bg-raised text-text-primary shadow-sm' : 'text-text-muted hover:text-text-primary')}
             >
               注册
             </button>
           </div>
 
           <div className="space-y-1.5">
-            <label className="flex items-center gap-1.5 text-xs text-sumi-dim">
+            <label className="flex items-center gap-1.5 text-xs text-text-secondary">
               <User size={12} />用户名
             </label>
             <input
@@ -91,13 +91,13 @@ export default function LoginPage({ onAuthSuccess, variant = 'page', message, on
               onChange={(e) => setUsername(e.target.value)}
               placeholder="输入用户名"
               autoFocus
-              className="w-full rounded-md border border-paper-border bg-paper-surface px-3 py-2 text-sm text-sumi placeholder-sumi-faint outline-none transition-colors focus:border-vermilion"
+              className="w-full rounded-md border border-border bg-bg-surface px-3 py-2 text-sm text-text-primary placeholder-text-muted outline-none transition-colors focus:border-accent"
             />
           </div>
 
           {mode === 'register' && (
             <div className="space-y-1.5">
-              <label className="flex items-center gap-1.5 text-xs text-sumi-dim">
+              <label className="flex items-center gap-1.5 text-xs text-text-secondary">
                 <Mail size={12} />邮箱
               </label>
               <input
@@ -105,13 +105,13 @@ export default function LoginPage({ onAuthSuccess, variant = 'page', message, on
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 placeholder="输入邮箱地址"
-                className="w-full rounded-md border border-paper-border bg-paper-surface px-3 py-2 text-sm text-sumi placeholder-sumi-faint outline-none transition-colors focus:border-vermilion"
+                className="w-full rounded-md border border-border bg-bg-surface px-3 py-2 text-sm text-text-primary placeholder-text-muted outline-none transition-colors focus:border-accent"
               />
             </div>
           )}
 
           <div className="space-y-1.5">
-            <label className="flex items-center gap-1.5 text-xs text-sumi-dim">
+            <label className="flex items-center gap-1.5 text-xs text-text-secondary">
               <KeyRound size={12} />密码
             </label>
             <input
@@ -119,12 +119,12 @@ export default function LoginPage({ onAuthSuccess, variant = 'page', message, on
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               placeholder="输入密码"
-              className="w-full rounded-md border border-paper-border bg-paper-surface px-3 py-2 text-sm text-sumi placeholder-sumi-faint outline-none transition-colors focus:border-vermilion"
+              className="w-full rounded-md border border-border bg-bg-surface px-3 py-2 text-sm text-text-primary placeholder-text-muted outline-none transition-colors focus:border-accent"
             />
           </div>
 
           {error && (
-            <p className="rounded-md border border-vermilion/20 bg-vermilion-light/20 px-3 py-2 text-xs text-vermilion">
+            <p className="rounded-md border border-accent/20 bg-accent-soft px-3 py-2 text-xs text-accent">
               {error}
             </p>
           )}
@@ -132,7 +132,7 @@ export default function LoginPage({ onAuthSuccess, variant = 'page', message, on
           <button
             type="submit"
             disabled={loading}
-            className="flex w-full items-center justify-center gap-2 rounded-md bg-vermilion py-2.5 text-sm font-medium text-white transition-colors hover:bg-vermilion-hover disabled:opacity-50"
+            className="flex w-full items-center justify-center gap-2 rounded-md bg-accent py-2.5 text-sm font-medium text-white transition-colors hover:bg-accent-hover disabled:opacity-50"
           >
             {loading ? (
               <span className="inline-block h-4 w-4 animate-spin rounded-full border-2 border-white/30 border-t-white" />
@@ -148,7 +148,7 @@ export default function LoginPage({ onAuthSuccess, variant = 'page', message, on
             <button
               type="button"
               onClick={onCancel}
-              className="w-full text-center text-xs text-sumi-faint transition-colors hover:text-sumi-dim"
+              className="w-full text-center text-xs text-text-muted transition-colors hover:text-text-secondary"
             >
               稍后再说
             </button>

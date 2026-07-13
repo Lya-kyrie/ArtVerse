@@ -9,10 +9,10 @@ export default defineConfig({
     host: '0.0.0.0',
     proxy: {
       '/api': {
-        target: 'http://127.0.0.1:8080',
+        target: process.env.ARTVERSE_API_TARGET || 'http://127.0.0.1:8080',
         timeout: 0,
       },
-      '/static': 'http://127.0.0.1:8080',
+      '/static': process.env.ARTVERSE_API_TARGET || 'http://127.0.0.1:8080',
     },
   },
 })

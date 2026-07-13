@@ -50,7 +50,7 @@ function detectProvider(modelId: string): ProviderMeta {
       return { label: pattern.label, emoji: pattern.emoji, color: pattern.color };
     }
   }
-  return { label: 'Custom', emoji: 'U', color: 'bg-gray-100 text-gray-700' };
+  return { label: 'Custom', emoji: 'U', color: 'bg-bg-raised text-text-secondary' };
 }
 
 export default function ModelSwitcher({ capability, selectedModel, onSelect, disabled }: ModelSwitcherProps) {
@@ -195,8 +195,8 @@ export default function ModelSwitcher({ capability, selectedModel, onSelect, dis
         className={
           'inline-flex h-7 max-w-[180px] items-center gap-1.5 rounded-lg border px-2 text-sm font-medium transition-all duration-200 sm:max-w-[240px] ' +
           (open
-            ? 'border-vermilion/40 bg-vermilion-light/20 text-vermilion shadow-sm'
-            : 'border-paper-border bg-paper-surface/80 text-sumi-dim hover:border-sumi-faint/40 hover:bg-paper-base hover:text-sumi') +
+            ? 'border-accent/40 bg-accent-soft text-accent shadow-sm'
+            : 'border-border bg-bg-surface/80 text-text-secondary hover:border-accent/30 hover:bg-bg-base hover:text-text-primary') +
           (disabled ? ' cursor-not-allowed opacity-50' : ' cursor-pointer')
         }
         title={selectedModel ? `${selectedOption?.model || selectedModel}\n${providerLabel}` : '选择模型'}
@@ -208,20 +208,20 @@ export default function ModelSwitcher({ capability, selectedModel, onSelect, dis
           </>
         ) : (
           <>
-            <Sparkles size={12} className="text-sumi-faint" />
-            <span className="text-[12px] text-sumi-faint">选择模型</span>
+            <Sparkles size={12} className="text-text-muted" />
+            <span className="text-[12px] text-text-muted">选择模型</span>
           </>
         )}
         <ChevronDown
           size={12}
-          className={`shrink-0 text-sumi-faint transition-transform duration-200 ${open ? 'rotate-180' : ''}`}
+          className={`shrink-0 text-text-muted transition-transform duration-200 ${open ? 'rotate-180' : ''}`}
         />
       </button>
 
       {open && (
-        <div className="absolute right-0 bottom-[calc(100%+6px)] z-30 flex w-[300px] flex-col overflow-hidden rounded-xl border border-paper-border/80 bg-paper-raised shadow-lg animate-fade-in">
-          <div className="flex items-center gap-2 border-b border-paper-border/60 px-3 py-2.5">
-            <Search size={14} className="shrink-0 text-sumi-faint" />
+        <div className="absolute right-0 bottom-[calc(100%+6px)] z-30 flex w-[300px] flex-col overflow-hidden rounded-xl border border-border/80 bg-bg-raised shadow-lg animate-fade-in">
+          <div className="flex items-center gap-2 border-b border-border/60 px-3 py-2.5">
+            <Search size={14} className="shrink-0 text-text-muted" />
             <input
               ref={searchInputRef}
               type="text"
@@ -229,13 +229,13 @@ export default function ModelSwitcher({ capability, selectedModel, onSelect, dis
               onChange={(e) => updateSearch(e.target.value)}
               onKeyDown={handleSearchKeyDown}
               placeholder="搜索模型..."
-              className="min-w-0 flex-1 bg-transparent text-[13px] text-sumi placeholder:text-sumi-faint/60 outline-none"
+              className="min-w-0 flex-1 bg-transparent text-[13px] text-text-primary placeholder:text-text-muted/60 outline-none"
             />
             {search && (
               <button
                 type="button"
                 onClick={() => updateSearch('')}
-                className="rounded p-0.5 text-sumi-faint hover:text-sumi-dim transition-colors"
+                className="rounded p-0.5 text-text-muted hover:text-text-secondary transition-colors"
                 aria-label="清除搜索"
               >
                 <span className="text-[11px]">×</span>
@@ -246,15 +246,15 @@ export default function ModelSwitcher({ capability, selectedModel, onSelect, dis
           <div className="max-h-[280px] overflow-y-auto overscroll-contain p-2">
             {groupedModels.length === 0 ? (
               <div className="flex flex-col items-center gap-2 px-4 py-10 text-center">
-                <Search size={20} className="text-sumi-faint/30" />
-                <p className="text-[13px] text-sumi-faint">
+                <Search size={20} className="text-text-muted/30" />
+                <p className="text-[13px] text-text-muted">
                   {search ? '没有匹配的模型' : '暂无可选模型'}
                 </p>
                 {search && (
                   <button
                     type="button"
                     onClick={() => updateSearch('')}
-                    className="text-[12px] text-vermilion hover:text-vermilion-hover transition-colors"
+                    className="text-[12px] text-accent hover:text-accent-hover transition-colors"
                   >
                     清除搜索
                   </button>
@@ -270,10 +270,10 @@ export default function ModelSwitcher({ capability, selectedModel, onSelect, dis
                     >
                       {group.provider.emoji}
                     </span>
-                    <span className="text-[11px] font-medium uppercase tracking-wider text-sumi-faint/80">
+                    <span className="text-[11px] font-medium uppercase tracking-wider text-text-muted/80">
                       {group.provider.label}
                     </span>
-                    <span className="text-[10px] text-sumi-faint/50">{group.models.length}</span>
+                    <span className="text-[10px] text-text-muted/50">{group.models.length}</span>
                   </div>
                   {group.models.map((option) => {
                     const selected = option.value === selectedModel;
@@ -291,14 +291,14 @@ export default function ModelSwitcher({ capability, selectedModel, onSelect, dis
                         className={
                           'flex w-full items-center gap-2.5 rounded-lg px-3 py-2 text-left transition-colors duration-100 ' +
                           (selected
-                            ? 'bg-vermilion-light/20 text-vermilion'
+                            ? 'bg-accent-soft text-accent'
                             : focused
-                              ? 'bg-paper-surface text-sumi'
-                              : 'text-sumi hover:bg-paper-surface')
+                              ? 'bg-bg-surface text-text-primary'
+                              : 'text-text-primary hover:bg-bg-surface')
                         }
                       >
                         <span className="truncate text-[13px] font-medium">{option.model}</span>
-                        {selected && <Check size={14} className="ml-auto shrink-0 text-vermilion" />}
+                        {selected && <Check size={14} className="ml-auto shrink-0 text-accent" />}
                       </button>
                     );
                   })}

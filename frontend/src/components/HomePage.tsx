@@ -363,9 +363,9 @@ export default function HomePage({ onSelectStory, createStorySignal, onCreateSto
 
   if (loading) {
     return (
-      <div className="h-screen bg-paper-base flex items-center justify-center text-sumi-dim">
+      <div className="h-screen bg-bg-base flex items-center justify-center text-text-secondary">
         <div className="flex flex-col items-center gap-3">
-          <BookOpenText size={40} className="animate-pulse text-vermilion/40" />
+          <BookOpenText size={40} className="animate-pulse text-accent/40" />
           <span className="text-sm">加载中…</span>
         </div>
       </div>
@@ -373,7 +373,7 @@ export default function HomePage({ onSelectStory, createStorySignal, onCreateSto
   }
 
   return (
-    <div className="h-full overflow-y-auto bg-paper-base text-sumi">
+    <div className="h-full overflow-y-auto bg-bg-base text-text-primary">
       <input
         ref={editorFileInputRef}
         type="file"
@@ -397,40 +397,40 @@ export default function HomePage({ onSelectStory, createStorySignal, onCreateSto
         />
       )}
       {importProgress && (
-        <div className="fixed inset-x-0 top-4 z-[70] mx-auto w-[calc(100%-32px)] max-w-md rounded-xl border border-ink-border glass p-4 shadow-2xl backdrop-blur">
-          <div className="mb-2 flex items-center gap-2 text-sm font-medium text-cream">
-            <Loader2 size={16} className="animate-spin text-coral" />
+        <div className="fixed inset-x-0 top-4 z-[70] mx-auto w-[calc(100%-32px)] max-w-md rounded-xl border border-border glass p-4 shadow-2xl backdrop-blur">
+          <div className="mb-2 flex items-center gap-2 text-sm font-medium text-text-primary">
+            <Loader2 size={16} className="animate-spin text-accent" />
             <span>{importProgress.message}</span>
           </div>
-          <div className="h-2 overflow-hidden rounded-full bg-ink-lighter">
+          <div className="h-2 overflow-hidden rounded-full bg-bg-raised">
             <div
-              className="h-full rounded-full bg-vermilion transition-all duration-200"
+              className="h-full rounded-full bg-accent transition-all duration-200"
               style={{ width: `${importProgress.percent ?? 100}%` }}
             />
           </div>
-          <p className="mt-2 text-xs text-cream-dim">
+          <p className="mt-2 text-xs text-text-secondary">
             上传完成后服务器还需要解压图片并写入数据库，大作品会多等一会儿。
           </p>
         </div>
       )}
 
       {/* Header */}
-      <header className="sticky top-0 z-10 border-b border-paper-border bg-paper-raised/95 backdrop-blur-xl">
+      <header className="sticky top-0 z-10 border-b border-border bg-bg-raised/95 backdrop-blur-xl">
         <div className="mx-auto flex max-w-7xl items-center justify-between px-4 py-3 sm:px-6">
           <div className="flex items-center gap-3">
-            <div className="flex h-9 w-9 items-center justify-center rounded-md bg-vermilion">
+            <div className="flex h-9 w-9 items-center justify-center rounded-md bg-accent">
               <Sparkles size={18} className="text-white" />
             </div>
             <div>
-              <h1 className="text-sm font-semibold text-sumi sm:text-base">故事工作区</h1>
-              <p className="text-[11px] text-sumi-faint">管理故事、角色与创作设定</p>
+              <h1 className="text-sm font-semibold text-text-primary sm:text-base">故事工作区</h1>
+              <p className="text-[11px] text-text-muted">管理故事、角色与创作设定</p>
             </div>
           </div>
           <button
             onClick={() => importFileRef.current?.click()}
             disabled={importingStory}
-            className="ml-auto mr-2 flex h-9 items-center gap-2 rounded-md border border-paper-border bg-paper-raised px-3
-                       text-sumi-dim text-xs font-medium transition-colors hover:bg-paper-surface disabled:opacity-40 sm:px-4 sm:text-sm"
+            className="ml-auto mr-2 flex h-9 items-center gap-2 rounded-md border border-border bg-bg-raised px-3
+                       text-text-secondary text-xs font-medium transition-colors hover:bg-bg-surface disabled:opacity-40 sm:px-4 sm:text-sm"
             title="导入整本作品"
           >
             {importingStory ? <Loader2 size={16} className="animate-spin" /> : <Upload size={16} />}
@@ -438,8 +438,8 @@ export default function HomePage({ onSelectStory, createStorySignal, onCreateSto
           </button>
           <button
             onClick={() => setShowNew(true)}
-            className="flex h-9 items-center gap-2 rounded-md bg-vermilion px-3 text-xs font-medium
-                       text-white transition-colors hover:bg-vermilion-hover sm:px-4 sm:text-sm"
+            className="flex h-9 items-center gap-2 rounded-md bg-accent px-3 text-xs font-medium
+                       text-white transition-colors hover:bg-accent-hover sm:px-4 sm:text-sm"
           >
             <Plus size={16} />
             <span className="hidden sm:inline">新建小说</span><span className="sm:hidden">新建</span>
@@ -451,15 +451,15 @@ export default function HomePage({ onSelectStory, createStorySignal, onCreateSto
       <main className="mx-auto max-w-7xl px-4 py-6 sm:px-6 sm:py-8">
         {/* New story modal */}
         {showNew && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center bg-sumi/30 backdrop-blur-sm p-3 sm:p-4" onClick={() => setShowNew(false)}>
-            <div className="bg-ink-light border border-ink-border rounded-xl w-full max-w-md shadow-2xl" onClick={(e) => e.stopPropagation()}>
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-bg-base/30 backdrop-blur-sm p-3 sm:p-4" onClick={() => setShowNew(false)}>
+            <div className="bg-bg-surface border border-border rounded-xl w-full max-w-md shadow-2xl" onClick={(e) => e.stopPropagation()}>
               {/* Header */}
-              <div className="flex items-center justify-between px-5 py-4 border-b border-ink-border">
+              <div className="flex items-center justify-between px-5 py-4 border-b border-border">
                 <h3 className="text-sm font-semibold flex items-center gap-2">
-                  <Plus size={16} className="text-coral" />
+                  <Plus size={16} className="text-accent" />
                   创建新小说
                 </h3>
-                <button onClick={() => setShowNew(false)} className="p-1 text-cream-dim hover:text-cream-dim transition-colors">
+                <button onClick={() => setShowNew(false)} className="p-1 text-text-secondary hover:text-text-secondary transition-colors">
                   <X size={16} />
                 </button>
               </div>
@@ -467,34 +467,34 @@ export default function HomePage({ onSelectStory, createStorySignal, onCreateSto
               {/* Body */}
               <div className="p-5 space-y-4">
                 <div>
-                  <label className="block text-xs text-cream-dim mb-1.5">小说名称</label>
+                  <label className="block text-xs text-text-secondary mb-1.5">小说名称</label>
                   <input
                     autoFocus
                     placeholder="输入小说名称"
                     value={newTitle}
                     onChange={(e) => setNewTitle(e.target.value)}
                     onKeyDown={(e) => e.key === 'Enter' && handleCreate()}
-                    className="w-full px-3 py-2.5 bg-ink-lighter border border-ink-border rounded-lg text-sm placeholder-ink-muted focus:outline-none focus:ring-2 focus:border-coral focus:border-transparent"
+                    className="w-full px-3 py-2.5 bg-bg-raised border border-border rounded-lg text-sm placeholder-text-muted focus:outline-none focus:ring-2 focus:border-accent focus:border-transparent"
                   />
                 </div>
 
                 <div>
-                  <label className="block text-xs text-cream-dim mb-1.5">简短描述（可选）</label>
+                  <label className="block text-xs text-text-secondary mb-1.5">简短描述（可选）</label>
                   <textarea
                     placeholder="描述..."
                     value={newDesc}
                     onChange={(e) => setNewDesc(e.target.value)}
                     rows={2}
-                    className="w-full px-3 py-2.5 bg-ink-lighter border border-ink-border rounded-lg text-sm placeholder-ink-muted focus:outline-none focus:ring-2 focus:border-coral focus:border-transparent resize-none"
+                    className="w-full px-3 py-2.5 bg-bg-raised border border-border rounded-lg text-sm placeholder-text-muted focus:outline-none focus:ring-2 focus:border-accent focus:border-transparent resize-none"
                   />
                 </div>
 
                 {/* Cover upload */}
                 <div>
-                  <label className="block text-xs text-cream-dim mb-1.5">小说封面（可选）</label>
+                  <label className="block text-xs text-text-secondary mb-1.5">小说封面（可选）</label>
                   <div
                     onClick={() => { setEditorMode('new'); editorFileInputRef.current?.click(); }}
-                    className="relative w-full aspect-[3/4] bg-ink-lighter border border-dashed border-ink-muted hover:border-coral rounded-lg cursor-pointer flex flex-col items-center justify-center overflow-hidden transition-colors group"
+                    className="relative w-full aspect-[3/4] bg-bg-raised border border-dashed border-border hover:border-accent rounded-lg cursor-pointer flex flex-col items-center justify-center overflow-hidden transition-colors group"
                   >
                     {newCoverPreview ? (
                       <img
@@ -503,21 +503,21 @@ export default function HomePage({ onSelectStory, createStorySignal, onCreateSto
                         className="w-full h-full object-cover group-hover:opacity-80 transition-opacity"
                       />
                     ) : (
-                      <div className="flex flex-col items-center gap-1.5 text-cream-dim group-hover:text-cream-dim transition-colors">
+                      <div className="flex flex-col items-center gap-1.5 text-text-secondary group-hover:text-text-secondary transition-colors">
                         <ImagePlus size={28} />
                         <span className="text-xs">点击上传封面</span>
                       </div>
                     )}
                     {newCoverPreview && (
-                      <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity bg-sumi/20">
-                        <span className="text-xs text-cream font-medium">点击更换封面</span>
+                      <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity bg-bg-base/20">
+                        <span className="text-xs text-text-primary font-medium">点击更换封面</span>
                       </div>
                     )}
                   </div>
                   {newCoverPreview && (
                     <button
                       onClick={(e) => { e.stopPropagation(); setNewCoverPreview(null); setNewCoverBase64(null); }}
-                      className="mt-1.5 text-xs text-vermilion hover:text-vermilion-hover transition-colors"
+                      className="mt-1.5 text-xs text-accent hover:text-accent-hover transition-colors"
                     >
                       移除封面
                     </button>
@@ -526,16 +526,16 @@ export default function HomePage({ onSelectStory, createStorySignal, onCreateSto
               </div>
 
               {/* Footer */}
-              <div className="px-5 py-3 border-t border-ink-border flex justify-end gap-2">
+              <div className="px-5 py-3 border-t border-border flex justify-end gap-2">
                 <button
                   onClick={() => setShowNew(false)}
-                  className="px-4 py-2 text-sm text-cream-dim hover:text-cream transition-colors"
+                  className="px-4 py-2 text-sm text-text-secondary hover:text-text-primary transition-colors"
                 >
                   取消
                 </button>
                 <button
                   onClick={handleCreate}
-                  className="px-5 py-2 bg-coral hover:bg-coral-light text-cream text-sm font-medium rounded-lg transition-colors"
+                  className="px-5 py-2 bg-accent hover:bg-accent-soft text-text-primary text-sm font-medium rounded-lg transition-colors"
                 >
                   创建
                 </button>
@@ -546,15 +546,15 @@ export default function HomePage({ onSelectStory, createStorySignal, onCreateSto
 
         {/* Empty state */}
         {stories.length === 0 && !showNew && (
-          <div className="mx-auto flex max-w-2xl flex-col items-center justify-center py-20 text-center text-sumi-dim sm:py-28">
-            <div className="mb-5 flex h-14 w-14 items-center justify-center rounded-md border border-paper-border bg-paper-raised shadow-sm">
-              <BookOpenText size={24} className="text-vermilion" />
+          <div className="mx-auto flex max-w-2xl flex-col items-center justify-center py-20 text-center text-text-secondary sm:py-28">
+            <div className="mb-5 flex h-14 w-14 items-center justify-center rounded-md border border-border bg-bg-raised shadow-sm">
+              <BookOpenText size={24} className="text-accent" />
             </div>
-            <p className="mb-2 font-display text-2xl font-semibold text-sumi">创建你的第一部故事</p>
+            <p className="mb-2 font-display text-2xl font-semibold text-text-primary">创建你的第一部故事</p>
             <p className="mb-7 max-w-md text-sm leading-6">从故事名称开始，随后完善人物、章节和视觉设定。</p>
             <button
               onClick={() => setShowNew(true)}
-              className="flex items-center gap-2 rounded-md bg-vermilion px-5 py-2.5 text-sm font-medium text-white transition-colors hover:bg-vermilion-hover"
+              className="flex items-center gap-2 rounded-md bg-accent px-5 py-2.5 text-sm font-medium text-white transition-colors hover:bg-accent-hover"
             >
               <Plus size={16} /> 新建故事
             </button>
@@ -566,8 +566,8 @@ export default function HomePage({ onSelectStory, createStorySignal, onCreateSto
           <>
             <div className="mb-5 flex items-end justify-between">
               <div>
-                <h2 className="font-display text-2xl font-semibold text-sumi">你的故事</h2>
-                <p className="mt-1 text-xs text-sumi-faint">共 {stories.length} 部作品</p>
+                <h2 className="font-display text-2xl font-semibold text-text-primary">你的故事</h2>
+                <p className="mt-1 text-xs text-text-muted">共 {stories.length} 部作品</p>
               </div>
             </div>
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-4">
@@ -578,7 +578,7 @@ export default function HomePage({ onSelectStory, createStorySignal, onCreateSto
               >
                 {/* Cover */}
                 <div
-                  className="relative aspect-[3/4] w-[120px] shrink-0 cursor-pointer overflow-hidden bg-paper-surface sm:w-auto"
+                  className="relative aspect-[3/4] w-[120px] shrink-0 cursor-pointer overflow-hidden bg-bg-surface sm:w-auto"
                   onClick={() => handleCoverClick(s.id)}
                 >
                   {s.cover_image ? (
@@ -590,12 +590,12 @@ export default function HomePage({ onSelectStory, createStorySignal, onCreateSto
                       decoding="async"
                     />
                   ) : (
-                    <div className="flex flex-col items-center justify-center h-full text-sumi-faint group-hover:text-sumi-dim transition-colors">
+                    <div className="flex flex-col items-center justify-center h-full text-text-muted group-hover:text-text-secondary transition-colors">
                       <ImagePlus size={32} className="mb-2" />
                       <span className="text-xs">点击上传封面</span>
                     </div>
                   )}
-                  <div className="absolute inset-0 bg-transparent group-hover:bg-sumi/20 transition-colors" />
+                  <div className="absolute inset-0 bg-transparent group-hover:bg-bg-base/20 transition-colors" />
                 </div>
 
                 {/* Info */}
@@ -607,27 +607,27 @@ export default function HomePage({ onSelectStory, createStorySignal, onCreateSto
                         value={editTitle}
                         onChange={(e) => setEditTitle(e.target.value)}
                         onKeyDown={(e) => e.key === 'Enter' && saveEdit()}
-                        className="w-full px-3 py-1.5 bg-paper-surface border border-paper-border rounded text-sm text-sumi
-                                   focus:outline-none focus:border-vermilion"
+                        className="w-full px-3 py-1.5 bg-bg-surface border border-border rounded text-sm text-text-primary
+                                   focus:outline-none focus:border-accent"
                       />
                       <textarea
                         value={editDesc}
                         onChange={(e) => setEditDesc(e.target.value)}
                         rows={2}
-                        className="w-full px-3 py-1.5 bg-paper-surface border border-paper-border rounded text-sm text-sumi
-                                   focus:outline-none focus:border-vermilion resize-none"
+                        className="w-full px-3 py-1.5 bg-bg-surface border border-border rounded text-sm text-text-primary
+                                   focus:outline-none focus:border-accent resize-none"
                         placeholder="简短描述（可选）"
                       />
                       <div className="flex gap-1 justify-end">
                         <button
                           onClick={() => setEditingId(null)}
-                          className="p-1.5 text-cream-dim hover:text-cream-dim"
+                          className="p-1.5 text-text-secondary hover:text-text-secondary"
                         >
                           <X size={14} />
                         </button>
                         <button
                           onClick={saveEdit}
-                          className="p-1.5 text-coral hover:text-coral-light"
+                          className="p-1.5 text-accent hover:text-accent-hover"
                         >
                           <Check size={14} />
                         </button>
@@ -635,13 +635,13 @@ export default function HomePage({ onSelectStory, createStorySignal, onCreateSto
                     </div>
                   ) : (
                     <>
-                      <h3 className="font-semibold text-sm mb-1 line-clamp-1 text-sumi">{s.title}</h3>
+                      <h3 className="font-semibold text-sm mb-1 line-clamp-1 text-text-primary">{s.title}</h3>
                       {s.description && (
-                        <p className="text-xs text-sumi-dim mb-3 line-clamp-2">{s.description}</p>
+                        <p className="text-xs text-text-secondary mb-3 line-clamp-2">{s.description}</p>
                       )}
                       {!s.description && <div className="mb-3" />}
                       <div className="flex flex-wrap items-end justify-between gap-2">
-                        <span className="text-xs text-sumi-faint">
+                        <span className="text-xs text-text-muted">
                           {new Date(s.created_at).toLocaleDateString('zh-CN')}
                         </span>
                         <div className="flex flex-wrap items-center justify-end gap-0.5">
@@ -653,7 +653,7 @@ export default function HomePage({ onSelectStory, createStorySignal, onCreateSto
                             className={`p-1.5 transition-colors rounded ${
                               storyCharFlags[s.id]
                                 ? 'text-success hover:text-success/80'
-                                : 'text-sumi-faint hover:text-sumi-dim'
+                                : 'text-text-muted hover:text-text-secondary'
                             }`}
                             title={storyCharFlags[s.id] ? '角色卡（已设定）' : '设置角色卡'}
                           >
@@ -666,8 +666,8 @@ export default function HomePage({ onSelectStory, createStorySignal, onCreateSto
                             }}
                             className={`p-1.5 transition-colors rounded ${
                               storyRefFlags[s.id]
-                                ? 'text-kinpaku hover:text-kinpaku/80'
-                                : 'text-sumi-faint hover:text-sumi-dim'
+                                ? 'text-accent-secondary hover:text-accent-secondary/80'
+                                : 'text-text-muted hover:text-text-secondary'
                             }`}
                             title={storyRefFlags[s.id] ? '设定组（已设定）' : '设置设定组'}
                           >
@@ -679,7 +679,7 @@ export default function HomePage({ onSelectStory, createStorySignal, onCreateSto
                               handleExport(s);
                             }}
                             disabled={exportingStoryId === s.id}
-                            className="p-1.5 text-sumi-faint hover:text-aizuri transition-colors rounded disabled:opacity-40"
+                            className="p-1.5 text-text-muted hover:text-accent-tertiary transition-colors rounded disabled:opacity-40"
                             title="导出整本作品"
                           >
                             {exportingStoryId === s.id ? <Loader2 size={13} className="animate-spin" /> : <Download size={13} />}
@@ -689,7 +689,7 @@ export default function HomePage({ onSelectStory, createStorySignal, onCreateSto
                               e.stopPropagation();
                               startEdit(s);
                             }}
-                            className="p-1.5 text-sumi-faint hover:text-sumi-dim transition-colors rounded"
+                            className="p-1.5 text-text-muted hover:text-text-secondary transition-colors rounded"
                             title="编辑"
                           >
                             <Pencil size={13} />
@@ -699,15 +699,15 @@ export default function HomePage({ onSelectStory, createStorySignal, onCreateSto
                               e.stopPropagation();
                               handleDelete(s.id);
                             }}
-                            className="p-1.5 text-sumi-faint hover:text-vermilion transition-colors rounded"
+                            className="p-1.5 text-text-muted hover:text-accent transition-colors rounded"
                             title="删除"
                           >
                             <Trash2 size={13} />
                           </button>
                           <button
                             onClick={() => onSelectStory(s)}
-                            className="flex items-center gap-1 px-3 py-1.5 bg-vermilion-light/30 hover:bg-vermilion
-                                       text-vermilion hover:text-white text-xs font-medium rounded-md transition-colors"
+                            className="flex items-center gap-1 px-3 py-1.5 bg-accent-muted/30 hover:bg-accent
+                                       text-accent hover:text-white text-xs font-medium rounded-md transition-colors"
                           >
                             进入
                             <ChevronRight size={13} />
@@ -738,24 +738,24 @@ export default function HomePage({ onSelectStory, createStorySignal, onCreateSto
 
       {/* Character card modal (profile-based) */}
       {charModalStoryId !== null && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-sumi/30 backdrop-blur-sm p-3 sm:p-4" onClick={() => setCharModalStoryId(null)}>
-          <div className="bg-ink-light border border-ink-border rounded-xl w-full max-w-6xl h-[640px] max-h-[88vh] shadow-2xl flex flex-col" onClick={(e) => e.stopPropagation()}>
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-bg-base/30 backdrop-blur-sm p-3 sm:p-4" onClick={() => setCharModalStoryId(null)}>
+          <div className="bg-bg-surface border border-border rounded-xl w-full max-w-6xl h-[640px] max-h-[88vh] shadow-2xl flex flex-col" onClick={(e) => e.stopPropagation()}>
             {/* Header */}
-            <div className="flex items-center justify-between px-5 py-4 border-b border-ink-border flex-shrink-0">
+            <div className="flex items-center justify-between px-5 py-4 border-b border-border flex-shrink-0">
               <h3 className="text-sm font-semibold flex items-center gap-2">
-                <Users size={16} className="text-coral" />
+                <Users size={16} className="text-accent" />
         角色卡管理
               </h3>
-              <button onClick={() => setCharModalStoryId(null)} className="p-1 text-cream-dim hover:text-cream-dim transition-colors">
+              <button onClick={() => setCharModalStoryId(null)} className="p-1 text-text-secondary hover:text-text-secondary transition-colors">
                 <X size={16} />
               </button>
             </div>
             <div className="flex flex-1 min-h-0">
-              <div className="w-[250px] flex-shrink-0 border-r border-ink-border flex flex-col">
-                <div className="p-3 border-b border-ink-border">
+              <div className="w-[250px] flex-shrink-0 border-r border-border flex flex-col">
+                <div className="p-3 border-b border-border">
                   <button
                     onClick={addCharacter}
-                    className="w-full flex items-center justify-center gap-1.5 px-3 py-2 text-xs font-medium rounded-lg bg-coral hover:bg-coral-light text-cream transition-colors"
+                    className="w-full flex items-center justify-center gap-1.5 px-3 py-2 text-xs font-medium rounded-lg bg-accent hover:bg-accent-soft text-text-primary transition-colors"
                   >
                     <Plus size={14} />
         添加角色卡
@@ -766,8 +766,8 @@ export default function HomePage({ onSelectStory, createStorySignal, onCreateSto
                     <button
                       key={ch.id}
                       onClick={() => selectCharForEdit(ch)}
-                      className={`w-full text-left px-4 py-3 text-sm transition-colors border-b border-ink-border/50 ${
-                        editingCharId === ch.id ? 'bg-coral/15 text-coral-light border-l-2 border-l-violet-500' : 'text-cream-dim hover:bg-ink-lighter/50'
+                      className={`w-full text-left px-4 py-3 text-sm transition-colors border-b border-border/50 ${
+                        editingCharId === ch.id ? 'bg-accent/15 text-accent-hover border-l-2 border-l-violet-500' : 'text-text-secondary hover:bg-bg-raised/50'
                       }`}
                     >
                       <div className="truncate font-medium">{ch.name}</div>
@@ -778,7 +778,7 @@ export default function HomePage({ onSelectStory, createStorySignal, onCreateSto
               <div className="flex flex-col flex-1 min-h-0">
                 <div className="flex-1 overflow-y-auto px-5 pt-5 [&::-webkit-scrollbar]:hidden" style={{ scrollbarWidth: "none" }}>
                   {editingCharId === null ? (
-                    <div className="flex flex-col items-center justify-center h-full text-warm-gray">
+                    <div className="flex flex-col items-center justify-center h-full text-text-muted">
                       <Users size={40} className="mb-3 opacity-30" />
                       <p className="text-sm">选择一个角色卡或点击添加</p>
                     </div>
@@ -786,31 +786,31 @@ export default function HomePage({ onSelectStory, createStorySignal, onCreateSto
                     <>
                       <div className="space-y-5">
                         <div>
-                          <label className="block text-xs font-medium text-cream-dim mb-1.5">角色名称</label>
+                          <label className="block text-xs font-medium text-text-secondary mb-1.5">角色名称</label>
                           <input
                             value={charFormName}
                             onChange={e => setCharFormName(e.target.value)}
-                            className="w-full bg-ink-lighter text-sm text-cream rounded-lg px-3 py-2 outline-none border border-ink-border focus:border-coral"
+                            className="w-full bg-bg-raised text-sm text-text-primary rounded-lg px-3 py-2 outline-none border border-border focus:border-accent"
                             placeholder="角色名称"
                           />
                         </div>
                         <div>
-                          <label className="block text-xs font-medium text-cream-dim mb-1.5">角色描述</label>
+                          <label className="block text-xs font-medium text-text-secondary mb-1.5">角色描述</label>
                           <textarea
                             value={charFormDesc}
                             onChange={e => setCharFormDesc(e.target.value)}
-                            className="w-full bg-ink-lighter text-sm text-cream rounded-lg p-3 resize-none outline-none border border-ink-border focus:border-coral leading-relaxed"
+                            className="w-full bg-bg-raised text-sm text-text-primary rounded-lg p-3 resize-none outline-none border border-border focus:border-accent leading-relaxed"
                             rows={5}
                             placeholder="描述角色的性格、外貌、背景等..."
                           />
                         </div>
                         <div>
                           <div className="flex items-center justify-between mb-2">
-                            <label className="text-xs font-medium text-cream-dim">人物参考图</label>
+                            <label className="text-xs font-medium text-text-secondary">人物参考图</label>
                             <button
                               onClick={() => charFileRef.current?.click()}
                               disabled={charRefUploading || charRefImages.length >= 5}
-                              className="flex items-center gap-1 px-2.5 py-1.5 text-xs rounded-lg bg-coral hover:bg-coral-light text-cream disabled:opacity-40 transition-colors"
+                              className="flex items-center gap-1 px-2.5 py-1.5 text-xs rounded-lg bg-accent hover:bg-accent-soft text-text-primary disabled:opacity-40 transition-colors"
                             >
                               {charRefUploading ? <Loader2 size={12} className="animate-spin" /> : <ImagePlus size={12} />}
                               上传图片
@@ -838,14 +838,14 @@ export default function HomePage({ onSelectStory, createStorySignal, onCreateSto
                             }}
                           />
                           {charRefImages.length === 0 ? (
-                            <div className="w-full flex flex-col items-center justify-center aspect-[5/1] border-2 border-dashed border-ink-border rounded-lg text-warm-gray text-xs">
+                            <div className="w-full flex flex-col items-center justify-center aspect-[5/1] border-2 border-dashed border-border rounded-lg text-text-muted text-xs">
                               <ImagePlus size={20} className="mb-1 opacity-40" />
                               暂无参考图，点击上方按钮上传（最多5张）
                             </div>
                           ) : (
                             <div className="grid grid-cols-5 gap-2">
                               {charRefImages.map(img => (
-                                <div key={img.filename} className="relative group aspect-square rounded-lg overflow-hidden border border-ink-border bg-ink">
+                                <div key={img.filename} className="relative group aspect-square rounded-lg overflow-hidden border border-border bg-bg-base">
                                   <img
                                     src={refImageUrl(img.object_key)}
                                     alt={img.filename}
@@ -858,7 +858,7 @@ export default function HomePage({ onSelectStory, createStorySignal, onCreateSto
                                         .then(() => setCharRefImages(prev => prev.filter(x => x.filename !== img.filename)))
                                         .catch(err => alert('删除失败: ' + err.message));
                                     }}
-                                    className="absolute top-1 right-1 p-1 rounded-md bg-vermilion hover:bg-vermilion-hover text-white shadow-lg transition-colors"
+                                    className="absolute top-1 right-1 p-1 rounded-md bg-accent hover:bg-accent-hover text-white shadow-lg transition-colors"
                                   title="删除"
                                   >
                                     <Trash2 size={10} />
@@ -869,7 +869,7 @@ export default function HomePage({ onSelectStory, createStorySignal, onCreateSto
                           )}
                         </div>
                       </div>
-                      <div className="flex-shrink-0 px-5 py-3 border-t border-ink-border mt-auto">
+                      <div className="flex-shrink-0 px-5 py-3 border-t border-border mt-auto">
                         <div className="flex justify-end gap-2">
                           <button
                             onClick={async () => {
@@ -884,7 +884,7 @@ export default function HomePage({ onSelectStory, createStorySignal, onCreateSto
                                 alert('删除失败: ' + err.message);
                               }
                             }}
-                            className="flex items-center gap-1 px-3 py-1.5 text-xs font-medium rounded-lg bg-vermilion-light/30 border border-vermilion/20 text-vermilion hover:bg-vermilion hover:text-white transition-colors"
+                            className="flex items-center gap-1 px-3 py-1.5 text-xs font-medium rounded-lg bg-accent-muted/30 border border-accent/20 text-accent hover:bg-accent hover:text-white transition-colors"
                           >
                             <Trash2 size={12} />
                             删除此角色
@@ -903,7 +903,7 @@ export default function HomePage({ onSelectStory, createStorySignal, onCreateSto
                               }
                             }}
                             disabled={charFormSaving}
-                            className="px-5 py-2 bg-coral hover:bg-coral-light text-cream text-sm font-medium rounded-lg transition-colors disabled:opacity-40"
+                            className="px-5 py-2 bg-accent hover:bg-accent-soft text-text-primary text-sm font-medium rounded-lg transition-colors disabled:opacity-40"
                           >
                             {charFormSaving ? '保存中…' : '保存'}
                           </button>
@@ -922,38 +922,38 @@ export default function HomePage({ onSelectStory, createStorySignal, onCreateSto
       {/* Ref images modal (multi) */}
       {refModalStoryId !== null && (
         <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-sumi/30 backdrop-blur-sm p-3 sm:p-4"
+          className="fixed inset-0 z-50 flex items-center justify-center bg-bg-base/30 backdrop-blur-sm p-3 sm:p-4"
           onClick={() => setRefModalStoryId(null)}
         >
           <div
-            className="bg-ink-light border border-ink-border rounded-xl w-full max-w-2xl shadow-2xl flex flex-col max-h-[85vh]"
+            className="bg-bg-surface border border-border rounded-xl w-full max-w-2xl shadow-2xl flex flex-col max-h-[85vh]"
             onClick={(e) => e.stopPropagation()}
           >
-            <div className="flex items-center justify-between px-5 py-4 border-b border-ink-border">
+            <div className="flex items-center justify-between px-5 py-4 border-b border-border">
               <h3 className="text-sm font-semibold flex items-center gap-2">
-                <ImagePlus size={16} className="text-amber-accent" />
+                <ImagePlus size={16} className="text-accent-secondary" />
                 全局默认垫图
-                <span className="text-xs font-normal text-cream-dim">
+                <span className="text-xs font-normal text-text-secondary">
                   {refModalImages.length}/{refModalMax} 张
                 </span>
               </h3>
               <button
                 onClick={() => setRefModalStoryId(null)}
-                className="p-1 text-cream-dim hover:text-cream-dim transition-colors"
+                className="p-1 text-text-secondary hover:text-text-secondary transition-colors"
               >
                 <X size={16} />
               </button>
             </div>
             <div className="flex-1 overflow-y-auto px-5 py-4">
-              <p className="text-xs text-cream-dim mb-4 leading-relaxed">
+              <p className="text-xs text-text-secondary mb-4 leading-relaxed">
                 上传默认垫图（最多 {refModalMax} 张），所有章节默认继承，用作人物外貌和画面参考。章节内也可单独覆盖。
               </p>
               {refModalImages.length === 0 ? (
                 <button
                   onClick={() => refModalFileRef.current?.click()}
                   disabled={refModalUploading}
-                  className="w-full flex flex-col items-center justify-center py-12 border-2 border-dashed border-ink-border
-                             hover:border-amber-accent/40 rounded-lg text-cream-dim hover:text-cream-dim transition-colors
+                  className="w-full flex flex-col items-center justify-center py-12 border-2 border-dashed border-border
+                             hover:border-amber-accent/40 rounded-lg text-text-secondary hover:text-text-secondary transition-colors
                              disabled:opacity-40 cursor-pointer"
                 >
                   {refModalUploading ? (
@@ -968,7 +968,7 @@ export default function HomePage({ onSelectStory, createStorySignal, onCreateSto
                   {refModalImages.map((img) => (
                     <div
                       key={img.filename}
-                      className="relative group aspect-square rounded-lg overflow-hidden border border-ink-border bg-ink"
+                      className="relative group aspect-square rounded-lg overflow-hidden border border-border bg-bg-base"
                     >
                       <img
                         src={refImageUrl(img.image_path)}
@@ -977,14 +977,14 @@ export default function HomePage({ onSelectStory, createStorySignal, onCreateSto
                         loading="lazy"
                         decoding="async"
                       />
-                      <div className="absolute inset-0 bg-transparent group-hover:bg-sumi/20 transition-colors flex items-end p-2 pointer-events-none">
-                        <span className="text-[10px] text-white bg-sumi/60 px-1.5 py-0.5 rounded">
+                      <div className="absolute inset-0 bg-transparent group-hover:bg-bg-base/20 transition-colors flex items-end p-2 pointer-events-none">
+                        <span className="text-[10px] text-white bg-bg-base/60 px-1.5 py-0.5 rounded">
                           {img.size_kb} KB
                         </span>
                       </div>
                       <button
                         onClick={() => handleRefDelete(img.filename)}
-                        className="absolute top-1.5 right-1.5 p-1 rounded-md bg-vermilion hover:bg-vermilion-hover text-white shadow-lg transition-colors"
+                        className="absolute top-1.5 right-1.5 p-1 rounded-md bg-accent hover:bg-accent-hover text-white shadow-lg transition-colors"
                         title="删除"
                       >
                         <Trash2 size={12} />
@@ -1005,12 +1005,12 @@ export default function HomePage({ onSelectStory, createStorySignal, onCreateSto
                 }}
               />
             </div>
-            <div className="flex justify-between items-center px-5 py-3 border-t border-ink-border">
+            <div className="flex justify-between items-center px-5 py-3 border-t border-border">
               <button
                 onClick={() => refModalFileRef.current?.click()}
                 disabled={refModalUploading || refModalImages.length >= refModalMax}
                 className="flex items-center gap-1.5 px-4 py-2 text-xs font-medium rounded-lg
-                           bg-coral hover:bg-coral-light text-cream
+                           bg-accent hover:bg-accent-soft text-text-primary
                            disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
                 title={refModalImages.length >= refModalMax ? `已达上限 ${refModalMax} 张` : '上传一张垫图'}
               >
@@ -1019,7 +1019,7 @@ export default function HomePage({ onSelectStory, createStorySignal, onCreateSto
               </button>
               <button
                 onClick={() => setRefModalStoryId(null)}
-                className="px-4 py-2 text-sm text-cream-dim hover:text-cream transition-colors"
+                className="px-4 py-2 text-sm text-text-secondary hover:text-text-primary transition-colors"
               >
                 关闭
               </button>

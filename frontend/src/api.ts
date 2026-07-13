@@ -1701,10 +1701,10 @@ export function mangaImageUrl(imagePath: string, cacheBust?: number): string {
 }
 
 // ---- Publish ----
-export async function publishStory(storyId: number, isPublished: boolean, chapterIds?: number[]): Promise<Story> {
+export async function publishStory(storyId: number, format: 'novel' | 'manga', isPublished: boolean, chapterIds?: number[]): Promise<Story> {
   const res = await authFetch(BASE+'/api/stories/'+storyId+'/publish', {
     method: 'PUT', headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ is_published: isPublished, chapter_ids: chapterIds }),
+    body: JSON.stringify({ format, is_published: isPublished, chapter_ids: chapterIds }),
   });
   if (!res.ok) throw new Error(parseApiError(await res.text()));
   return res.json();
@@ -1737,8 +1737,33 @@ export async function getSquareStoryDetail(id: number): Promise<SquareStoryDetai
 }
 
 // ---- My Works ----
-export interface MyWorkChapter { id: number; chapter_number: number; is_published: boolean; display_order: number; display_title: string; status: string; }
-export interface MyWork { id: number; title: string; description: string; cover_image: string; is_published: boolean; published_at: string | null; created_at: string | null; chapters: MyWorkChapter[]; }
+export interface MyWorkChapter {
+  id: number;
+  chapter_number: number;
+  is_published: boolean;
+  manga_is_published: boolean;
+  novel_is_published: boolean;
+  has_novel_content: boolean;
+  novel_char_count: number;
+  manga_image_count: number;
+  display_order: number;
+  display_title: string;
+  status: string;
+}
+export interface MyWork {
+  id: number;
+  title: string;
+  description: string;
+  cover_image: string;
+  is_published: boolean;
+  manga_is_published: boolean;
+  novel_is_published: boolean;
+  published_at: string | null;
+  manga_published_at: string | null;
+  novel_published_at: string | null;
+  created_at: string | null;
+  chapters: MyWorkChapter[];
+}
 
 export async function listMyWorks(): Promise<MyWork[]> {
   const res = await authFetch(BASE+'/api/works');

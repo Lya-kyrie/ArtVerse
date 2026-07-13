@@ -15,22 +15,22 @@ import { useMemo } from 'react';
 class TailwindRenderer extends Renderer {
   heading({ tokens, depth }: { tokens: any[]; depth: number }): string {
     const text = this.parser.parseInline(tokens);
-    if (depth === 2) return `<h2 class="text-lg font-semibold text-sumi mt-6 mb-3 pb-2 border-b border-paper-border">${text}</h2>`;
-    if (depth === 3) return `<h3 class="text-base font-semibold text-sumi mt-5 mb-2">${text}</h3>`;
-    if (depth === 4) return `<h4 class="text-sm font-semibold text-sumi-dim mt-4 mb-1">${text}</h4>`;
-    return `<h${depth} class="text-sm font-semibold text-sumi my-2">${text}</h${depth}>`;
+    if (depth === 2) return `<h2 class="text-lg font-semibold text-text-primary mt-6 mb-3 pb-2 border-b border-border">${text}</h2>`;
+    if (depth === 3) return `<h3 class="text-base font-semibold text-text-primary mt-5 mb-2">${text}</h3>`;
+    if (depth === 4) return `<h4 class="text-sm font-semibold text-text-secondary mt-4 mb-1">${text}</h4>`;
+    return `<h${depth} class="text-sm font-semibold text-text-primary my-2">${text}</h${depth}>`;
   }
 
   paragraph({ tokens }: { tokens: any[] }): string {
     const text = this.parser.parseInline(tokens);
-    return `<p class="text-sm text-sumi leading-relaxed my-2">${text}</p>`;
+    return `<p class="text-sm text-text-primary leading-relaxed my-2">${text}</p>`;
   }
 
   list({ items, ordered, start }: { items: any[]; ordered: boolean; start: number | '' }): string {
     const tag = ordered ? 'ol' : 'ul';
     const cls = ordered
-      ? 'list-decimal pl-5 space-y-1 my-3 text-sm text-sumi leading-relaxed'
-      : 'list-disc pl-5 space-y-1 my-3 text-sm text-sumi leading-relaxed';
+      ? 'list-decimal pl-5 space-y-1 my-3 text-sm text-text-primary leading-relaxed'
+      : 'list-disc pl-5 space-y-1 my-3 text-sm text-text-primary leading-relaxed';
     const startAttr = ordered && start && start !== 1 ? ` start="${start}"` : '';
     let body = '';
     for (const item of items) {
@@ -51,28 +51,28 @@ class TailwindRenderer extends Renderer {
   }
 
   hr(): string {
-    return '<hr class="border-paper-border my-6" />';
+    return '<hr class="border-border my-6" />';
   }
 
   blockquote({ tokens }: { tokens: any[] }): string {
     const content = this.parser.parseInline(tokens);
-    return `<blockquote class="border-l-4 border-kinpaku/40 bg-kinpaku-light/20 px-4 py-2 my-3 rounded-r-lg text-sm text-sumi-dim italic">${content}</blockquote>`;
+    return `<blockquote class="border-l-4 border-accent-secondary/40 bg-accent-secondary/5 px-4 py-2 my-3 rounded-r-lg text-sm text-text-secondary italic">${content}</blockquote>`;
   }
 
   codespan({ text }: { text: string }): string {
-    return `<code class="rounded bg-paper-surface px-1.5 py-0.5 text-xs text-vermilion font-mono">${text}</code>`;
+    return `<code class="rounded bg-bg-surface px-1.5 py-0.5 text-xs text-accent font-mono">${text}</code>`;
   }
 
   code({ text }: { text: string }): string {
     const escaped = text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-    return `<pre class="block bg-paper-surface rounded-lg p-4 overflow-x-auto my-3 border border-paper-border"><code class="text-xs font-mono text-sumi leading-relaxed">${escaped}</code></pre>`;
+    return `<pre class="block bg-bg-surface rounded-lg p-4 overflow-x-auto my-3 border border-border"><code class="text-xs font-mono text-text-primary leading-relaxed">${escaped}</code></pre>`;
   }
 
   link({ href, title, tokens }: { href: string; title?: string | null; tokens: any[] }): string {
     const text = this.parser.parseInline(tokens);
     const safeHref = href ?? '';
     const titleAttr = title ? ` title="${title}"` : '';
-    return `<a href="${safeHref}"${titleAttr} class="text-aizuri underline hover:brightness-110 transition-colors" target="_blank" rel="noopener noreferrer">${text}</a>`;
+    return `<a href="${safeHref}"${titleAttr} class="text-accent-tertiary underline hover:brightness-110 transition-colors" target="_blank" rel="noopener noreferrer">${text}</a>`;
   }
 
   image({ href, title, text }: { href: string; title?: string | null; text: string }): string {
@@ -83,7 +83,7 @@ class TailwindRenderer extends Renderer {
 
   strong({ tokens }: { tokens: any[] }): string {
     const text = this.parser.parseInline(tokens);
-    return `<strong class="font-semibold text-sumi">${text}</strong>`;
+    return `<strong class="font-semibold text-text-primary">${text}</strong>`;
   }
 
   em({ tokens }: { tokens: any[] }): string {
@@ -93,7 +93,7 @@ class TailwindRenderer extends Renderer {
 
   del({ tokens }: { tokens: any[] }): string {
     const text = this.parser.parseInline(tokens);
-    return `<del class="line-through text-sumi-dim">${text}</del>`;
+    return `<del class="line-through text-text-secondary">${text}</del>`;
   }
 
   // Table — we override this to add wrapper div and header/body styling.
@@ -118,7 +118,7 @@ class TailwindRenderer extends Renderer {
       bodyHtml += `<tr>${rowHtml}</tr>`;
     }
 
-    return `<div class="overflow-x-auto rounded-lg border border-paper-border my-4"><table class="w-full border-collapse"><thead class="bg-sumi text-white">${headHtml}</thead><tbody>${bodyHtml}</tbody></table></div>`;
+    return `<div class="overflow-x-auto rounded-lg border border-border my-4"><table class="w-full border-collapse"><thead class="bg-bg-base text-white">${headHtml}</thead><tbody>${bodyHtml}</tbody></table></div>`;
   }
 
   tablecell({ tokens, header: isHeader, align }: { tokens: any[]; header: boolean; align: 'center' | 'left' | 'right' | null }): string {
@@ -127,7 +127,7 @@ class TailwindRenderer extends Renderer {
     if (isHeader) {
       return `<th class="px-4 py-2 text-xs font-medium uppercase tracking-wider${alignCls}">${content}</th>`;
     }
-    return `<td class="px-4 py-2 text-sm border-t border-paper-border${alignCls}">${content}</td>`;
+    return `<td class="px-4 py-2 text-sm border-t border-border${alignCls}">${content}</td>`;
   }
 }
 

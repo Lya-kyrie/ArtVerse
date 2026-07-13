@@ -190,10 +190,10 @@ export default function ChatPanel({ chapter, onMessageSent, onChapterRefresh, on
   };
 
   return (
-    <div className="flex flex-col h-full bg-paper-base">
+    <div className="flex flex-col h-full bg-bg-base">
       {/* Header with mode tabs */}
-      <div className="px-4 py-2.5 border-b border-paper-border flex items-center justify-between gap-3">
-        <h2 className="text-sm font-semibold text-sumi-dim tracking-wide shrink-0">
+      <div className="px-4 py-2.5 border-b border-border flex items-center justify-between gap-3">
+        <h2 className="text-sm font-semibold text-text-secondary tracking-wide shrink-0">
           第 {chapter?.chapter_number ?? '–'} 话
         </h2>
         <div className="flex items-center gap-0.5">
@@ -202,8 +202,8 @@ export default function ChatPanel({ chapter, onMessageSent, onChapterRefresh, on
             disabled={streaming || isImportLocked}
             className={`px-3 py-1.5 text-xs font-medium transition-colors relative ${
               mode === 'chat'
-                ? 'text-vermilion after:absolute after:bottom-0 after:left-2 after:right-2 after:h-0.5 after:rounded-full after:bg-vermilion'
-                : 'text-sumi-dim hover:text-sumi disabled:opacity-30 disabled:cursor-not-allowed'
+                ? 'text-accent after:absolute after:bottom-0 after:left-2 after:right-2 after:h-0.5 after:rounded-full after:bg-accent'
+                : 'text-text-secondary hover:text-text-primary disabled:opacity-30 disabled:cursor-not-allowed'
             }`}
           >
             <span className="flex items-center gap-1.5">
@@ -216,8 +216,8 @@ export default function ChatPanel({ chapter, onMessageSent, onChapterRefresh, on
             disabled={streaming || isChatLocked}
             className={`px-3 py-1.5 text-xs font-medium transition-colors relative ${
               mode === 'import'
-                ? 'text-vermilion after:absolute after:bottom-0 after:left-2 after:right-2 after:h-0.5 after:rounded-full after:bg-vermilion'
-                : 'text-sumi-dim hover:text-sumi disabled:opacity-30 disabled:cursor-not-allowed'
+                ? 'text-accent after:absolute after:bottom-0 after:left-2 after:right-2 after:h-0.5 after:rounded-full after:bg-accent'
+                : 'text-text-secondary hover:text-text-primary disabled:opacity-30 disabled:cursor-not-allowed'
             }`}
           >
             <span className="flex items-center gap-1.5">
@@ -230,7 +230,7 @@ export default function ChatPanel({ chapter, onMessageSent, onChapterRefresh, on
 
       {mode === 'import' ? (
         <div className="flex-1 flex flex-col min-h-0">
-          <div className="px-4 pt-3 pb-2 text-xs text-sumi-dim leading-relaxed shrink-0">
+          <div className="px-4 pt-3 pb-2 text-xs text-text-secondary leading-relaxed shrink-0">
             {isImportLocked
               ? '本话已导入小说，不能再使用 AI 对话。右侧「漫画」面板可继续生成分镜与漫画图片。'
               : isChatLocked
@@ -246,21 +246,21 @@ export default function ChatPanel({ chapter, onMessageSent, onChapterRefresh, on
               }}
               disabled={isImportLocked || isChatLocked}
               placeholder={`粘贴小说全文…（最长 ${MAX_IMPORT_CHARS} 字）`}
-              className="w-full h-full bg-paper-surface border border-paper-border rounded-lg p-3 text-sm text-sumi
-                         placeholder-sumi-faint resize-none outline-none focus:border-vermilion transition-colors disabled:opacity-70
+              className="w-full h-full bg-bg-surface border border-border rounded-lg p-3 text-sm text-text-primary
+                         placeholder-text-muted resize-none outline-none focus:border-accent transition-colors disabled:opacity-70
                          leading-relaxed"
             />
           </div>
           <div className="px-4 pb-3 shrink-0 flex items-center justify-between gap-3">
-            <div className="text-xs text-sumi-dim">
+            <div className="text-xs text-text-secondary">
               {importText.length.toLocaleString()} / {MAX_IMPORT_CHARS.toLocaleString()} 字
-              {importError && <span className="ml-3 text-vermilion">{importError}</span>}
+              {importError && <span className="ml-3 text-accent">{importError}</span>}
             </div>
             <button
               onClick={handleImportSave}
               disabled={!chapter || importing || isImportLocked || isChatLocked || !importText.trim()}
               className="flex items-center gap-1.5 px-4 py-2 text-xs font-medium rounded-md
-                         bg-vermilion hover:bg-vermilion-hover text-white
+                         bg-accent hover:bg-accent-hover text-white
                          disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
             >
               <Save size={13} />
@@ -273,7 +273,7 @@ export default function ChatPanel({ chapter, onMessageSent, onChapterRefresh, on
           {/* Messages */}
           <div ref={scrollContainerRef} className="flex-1 overflow-y-auto px-4 py-4 space-y-4">
             {messages.length === 0 && !streaming && (
-              <div className="flex items-center justify-center h-full text-sumi-faint text-sm">
+              <div className="flex items-center justify-center h-full text-text-muted text-sm">
                 开始和 AI 讨论你的小说创意吧…
               </div>
             )}
@@ -282,8 +282,8 @@ export default function ChatPanel({ chapter, onMessageSent, onChapterRefresh, on
                 <div
                   className={`max-w-[80%] px-4 py-2.5 rounded-xl text-sm leading-relaxed ${
                     msg.role === 'user'
-                      ? 'bg-vermilion-light/40 text-sumi rounded-br-sm'
-                      : 'bg-paper-raised border border-paper-border text-sumi rounded-bl-sm shadow-sm'
+                      ? 'bg-accent-muted/40 text-text-primary rounded-br-sm'
+                      : 'bg-bg-raised border border-border text-text-primary rounded-bl-sm shadow-sm'
                   }`}
                 >
                   <MarkdownRenderer content={msg.content} />
@@ -292,20 +292,20 @@ export default function ChatPanel({ chapter, onMessageSent, onChapterRefresh, on
             ))}
             {streaming && !streamContent && (
               <div className="flex justify-start">
-                <div className="flex items-center gap-3 px-4 py-3 rounded-xl rounded-bl-sm bg-paper-raised border border-paper-border shadow-sm">
-                  <svg className="w-5 h-5 animate-spin text-vermilion" viewBox="0 0 24 24" fill="none">
+                <div className="flex items-center gap-3 px-4 py-3 rounded-xl rounded-bl-sm bg-bg-raised border border-border shadow-sm">
+                  <svg className="w-5 h-5 animate-spin text-accent" viewBox="0 0 24 24" fill="none">
                     <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="3" />
                     <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
                   </svg>
-                  <span className="text-sm text-sumi-dim">AI 思考中…</span>
+                  <span className="text-sm text-text-secondary">AI 思考中…</span>
                 </div>
               </div>
             )}
             {streaming && streamContent && (
               <div className="flex justify-start">
-                <div className="max-w-[80%] px-4 py-2.5 rounded-xl rounded-bl-sm bg-paper-raised border border-paper-border text-sumi text-sm leading-relaxed shadow-sm relative">
+                <div className="max-w-[80%] px-4 py-2.5 rounded-xl rounded-bl-sm bg-bg-raised border border-border text-text-primary text-sm leading-relaxed shadow-sm relative">
                   <MarkdownRenderer content={streamContent} />
-                  <span className="inline-block w-1.5 h-4 ml-0.5 bg-vermilion rounded-sm" style={{ animation: 'cursor-blink 1s step-end infinite' }} />
+                  <span className="inline-block w-1.5 h-4 ml-0.5 bg-accent rounded-sm" style={{ animation: 'cursor-blink 1s step-end infinite' }} />
                 </div>
               </div>
             )}
@@ -315,7 +315,7 @@ export default function ChatPanel({ chapter, onMessageSent, onChapterRefresh, on
                 <button
                   onClick={onGoToManga}
                   className="flex items-center gap-1.5 px-4 py-2 text-xs font-medium rounded-md
-                         bg-kinpaku-light/40 hover:bg-kinpaku-light/60 text-kinpaku border border-kinpaku/20
+                         bg-accent-secondary/10 hover:bg-accent-secondary/10/60 text-accent-secondary border border-accent-secondary/20
                          transition-colors"
                 >
                   <Image size={14} />
@@ -327,7 +327,7 @@ export default function ChatPanel({ chapter, onMessageSent, onChapterRefresh, on
           </div>
 
           {/* Input */}
-          <div className="px-3 py-3 border-t border-paper-border">
+          <div className="px-3 py-3 border-t border-border">
             <div className="mb-2 flex justify-end">
               <ModelSwitcher
                 capability="llm"
@@ -336,7 +336,7 @@ export default function ChatPanel({ chapter, onMessageSent, onChapterRefresh, on
                 disabled={streaming || isImportLocked}
               />
             </div>
-            <div className="flex items-end gap-2 bg-paper-surface rounded-lg px-3 py-2 border border-paper-border focus-within:border-vermilion transition-colors">
+            <div className="flex items-end gap-2 bg-bg-surface rounded-lg px-3 py-2 border border-border focus-within:border-accent transition-colors">
               <textarea
                 ref={textareaRef}
                 value={input}
@@ -348,13 +348,13 @@ export default function ChatPanel({ chapter, onMessageSent, onChapterRefresh, on
                 placeholder="描述你的小说想法…"
                 disabled={isImportLocked}
                 rows={1}
-                className="flex-1 bg-transparent text-sm text-sumi placeholder-sumi-faint resize-none outline-none disabled:opacity-50"
+                className="flex-1 bg-transparent text-sm text-text-primary placeholder-text-muted resize-none outline-none disabled:opacity-50"
                 style={{ maxHeight: '160px', overflow: 'auto' }}
               />
               {streaming ? (
                 <button
                   onClick={handleAbort}
-                  className="p-2 rounded-md bg-vermilion hover:bg-vermilion-hover text-white transition-colors shrink-0"
+                  className="p-2 rounded-md bg-accent hover:bg-accent-hover text-white transition-colors shrink-0"
                   title="停止生成"
                 >
                   <Square size={16} />
@@ -363,7 +363,7 @@ export default function ChatPanel({ chapter, onMessageSent, onChapterRefresh, on
                 <button
                   onClick={handleSend}
                   disabled={!input.trim() || isImportLocked}
-                  className="p-2 rounded-md bg-vermilion hover:bg-vermilion-hover text-white disabled:opacity-30
+                  className="p-2 rounded-md bg-accent hover:bg-accent-hover text-white disabled:opacity-30
                          disabled:cursor-not-allowed transition-colors shrink-0"
                 >
                   <Send size={16} />
