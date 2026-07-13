@@ -37,6 +37,13 @@ wechat_article_*.txt
 # Claude Code configuration
 .claude/
 
+# Playwright MCP artifacts
+.playwright-mcp/
+test-results/
+
+# Agent skills
+.agents/
+
 # 备份文件
 backup/
 CLAUDE.md
