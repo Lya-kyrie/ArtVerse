@@ -27,7 +27,7 @@ public class ChatController {
                            @RequestBody Map<String, String> body) {
         String content = body.get("message");
         User user = currentUserService.requireCurrentUser();
-        UserProviderConfig llmConfig = apiKeyService.requireProviderConfig(
+        UserProviderConfig llmConfig = apiKeyService.requireByokProviderConfig(
                 user,
                 requestConfig(body),
                 configId(body),

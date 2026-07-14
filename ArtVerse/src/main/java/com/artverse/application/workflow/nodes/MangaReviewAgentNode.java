@@ -38,7 +38,7 @@ public class MangaReviewAgentNode implements MangaWorkflowNodeHandler {
         List<AgentMessage> messages = support.prepareAgentMessages(context);
         support.syncWorkspace(context);
         AgentRunRequest request = support.buildRunRequest(context, messages, AgentTaskType.MANGA_REVIEW);
-        return support.executeRequest(context, request, false);
+        return support.verifyToolContract(context, route(), support.executeRequest(context, request, false));
     }
 
     @Override
@@ -52,6 +52,7 @@ public class MangaReviewAgentNode implements MangaWorkflowNodeHandler {
         ));
         support.syncWorkspace(context);
         AgentRunRequest request = support.buildRunRequest(context, messages, AgentTaskType.MANGA_REVIEW);
-        return support.executeStreamedRequest(context, streamContext, request, false);
+        return support.verifyToolContract(context, route(),
+                support.executeStreamedRequest(context, streamContext, request, false));
     }
 }

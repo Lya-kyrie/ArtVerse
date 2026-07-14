@@ -29,7 +29,9 @@ public class StoryboardController {
     public Map<String, Object> generateScenes(@PathVariable Long chapterId) {
         User user = currentUser();
         chapterAccessService.requireVisible(chapterId, user.getId());
-        String cozeApiKey = apiKeyService.getDecryptedKey(user, "coze");
+        String cozeApiKey = apiKeyService.requireActiveUserProviderKey(
+                user, ApiKeyService.SLOT_WORKFLOW,
+                "Please configure a workflow provider API key in Settings before generating a storyboard.");
         return generationGuardService.executeSceneGeneration(
                 user.getId(),
                 chapterId,

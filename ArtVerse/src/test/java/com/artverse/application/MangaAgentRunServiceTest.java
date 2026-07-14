@@ -4,12 +4,14 @@ import com.artverse.domain.Chapter;
 import com.artverse.domain.MangaAgentRun;
 import com.artverse.domain.MangaAgentRunEventRecord;
 import com.artverse.domain.MangaAgentRunStatus;
+import com.artverse.domain.MangaAgentRunStep;
 import com.artverse.domain.Story;
 import com.artverse.domain.User;
 import com.artverse.application.workflow.MangaWorkflowRoute;
 import com.artverse.application.workflow.RoutingDecision;
 import com.artverse.persistence.MangaAgentRunEventRepository;
 import com.artverse.persistence.MangaAgentRunRepository;
+import com.artverse.persistence.MangaAgentRunStepRepository;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.Test;
 
@@ -85,6 +87,7 @@ class MangaAgentRunServiceTest {
         assertThat(snapshot.status()).isEqualTo(MangaAgentRunStatus.WAITING_USER);
         assertThat(snapshot.userInputRequest().question()).isEqualTo("覆盖已有分镜吗？");
         assertThat(snapshot.events()).hasSize(1);
+        assertThat(snapshot.events().get(0).eventId()).isEqualTo(10L);
         assertThat(snapshot.events().get(0).eventName()).isEqualTo("run_event");
         assertThat(snapshot.events().get(0).data()).containsEntry("type", "tool_call_started");
     }
@@ -108,6 +111,66 @@ class MangaAgentRunServiceTest {
     }
 
     @Test
+    void replayEventsUsesDurableCursorAndOwnerScopedRun() throws Exception {
+        Fixture fixture = fixture();
+        UUID requestId = UUID.randomUUID();
+        MangaAgentRun run = run(fixture.user, fixture.chapter, requestId, "generate storyboard");
+        MangaAgentRunEventRecord event = new MangaAgentRunEventRecord();
+        event.setId(42L);
+        event.setRun(run);
+        event.setEventName("plan_created");
+        event.setPayloadJson(fixture.objectMapper.writeValueAsString(Map.of("steps", 2)));
+        event.setCreatedAt(OffsetDateTime.now());
+
+        when(fixture.runRepository.findByUserIdAndChapterIdAndRequestId(1L, 7L, requestId))
+                .thenReturn(Optional.of(run));
+        when(fixture.eventRepository.findTop200ByRunIdAndIdGreaterThanOrderByIdAsc(99L, 10L))
+                .thenReturn(List.of(event));
+
+        MangaAgentRunService.RunEventReplayPage page =
+                fixture.service.replayEvents(1L, 7L, requestId, 10L);
+
+        assertThat(page.status()).isEqualTo(MangaAgentRunStatus.RUNNING);
+        assertThat(page.lastEventId()).isEqualTo(42L);
+        assertThat(page.events()).singleElement().satisfies(replayed -> {
+            assertThat(replayed.eventId()).isEqualTo(42L);
+            assertThat(replayed.eventName()).isEqualTo("plan_created");
+        });
+    }
+
+    @Test
+    void recordsSelectedSkillOnTheExactDirectorStep() {
+        MangaAgentRunRepository runRepository = mock(MangaAgentRunRepository.class);
+        MangaAgentRunEventRepository eventRepository = mock(MangaAgentRunEventRepository.class);
+        MangaAgentRunStepRepository stepRepository = mock(MangaAgentRunStepRepository.class);
+        MangaAgentRunService service = new MangaAgentRunService(
+                runRepository, eventRepository, new ObjectMapper(), stepRepository);
+        User user = new User();
+        user.setId(1L);
+        Story story = new Story();
+        story.setId(3L);
+        story.setUser(user);
+        Chapter chapter = new Chapter();
+        chapter.setId(7L);
+        chapter.setStory(story);
+        UUID requestId = UUID.randomUUID();
+        MangaAgentRun run = run(user, chapter, requestId, "multi step");
+        MangaAgentRunStep step = new MangaAgentRunStep();
+
+        when(runRepository.findByUserIdAndChapterIdAndRequestId(1L, 7L, requestId))
+                .thenReturn(Optional.of(run));
+        when(stepRepository.findByRunIdAndPlanIdAndStepSequence(99L, "plan-a", 1))
+                .thenReturn(Optional.of(step));
+
+        service.recordStepSkillSelection(
+                1L, 7L, requestId, "plan-a:1", "manga.review", "1.0.0");
+
+        assertThat(step.getSkillKey()).isEqualTo("manga.review");
+        assertThat(step.getSkillVersion()).isEqualTo("1.0.0");
+        verify(stepRepository).save(step);
+    }
+
+    @Test
     void cachedReplyDoesNotOverrideCancelledRun() {
         Fixture fixture = fixture();
         UUID requestId = UUID.randomUUID();
@@ -124,6 +187,42 @@ class MangaAgentRunServiceTest {
         assertThat(reconciled).containsSame(cancelled);
         assertThat(cancelled.getStatus()).isEqualTo(MangaAgentRunStatus.CANCELLED);
         verify(fixture.runRepository, never()).save(cancelled);
+    }
+
+    @Test
+    void appendsToolAuditEventWithPersistentAuditFields() throws Exception {
+        Fixture fixture = fixture();
+        UUID requestId = UUID.randomUUID();
+        MangaAgentRun run = run(fixture.user, fixture.chapter, requestId, "generate storyboard");
+        AgentRunToolStatus.ToolEvent event = new AgentRunToolStatus.ToolEvent(
+                requestId, "plan-a:0", "commit_storyboard", "SUCCEEDED", true,
+                25L, "hash-1", null, "audit-1", Map.of("saved", true), OffsetDateTime.now());
+
+        when(fixture.runRepository.findByUserIdAndChapterIdAndRequestId(1L, 7L, requestId))
+                .thenReturn(Optional.of(run));
+        when(fixture.runRepository.getReferenceById(99L)).thenReturn(run);
+
+        fixture.service.appendToolAuditEvent(1L, 7L, requestId, event);
+
+        verify(fixture.eventRepository).save(any(MangaAgentRunEventRecord.class));
+    }
+
+    @Test
+    void mergeRunAttributesKeepsStrongerToolContractStatus() throws Exception {
+        Fixture fixture = fixture();
+        UUID requestId = UUID.randomUUID();
+        MangaAgentRun run = run(fixture.user, fixture.chapter, requestId, "generate storyboard");
+        com.artverse.domain.MangaAgentConversation conversation = new com.artverse.domain.MangaAgentConversation();
+        conversation.setId(12L);
+        run.setConversation(conversation);
+        run.setRunAttributesJson(fixture.objectMapper.writeValueAsString(Map.of("tool_contract_status", "FAILED")));
+
+        when(fixture.runRepository.findForUpdate(12L, requestId)).thenReturn(Optional.of(run));
+        when(fixture.runRepository.save(any(MangaAgentRun.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+        fixture.service.mergeRunAttributes(conversation, requestId, Map.of("tool_contract_status", "DEGRADED"));
+
+        assertThat(run.getRunAttributesJson()).contains("FAILED");
     }
 
     @Test
@@ -182,6 +281,35 @@ class MangaAgentRunServiceTest {
         RoutingDecision result = fixture.service.routingDecision(run);
 
         assertThat(result).isNull();
+    }
+
+    @Test
+    void recordKnowledgeSnapshotUpdatesPersistedContextSummaryHash() throws Exception {
+        Fixture fixture = fixture();
+        UUID requestId = UUID.randomUUID();
+        MangaAgentRun run = run(fixture.user, fixture.chapter, requestId, "generate storyboard");
+        run.setContextSnapshotJson(fixture.objectMapper.writeValueAsString(new MangaAgentRunService.RunContextSnapshot(
+                3L, 7L, "Story", "Chapter 1", 4, 1, "ctx-hash", null,
+                List.of("chapter_source_excerpt"), List.of("knowledge_recall_missing"))));
+        KnowledgeService.RecallPreview preview = new KnowledgeService.RecallPreview(
+                List.of(new KnowledgeService.RecallItem(11L, 2, "CHARACTER_CARD", "Hero", "content", 0.8)),
+                "context",
+                "knowledge-hash",
+                19L,
+                25L
+        );
+
+        when(fixture.runRepository.findByUserIdAndChapterIdAndRequestId(1L, 7L, requestId))
+                .thenReturn(Optional.of(run));
+        when(fixture.runRepository.save(any(MangaAgentRun.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+        fixture.service.recordKnowledgeSnapshot(1L, 7L, requestId, preview);
+
+        MangaAgentRunService.RunContextSnapshot updated = fixture.objectMapper.readValue(
+                run.getContextSnapshotJson(), MangaAgentRunService.RunContextSnapshot.class);
+        assertThat(run.getKnowledgeSnapshotId()).isEqualTo(25L);
+        assertThat(updated.knowledgeRecallHash()).isEqualTo("knowledge-hash");
+        assertThat(updated.warnings()).doesNotContain("knowledge_recall_missing");
     }
 
     private Fixture fixture() {

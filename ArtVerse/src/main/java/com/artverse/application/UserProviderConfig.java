@@ -6,8 +6,14 @@ public record UserProviderConfig(
         String label,
         String apiKey,
         String baseUrl,
-        String model
+        String model,
+        Long configId
 ) {
+    public UserProviderConfig(String slot, String provider, String label, String apiKey,
+                              String baseUrl, String model) {
+        this(slot, provider, label, apiKey, baseUrl, model, null);
+    }
+
     public UserProviderConfig {
         slot = blankToDefault(slot, "llm");
         provider = blankToDefault(provider, "");

@@ -27,7 +27,7 @@ public class ImageGenController {
         @SuppressWarnings("unchecked")
         List<String> referenceImages = (List<String>) body.get("reference_images");
         User user = currentUser();
-        UserProviderConfig imageConfig = apiKeyService.requireProviderConfig(
+        UserProviderConfig imageConfig = apiKeyService.requireByokProviderConfig(
                 user,
                 requestConfig(body),
                 configId(body),

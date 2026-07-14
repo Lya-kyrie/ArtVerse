@@ -29,6 +29,7 @@ import {
   listChapters,
   listMangaAgentConversations,
   listStories,
+  replayMangaAgentRunEvents,
   resumeMangaAgentAgUiStream,
   runMangaAgentAgUiStream,
   type AgentUserInputRequest,
@@ -560,6 +561,9 @@ export default function MangaAgentPage({ onCreateStory }: { onCreateStory?: () =
         setActiveRequestId(null);
         setRunStatus('会话已就绪');
       }
+      if (cached.runSnapshot?.status === 'RUNNING') {
+        attachReplayStream(chapterNumericId, selectedConversationId, cached.runSnapshot);
+      }
       setPendingConversationId(null);
       messagesEndRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' });
       return;
@@ -589,6 +593,9 @@ export default function MangaAgentPage({ onCreateStory }: { onCreateStory?: () =
       conversationCacheRef.current[selectedConversationId] = { messages: nextMessages, runSnapshot: snapshot };
       if (snapshot) {
         restoreRunSnapshot(snapshot);
+        if (snapshot.status === 'RUNNING') {
+          attachReplayStream(chapterNumericId, selectedConversationId, snapshot);
+        }
       } else {
         setRunStatus('会话已就绪');
       }
@@ -618,6 +625,23 @@ export default function MangaAgentPage({ onCreateStory }: { onCreateStory?: () =
         createdAt: event.createdAt,
       });
     }));
+  }
+
+  function attachReplayStream(
+    chapterNumericId: number,
+    selectedConversationId: string,
+    snapshot: MangaAgentRunSnapshot,
+  ) {
+    const requestId = snapshot.requestId ?? snapshot.request_id;
+    if (!requestId) return;
+    const lastEventId = Math.max(0, ...(snapshot.events || []).map((event) => event.eventId || 0));
+    activeRunConversationIdRef.current = selectedConversationId;
+    activeStreamControllerRef.current = replayMangaAgentRunEvents(
+      chapterNumericId,
+      requestId,
+      lastEventId,
+      (event) => handleStreamEvent(event),
+    );
   }
 
   function recordAgUiEvent(rawEvent: Record<string, any>) {
@@ -674,6 +698,8 @@ export default function MangaAgentPage({ onCreateStory }: { onCreateStory?: () =
     if (rawEvent.type === 'RUN_ERROR') {
       const message = String(rawEvent.message || rawEvent.error || '智能体运行失败');
       setRunStatus(message);
+      setError(message);
+      setSending(false);
       setBusinessStatus('FAILED');
     }
   }
@@ -696,6 +722,14 @@ export default function MangaAgentPage({ onCreateStory }: { onCreateStory?: () =
     if (event.type === 'STATE_SNAPSHOT' && event.snapshot?.status === 'WAITING_USER') {
       setSending(false);
       setUserInputRequest(event.outcome?.interrupts?.[0]?.metadata || null);
+    }
+
+    if (event.type === 'STATE_SNAPSHOT'
+      && event.snapshot?.status
+      && event.snapshot.status !== 'RUNNING'
+      && event.snapshot.status !== 'WAITING_USER') {
+      setSending(false);
+      void refreshMessagesAfterRun();
     }
 
     if (event.type === 'RUN_FINISHED') {
@@ -769,10 +803,13 @@ export default function MangaAgentPage({ onCreateStory }: { onCreateStory?: () =
     }
 
     if (event.type === 'error') {
+      const message = event.data?.detail || event.data?.error || '智能体请求失败';
       recordAgUiEvent({
         type: 'RUN_ERROR',
-        message: event.data?.detail || event.data?.error || '智能体请求失败',
+        message,
       });
+      setError(message);
+      setSending(false);
     }
   }
 

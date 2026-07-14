@@ -26,8 +26,8 @@ public class AgentWorkspaceSyncService {
     private final CharacterProfileService characterProfileService;
     private final AgentWorkspaceService workspaceService;
 
-    @Transactional(readOnly = true)
-    public void syncMangaDirectorKnowledge(Long chapterId, String userId) {
+    @Transactional
+    public void syncMangaDirectorKnowledge(Long chapterId, String userId, Object conversationId) {
         Chapter chapter = chapterRepository.findByIdForIdempotency(chapterId)
                 .orElseThrow(() -> new BusinessException(404, "Chapter not found"));
         Story story = chapter.getStory();
@@ -35,7 +35,7 @@ public class AgentWorkspaceSyncService {
         Map<String, Object> profile = characterProfileService.resolveEffective(chapterId);
 
         String knowledge = buildKnowledge(chapter, story, images, profile);
-        workspaceService.writeKnowledge(userId, story.getId(), knowledge);
+        workspaceService.writeKnowledge(userId, story.getId(), conversationId, knowledge);
     }
 
     String buildKnowledge(Chapter chapter, Story story, List<MangaImage> images, Map<String, Object> profile) {

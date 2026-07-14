@@ -37,7 +37,7 @@ public class MangaStoryboardAgentNode implements MangaWorkflowNodeHandler {
         List<AgentMessage> messages = support.prepareAgentMessages(context);
         support.syncWorkspace(context);
         AgentRunRequest request = support.buildRunRequest(context, messages, AgentTaskType.MANGA_STORYBOARD);
-        return support.executeRequest(context, request, true);
+        return support.verifyToolContract(context, route(), support.executeRequest(context, request, true));
     }
 
     @Override
@@ -51,6 +51,7 @@ public class MangaStoryboardAgentNode implements MangaWorkflowNodeHandler {
         ));
         support.syncWorkspace(context);
         AgentRunRequest request = support.buildRunRequest(context, messages, AgentTaskType.MANGA_STORYBOARD);
-        return support.executeStreamedRequest(context, streamContext, request, true);
+        return support.verifyToolContract(context, route(),
+                support.executeStreamedRequest(context, streamContext, request, true));
     }
 }

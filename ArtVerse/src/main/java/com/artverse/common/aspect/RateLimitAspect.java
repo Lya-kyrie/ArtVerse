@@ -33,7 +33,7 @@ public class RateLimitAspect {
             redis.call('ZREMRANGEBYSCORE', KEYS[1], 0, ARGV[2])
             local count = redis.call('ZCARD', KEYS[1])
             if count >= tonumber(ARGV[3]) then
-                return count
+                return count + 1
             end
             redis.call('ZADD', KEYS[1], ARGV[1], ARGV[4])
             redis.call('EXPIRE', KEYS[1], ARGV[5])
@@ -59,11 +59,13 @@ public class RateLimitAspect {
         String bizKey = annotation.key();
         String modelId = annotation.modelId();
 
-        String redisKey = String.format("rl:%s:%s:%s:%s",
-                method.getDeclaringClass().getSimpleName(),
-                method.getName(),
+        String endpointKey = bizKey == null || bizKey.isBlank()
+                ? method.getDeclaringClass().getSimpleName() + ":" + method.getName()
+                : bizKey;
+        String redisKey = String.format("rl:%s:%s:%s",
+                endpointKey,
                 resolveUserKey(),
-                bizKey + (modelId.isEmpty() ? "" : ":" + modelId));
+                modelId.isEmpty() ? "default" : modelId);
 
         long now = System.currentTimeMillis();
         long windowStart = now - window * 1000L;

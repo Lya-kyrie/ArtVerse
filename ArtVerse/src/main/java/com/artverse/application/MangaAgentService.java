@@ -94,7 +94,8 @@ public class MangaAgentService {
                                   MangaWorkflowRoute route, MangaRouteSource routeSource,
                                   UserProviderConfig llmConfig) {
         UUID effectiveRequestId = requestId == null ? UUID.randomUUID() : requestId;
-        agentConcurrencyGate.acquireOrReject();
+        AgentConcurrencyGate.Permit permit = agentConcurrencyGate.acquireOrReject(
+                conversation.getUser().getId(), effectiveRequestId);
         try {
             try (AgentRunToolStatus.RunScope scope = agentRunToolStatus.start(
                     conversation.getUser().getId(),
@@ -122,7 +123,7 @@ public class MangaAgentService {
             });
             throw e;
         } finally {
-            agentConcurrencyGate.release();
+            agentConcurrencyGate.release(permit);
         }
     }
 
@@ -154,7 +155,8 @@ public class MangaAgentService {
         MangaAgentRunEventPublisher.RunEventSink sink = mangaAgentRunEventPublisher.newSink(emitter);
         AtomicReference<MangaAgentRun> runRef = new AtomicReference<>();
 
-        submitStreamTask(() -> runStreamTask(() -> executeStreamConversation(
+        submitStreamTask(conversation.getUser().getId(), effectiveRequestId,
+                () -> runStreamTask(() -> executeStreamConversation(
                 conversation,
                 message,
                 effectiveRequestId,
@@ -168,18 +170,18 @@ public class MangaAgentService {
         return emitter;
     }
 
-    private void submitStreamTask(Runnable task) {
-        agentConcurrencyGate.acquireOrReject();
+    private void submitStreamTask(Long userId, UUID requestId, Runnable task) {
+        AgentConcurrencyGate.Permit permit = agentConcurrencyGate.acquireOrReject(userId, requestId);
         try {
             executor.submit(() -> {
                 try {
                     task.run();
                 } finally {
-                    agentConcurrencyGate.release();
+                    agentConcurrencyGate.release(permit);
                 }
             });
         } catch (RejectedExecutionException e) {
-            agentConcurrencyGate.release();
+            agentConcurrencyGate.release(permit);
             throw new BusinessException(503, "Failed to submit agent task: system overloaded, please retry", "agent");
         }
     }
@@ -233,9 +235,12 @@ public class MangaAgentService {
         MangaAgentRunEventPublisher.RunEventSink sink = mangaAgentRunEventPublisher.newSink(emitter);
         AtomicReference<MangaAgentRun> runRef = new AtomicReference<>();
 
-        submitStreamTask(() -> runStreamTask(() -> {
+        submitStreamTask(conversation.getUser().getId(), requestId, () -> runStreamTask(() -> {
             MangaAgentRunService.RunSnapshot snapshot = requireWaitingSnapshot(conversation, requestId);
             if (handleMutationDecision(conversation, snapshot, answer, sink, runRef)) {
+                return;
+            }
+            if (handleContextMissingDecision(conversation, snapshot, answer, sink, runRef)) {
                 return;
             }
             executeStreamConversation(
@@ -319,6 +324,13 @@ public class MangaAgentService {
             }
             agentRunToolStatus.authorizeMutation(
                     conversation.getUser().getId(), conversation.getChapter().getId(), requestId);
+        }
+        if ("CONTEXT_MISSING".equalsIgnoreCase(waiting.purpose()) && isCancelSelection(waiting, answer)) {
+            String reply = "已取消本次需要上下文的写入请求。补齐章节正文或分镜后，可以随时重新发起。";
+            conversationService.saveMessage(
+                    conversation, com.artverse.domain.MessageRole.ASSISTANT, reply, requestId);
+            mangaAgentRunService.markSucceeded(conversation, requestId, reply);
+            return new RunResult(reply, requestId);
         }
         String message = conversationService.resumeMessage(snapshot.inputMessage(), waiting, answer);
         try {
@@ -429,6 +441,10 @@ public class MangaAgentService {
             }
             return null; // re-route via LLM for "edit" selection
         }
+        if (waiting != null && "CONTEXT_MISSING".equalsIgnoreCase(waiting.purpose())
+                && isAdviceSelection(waiting, answer)) {
+            return MangaWorkflowRoute.CONVERSATION;
+        }
         return snapshot.route();
     }
 
@@ -447,8 +463,16 @@ public class MangaAgentService {
         }
         String trimmed = answer.trim();
         return waiting.options().stream()
-                .filter(opt -> !opt.recommended())
-                .anyMatch(opt -> opt.id().equals(trimmed));
+                .anyMatch(opt -> "advice".equals(opt.id()) && opt.id().equals(trimmed));
+    }
+
+    private boolean isCancelSelection(AgentUserInputRequest waiting, String answer) {
+        if (waiting == null || waiting.options() == null || answer == null) {
+            return false;
+        }
+        String trimmed = answer.trim();
+        return waiting.options().stream()
+                .anyMatch(opt -> "cancel".equals(opt.id()) && opt.id().equals(trimmed));
     }
 
     private boolean handleMutationDecision(MangaAgentConversation conversation,
@@ -469,6 +493,27 @@ public class MangaAgentService {
                 .orElseThrow(() -> new BusinessException(404, "Agent run not found"));
         runRef.set(run);
         String reply = "已取消覆盖操作，当前分镜保持不变。";
+        conversationService.saveMessage(
+                conversation, com.artverse.domain.MessageRole.ASSISTANT, reply, snapshot.requestId());
+        mangaAgentRunService.markSucceeded(conversation, snapshot.requestId(), reply);
+        sink.sendDone(run, reply, snapshot.requestId());
+        return true;
+    }
+
+    private boolean handleContextMissingDecision(MangaAgentConversation conversation,
+                                                 MangaAgentRunService.RunSnapshot snapshot,
+                                                 String answer,
+                                                 MangaAgentRunEventPublisher.RunEventSink sink,
+                                                 AtomicReference<MangaAgentRun> runRef) {
+        AgentUserInputRequest waiting = snapshot.userInputRequest();
+        if (waiting == null || !"CONTEXT_MISSING".equalsIgnoreCase(waiting.purpose())
+                || !isCancelSelection(waiting, answer)) {
+            return false;
+        }
+        MangaAgentRun run = mangaAgentRunService.findRun(conversation, snapshot.requestId())
+                .orElseThrow(() -> new BusinessException(404, "Agent run not found"));
+        runRef.set(run);
+        String reply = "已取消本次需要上下文的写入请求。补齐章节正文或分镜后，可以随时重新发起。";
         conversationService.saveMessage(
                 conversation, com.artverse.domain.MessageRole.ASSISTANT, reply, snapshot.requestId());
         mangaAgentRunService.markSucceeded(conversation, snapshot.requestId(), reply);

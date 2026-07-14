@@ -34,11 +34,11 @@ public record MangaWorkflowResult(
     }
 
     public MangaWorkflowResult withAttributes(Map<String, Object> attributes) {
-        return new MangaWorkflowResult(reply, stepSummary, handoffContext, degraded, attributes);
+        return new MangaWorkflowResult(reply, stepSummary, handoffContext, degraded, mergeAttributes(attributes));
     }
 
     public MangaWorkflowResult degradedWithAttributes(Map<String, Object> attributes) {
-        return new MangaWorkflowResult(reply, stepSummary, handoffContext, true, attributes);
+        return new MangaWorkflowResult(reply, stepSummary, handoffContext, true, mergeAttributes(attributes));
     }
 
     public Map<String, Object> toPayload() {
@@ -58,5 +58,13 @@ public record MangaWorkflowResult(
                 : payload.get("degraded");
         boolean degraded = Boolean.TRUE.equals(degradedValue);
         return new MangaWorkflowResult(reply, reply, reply, degraded, Map.of());
+    }
+
+    private Map<String, Object> mergeAttributes(Map<String, Object> incoming) {
+        LinkedHashMap<String, Object> merged = new LinkedHashMap<>(attributes);
+        if (incoming != null) {
+            merged.putAll(incoming);
+        }
+        return Map.copyOf(merged);
     }
 }

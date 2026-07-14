@@ -22,7 +22,9 @@ public class NovelController {
     @PostMapping("/generate-novel")
     public Map<String, String> generateNovel(@PathVariable Long chapterId) {
         User user = currentUserService.requireCurrentUser();
-        String llmApiKey = apiKeyService.getDecryptedKey(user, ApiKeyService.SLOT_LLM);
+        String llmApiKey = apiKeyService.requireActiveUserProviderKey(
+                user, ApiKeyService.SLOT_LLM,
+                "Please configure an LLM provider API key in Settings before generating a novel.");
         String content = novelService.generateNovel(chapterId, user.getId(), llmApiKey);
         return Map.of("novel_content", content);
     }

@@ -195,8 +195,12 @@ public class AgUiEventFactory {
     private Map<String, Object> toolEventPayload(AgentRunToolStatus.ToolEvent event) {
         Map<String, Object> payload = new LinkedHashMap<>();
         payload.put("tool", event.toolName());
+        payload.put("stepId", event.stepId());
+        payload.put("status", event.status());
         payload.put("succeeded", event.succeeded());
         payload.put("durationMs", event.durationMs());
+        payload.put("resultHash", event.resultHash());
+        payload.put("auditId", event.auditId());
         payload.put("result", event.result());
         payload.put("error", event.error());
         return payload;

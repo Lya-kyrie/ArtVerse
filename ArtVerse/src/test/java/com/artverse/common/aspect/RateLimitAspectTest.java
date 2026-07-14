@@ -96,6 +96,21 @@ class RateLimitAspectTest {
     }
 
     @Test
+    @DisplayName("blocks the first request beyond the configured boundary")
+    void blocksAtBoundarySignal() throws Throwable {
+        when(redisTemplate.execute(
+                any(DefaultRedisScript.class),
+                anyList(),
+                anyString(), anyString(), anyString(), anyString(), anyString()
+        )).thenReturn(6L);
+
+        assertThatThrownBy(() -> aspect.around(joinPoint))
+                .isInstanceOf(BusinessException.class)
+                .matches(e -> ((BusinessException) e).getStatus() == 429);
+        verify(joinPoint, never()).proceed();
+    }
+
+    @Test
     @DisplayName("bypasses when rate limiting is disabled")
     void bypassWhenDisabled() throws Throwable {
         properties.getRateLimit().setEnabled(false);

@@ -38,6 +38,7 @@ public class CharacterProfileService {
     private final ObjectStorageService objectStorageService;
     private final ArtVerseProperties properties;
     private final KnowledgeService knowledgeService;
+    private final KnowledgeCandidateService knowledgeCandidateService;
 
     @Transactional(readOnly = true)
     public List<CharacterProfile> listByStory(Long storyId) {
@@ -64,7 +65,7 @@ public class CharacterProfileService {
         profile.setName(name != null ? name : "");
         profile.setDescription(description != null ? description : "");
         CharacterProfile saved = profileRepository.save(profile);
-        knowledgeService.syncCharacterProfile(saved);
+        knowledgeCandidateService.proposeCharacterProfile(saved, userId);
         return saved;
     }
 
@@ -74,7 +75,7 @@ public class CharacterProfileService {
         if (name != null) profile.setName(name);
         if (description != null) profile.setDescription(description);
         CharacterProfile saved = profileRepository.save(profile);
-        knowledgeService.syncCharacterProfile(saved);
+        knowledgeCandidateService.proposeCharacterProfile(saved, currentUserId());
         return saved;
     }
 

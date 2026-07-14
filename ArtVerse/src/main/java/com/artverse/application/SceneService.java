@@ -7,7 +7,7 @@ import com.artverse.persistence.ChapterRepository;
 import com.artverse.prompt.MangaPromptPolicy;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import lombok.RequiredArgsConstructor;
+import org.springframework.beans.factory.annotation.Autowired;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -20,12 +20,26 @@ import java.util.regex.Pattern;
 
 @Slf4j
 @Service
-@RequiredArgsConstructor
 public class SceneService {
 
     private final ChapterRepository chapterRepository;
     private final CozeClient cozeClient;
     private final ObjectMapper objectMapper;
+    private final AgentOutboxService outboxService;
+
+    @Autowired
+    public SceneService(ChapterRepository chapterRepository, CozeClient cozeClient,
+                        ObjectMapper objectMapper, AgentOutboxService outboxService) {
+        this.chapterRepository = chapterRepository;
+        this.cozeClient = cozeClient;
+        this.objectMapper = objectMapper;
+        this.outboxService = outboxService;
+    }
+
+    public SceneService(ChapterRepository chapterRepository, CozeClient cozeClient,
+                        ObjectMapper objectMapper) {
+        this(chapterRepository, cozeClient, objectMapper, null);
+    }
 
     private static final Pattern JSON_ARRAY_PATTERN = Pattern.compile("\\[.*\\]", Pattern.DOTALL);
 
@@ -38,6 +52,17 @@ public class SceneService {
 
     @Transactional
     public List<String> generateScenes(Long chapterId, String cozeApiKey) {
+        List<String> scenes = generateScenesDraft(chapterId, cozeApiKey);
+        Chapter chapter = chapterRepository.findById(chapterId)
+                .orElseThrow(() -> new BusinessException(404, "Chapter not found"));
+        chapter.setScenesText(objectMapper.valueToTree(scenes).toString());
+        chapterRepository.save(chapter);
+        enqueueStoryboardChanged(chapter, scenes.size());
+        return scenes;
+    }
+
+    @Transactional(readOnly = true)
+    public List<String> generateScenesDraft(Long chapterId, String cozeApiKey) {
         Chapter chapter = chapterRepository.findById(chapterId)
                 .orElseThrow(() -> new BusinessException(404, "Chapter not found"));
 
@@ -57,9 +82,6 @@ public class SceneService {
                     "Coze returned " + scenes.size() + " scenes but expected " + chapter.getImageCount());
         }
         validateScenes(scenes);
-        chapter.setScenesText(objectMapper.valueToTree(scenes).toString());
-        chapterRepository.save(chapter);
-
         return scenes;
     }
 
@@ -81,8 +103,20 @@ public class SceneService {
         }
         chapter.setScenesText(objectMapper.valueToTree(scenes).toString());
         chapterRepository.save(chapter);
+        enqueueStoryboardChanged(chapter, scenes.size());
 
         return scenes;
+    }
+
+    private void enqueueStoryboardChanged(Chapter chapter, int scenesCount) {
+        if (outboxService == null) return;
+        outboxService.enqueue("CHAPTER", String.valueOf(chapter.getId()),
+                "STORYBOARD_CHANGED", Map.of(
+                        "user_id", chapter.getStory().getUser().getId(),
+                        "story_id", chapter.getStory().getId(),
+                        "chapter_id", chapter.getId(),
+                        "chapter_number", chapter.getChapterNumber(),
+                        "scenes_count", scenesCount));
     }
 
     public List<String> parseScenesText(String text) {

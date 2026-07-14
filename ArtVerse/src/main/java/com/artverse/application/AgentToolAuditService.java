@@ -1,9 +1,11 @@
 package com.artverse.application;
 
 import com.artverse.agent.MangaAgentRuntimeContext;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import io.agentscope.core.agent.RuntimeContext;
 import lombok.extern.slf4j.Slf4j;
 import io.agentscope.core.tool.ToolSuspendException;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
 import java.util.LinkedHashMap;
@@ -13,21 +15,37 @@ import java.util.concurrent.Callable;
 
 @Slf4j
 @Service
-@lombok.RequiredArgsConstructor
 public class AgentToolAuditService {
 
     private final AgentRunToolStatus agentRunToolStatus;
+    private final AgentBudgetService budgetService;
+    private final ObjectMapper objectMapper;
+
+    @Autowired
+    public AgentToolAuditService(AgentRunToolStatus agentRunToolStatus,
+                                 AgentBudgetService budgetService,
+                                 ObjectMapper objectMapper) {
+        this.agentRunToolStatus = agentRunToolStatus;
+        this.budgetService = budgetService;
+        this.objectMapper = objectMapper;
+    }
+
+    public AgentToolAuditService(AgentRunToolStatus agentRunToolStatus) {
+        this(agentRunToolStatus, null, new ObjectMapper());
+    }
 
     public Map<String, Object> around(String toolName, Long userId, Long chapterId, RuntimeContext runtimeContext,
                                       Callable<Map<String, Object>> action) {
         long startedAt = System.currentTimeMillis();
         try {
+            consumeToolBudget(toolName, runtimeContext);
             Map<String, Object> result = action.call();
             long durationMs = System.currentTimeMillis() - startedAt;
-            recordSucceeded(toolName, userId, chapterId, runtimeContext, durationMs, result);
+            Map<String, Object> envelope = successEnvelope(result);
+            recordSucceeded(toolName, userId, chapterId, runtimeContext, durationMs, envelope);
             log.info("Agent tool succeeded: {}", event(toolName, userId, chapterId, "succeeded",
                     durationMs, null));
-            return result;
+            return envelope;
         } catch (AgentUserInputRequiredException e) {
             long durationMs = System.currentTimeMillis() - startedAt;
             log.info("Agent tool waiting for user input: {}", event(toolName, userId, chapterId, "waiting_user",
@@ -59,9 +77,14 @@ public class AgentToolAuditService {
 
     private void recordSucceeded(String toolName, Long userId, Long chapterId, RuntimeContext runtimeContext,
                                  long durationMs, Map<String, Object> result) {
+        MangaAgentRuntimeContext context = runtimeContext == null ? null : runtimeContext.get(MangaAgentRuntimeContext.class);
+        String stepId = context == null ? null : context.stepId();
+        String auditId = result == null ? null : stringValue(result.get("auditId"));
+        String resultHash = resultHash(result);
         UUID requestId = requestId(runtimeContext);
         if (requestId != null) {
-            agentRunToolStatus.recordSucceeded(toolName, userId, chapterId, requestId, durationMs, result);
+            agentRunToolStatus.recordSucceeded(toolName, userId, chapterId, requestId, stepId,
+                    auditId, resultHash, durationMs, result);
             return;
         }
         agentRunToolStatus.recordSucceeded(toolName, userId, chapterId, durationMs, result);
@@ -69,9 +92,13 @@ public class AgentToolAuditService {
 
     private void recordFailed(String toolName, Long userId, Long chapterId, RuntimeContext runtimeContext,
                               long durationMs, String error) {
+        MangaAgentRuntimeContext context = runtimeContext == null ? null : runtimeContext.get(MangaAgentRuntimeContext.class);
+        String stepId = context == null ? null : context.stepId();
+        String auditId = UUID.randomUUID().toString();
         UUID requestId = requestId(runtimeContext);
         if (requestId != null) {
-            agentRunToolStatus.recordFailed(toolName, userId, chapterId, requestId, durationMs, error);
+            agentRunToolStatus.recordFailed(toolName, userId, chapterId, requestId, stepId, auditId,
+                    durationMs, error);
             return;
         }
         agentRunToolStatus.recordFailed(toolName, userId, chapterId, durationMs, error);
@@ -83,6 +110,41 @@ public class AgentToolAuditService {
         }
         MangaAgentRuntimeContext context = runtimeContext.get(MangaAgentRuntimeContext.class);
         return context == null ? null : context.requestId();
+    }
+
+    private void consumeToolBudget(String toolName, RuntimeContext runtimeContext) {
+        if (budgetService == null || runtimeContext == null) {
+            return;
+        }
+        budgetService.consumeToolCall(runtimeContext.get(MangaAgentRuntimeContext.class), toolName);
+    }
+
+    private Map<String, Object> successEnvelope(Map<String, Object> result) {
+        Map<String, Object> safeData = result == null ? Map.of() : Map.copyOf(result);
+        Map<String, Object> envelope = new LinkedHashMap<>(safeData);
+        envelope.put("success", true);
+        envelope.put("data", safeData);
+        envelope.put("errorCode", "");
+        envelope.put("retryable", false);
+        envelope.put("auditId", UUID.randomUUID().toString());
+        envelope.put("resultHash", resultHash(safeData));
+        return Map.copyOf(envelope);
+    }
+
+    private String resultHash(Map<String, Object> payload) {
+        if (payload == null || payload.isEmpty()) {
+            return null;
+        }
+        try {
+            return ToolIdempotencyService.sha256(objectMapper.writeValueAsString(payload));
+        } catch (Exception error) {
+            log.debug("Failed to serialize tool result for hashing", error);
+            return ToolIdempotencyService.sha256(String.valueOf(payload));
+        }
+    }
+
+    private String stringValue(Object value) {
+        return value == null ? null : String.valueOf(value);
     }
 
     private Map<String, Object> event(String toolName, Long userId, Long chapterId, String status,

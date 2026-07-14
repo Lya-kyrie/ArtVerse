@@ -10,4 +10,6 @@ import java.util.List;
 public interface MangaAgentRunEventRepository extends JpaRepository<MangaAgentRunEventRecord, Long> {
 
     List<MangaAgentRunEventRecord> findByRunIdOrderByIdAsc(Long runId);
+
+    List<MangaAgentRunEventRecord> findTop200ByRunIdAndIdGreaterThanOrderByIdAsc(Long runId, Long afterId);
 }

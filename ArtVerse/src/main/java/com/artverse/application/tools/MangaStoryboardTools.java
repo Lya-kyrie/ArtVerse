@@ -5,8 +5,10 @@ import com.artverse.application.AgentToolAuditService;
 import com.artverse.application.ChapterAccessService;
 import com.artverse.application.SceneService;
 import com.artverse.application.StructuredStoryboardService;
+import com.artverse.application.StoryboardArtifactService;
 import com.artverse.application.ToolIdempotencyService;
 import com.artverse.domain.Chapter;
+import com.artverse.config.ArtVerseProperties;
 import com.artverse.guard.GenerationGuardService;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -20,6 +22,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
 import java.util.Map;
+import java.util.UUID;
 
 @Slf4j
 @Component
@@ -34,6 +37,8 @@ public class MangaStoryboardTools {
     private final ToolIdempotencyService idempotencyService;
     private final MangaToolSupport support;
     private final ObjectMapper objectMapper;
+    private final StoryboardArtifactService artifactService;
+    private final ArtVerseProperties properties;
 
     @Tool(
             name = "generate_storyboard",
@@ -44,13 +49,21 @@ public class MangaStoryboardTools {
     public Map<String, Object> generateStoryboard(RuntimeContext runtimeContext) {
         MangaAgentRuntimeContext context = support.resolveContext(runtimeContext);
         return agentToolAuditService.around("generate_storyboard", context.userId(), context.chapterId(), runtimeContext, () -> {
-            return idempotencyService.execute(context.requestId(), "generate_storyboard", "no-arguments", () -> {
+            return idempotencyService.execute(context.requestId(), context.stepId(),
+                    "generate_storyboard", "no-arguments", () -> {
                 Chapter chapter = chapterAccessService.requireVisible(context.chapterId(), context.userId());
                 support.requireDestructiveWriteConfirmation(context, chapter, "generate_storyboard_overwrite");
                 return generationGuardService.executeSceneGeneration(
                         context.userId(), context.chapterId(), () -> {
-                            List<String> scenes = sceneService.generateScenes(context.chapterId(), context.cozeApiKey());
-                            return buildResultMap(chapter, scenes);
+                            if (!properties.getAgent().isStoryboardTwoPhaseEnabled()) {
+                                List<String> legacy = sceneService.generateScenes(
+                                        context.chapterId(), context.cozeApiKey());
+                                return legacyResult(chapter, legacy);
+                            }
+                            List<String> scenes = sceneService.generateScenesDraft(context.chapterId(), context.cozeApiKey());
+                            StoryboardArtifactService.ArtifactView draft = artifactService.createTextDraft(scenes, context);
+                            StoryboardArtifactService.ArtifactView committed = artifactService.commit(draft.artifactId(), context);
+                            return buildResultMap(chapter, scenes, committed);
                         });
             });
         });
@@ -68,11 +81,16 @@ public class MangaStoryboardTools {
         MangaAgentRuntimeContext context = support.resolveContext(runtimeContext);
         String inputHash = contentHash(scenes);
         return agentToolAuditService.around("save_storyboard", context.userId(), context.chapterId(), runtimeContext, () -> {
-            return idempotencyService.execute(context.requestId(), "save_storyboard", inputHash, () -> {
+            return idempotencyService.execute(context.requestId(), context.stepId(),
+                    "save_storyboard", inputHash, () -> {
                 Chapter chapter = chapterAccessService.requireVisible(context.chapterId(), context.userId());
                 support.requireDestructiveWriteConfirmation(context, chapter, "save_storyboard_overwrite");
-                List<String> updated = sceneService.updateScenes(context.chapterId(), scenes);
-                return buildResultMap(chapter, updated);
+                if (!properties.getAgent().isStoryboardTwoPhaseEnabled()) {
+                    return legacyResult(chapter, sceneService.updateScenes(context.chapterId(), scenes));
+                }
+                StoryboardArtifactService.ArtifactView draft = artifactService.createTextDraft(scenes, context);
+                StoryboardArtifactService.ArtifactView committed = artifactService.commit(draft.artifactId(), context);
+                return buildResultMap(chapter, scenes, committed);
             });
         });
     }
@@ -89,23 +107,99 @@ public class MangaStoryboardTools {
         MangaAgentRuntimeContext context = support.resolveContext(runtimeContext);
         String inputHash = contentHash(pages);
         return agentToolAuditService.around("save_structured_storyboard", context.userId(), context.chapterId(), runtimeContext, () -> {
-            return idempotencyService.execute(context.requestId(), "save_structured_storyboard", inputHash, () -> {
+            return idempotencyService.execute(context.requestId(), context.stepId(),
+                    "save_structured_storyboard", inputHash, () -> {
                 Chapter chapter = chapterAccessService.requireVisible(context.chapterId(), context.userId());
                 support.requireDestructiveWriteConfirmation(context, chapter, "save_structured_storyboard_overwrite");
                 List<String> normalized = structuredStoryboardService.normalize(pages, chapter.getImageCount());
-                List<String> updated = sceneService.updateScenes(context.chapterId(), normalized);
-                return buildResultMap(chapter, updated);
+                if (!properties.getAgent().isStoryboardTwoPhaseEnabled()) {
+                    return legacyResult(chapter,
+                            sceneService.updateScenes(context.chapterId(), normalized));
+                }
+                StoryboardArtifactService.ArtifactView draft = artifactService.createStructuredDraft(pages, context);
+                StoryboardArtifactService.ArtifactView committed = artifactService.commit(draft.artifactId(), context);
+                return buildResultMap(chapter, normalized, committed);
             });
         });
     }
 
-    private Map<String, Object> buildResultMap(Chapter chapter, List<String> scenes) {
+    @Tool(
+            name = "draft_structured_storyboard",
+            description = "Create and validate a storyboard draft without changing the chapter. Returns an artifact_id and evaluator result.",
+            concurrencySafe = false
+    )
+    @Transactional
+    public Map<String, Object> draftStructuredStoryboard(
+            @ToolParam(name = "pages", description = "Storyboard pages with 4-6 panels per page") Object pages,
+            RuntimeContext runtimeContext) {
+        MangaAgentRuntimeContext context = support.resolveContext(runtimeContext);
+        String inputHash = contentHash(pages);
+        return agentToolAuditService.around("draft_structured_storyboard", context.userId(), context.chapterId(),
+                runtimeContext, () -> idempotencyService.execute(context.requestId(), context.stepId(),
+                        "draft_structured_storyboard", inputHash, () -> {
+                            StoryboardArtifactService.ArtifactView artifact =
+                                    artifactService.createStructuredDraft(pages, context);
+                            return Map.of(
+                                    "artifact_id", artifact.artifactId().toString(),
+                                    "saved", false,
+                                    "validated", "VALIDATED".equals(artifact.status()),
+                                    "status", artifact.status(),
+                                    "evaluation", artifact.evaluation(),
+                                    "scenes_count", ((List<?>) artifact.payload().get("scenes")).size()
+                            );
+                        }));
+    }
+
+    @Tool(
+            name = "commit_storyboard",
+            description = "Commit one validated storyboard artifact. This is the only chapter write operation in the new storyboard workflow.",
+            concurrencySafe = false
+    )
+    @Transactional
+    public Map<String, Object> commitStoryboard(
+            @ToolParam(name = "artifact_id", description = "Validated storyboard artifact UUID") String artifactId,
+            RuntimeContext runtimeContext) {
+        MangaAgentRuntimeContext context = support.resolveContext(runtimeContext);
+        UUID parsed;
+        try {
+            parsed = UUID.fromString(artifactId);
+        } catch (Exception error) {
+            throw new IllegalArgumentException("artifact_id must be a UUID");
+        }
+        return agentToolAuditService.around("commit_storyboard", context.userId(), context.chapterId(),
+                runtimeContext, () -> idempotencyService.execute(context.requestId(), context.stepId(),
+                        "commit_storyboard", contentHash(artifactId), () -> {
+                            Chapter chapter = chapterAccessService.requireVisible(context.chapterId(), context.userId());
+                            support.requireDestructiveWriteConfirmation(context, chapter, "commit_storyboard_overwrite");
+                            StoryboardArtifactService.ArtifactView artifact = artifactService.commit(parsed, context);
+                            @SuppressWarnings("unchecked")
+                            List<String> scenes = (List<String>) artifact.payload().get("scenes");
+                            return buildResultMap(chapter, scenes, artifact);
+                        }));
+    }
+
+    private Map<String, Object> buildResultMap(Chapter chapter, List<String> scenes,
+                                               StoryboardArtifactService.ArtifactView artifact) {
         return Map.of(
                 "chapter_display_name", support.chapterDisplayName(chapter),
                 "saved", true,
                 "changed", true,
                 "scenes_count", scenes.size(),
-                "scenes", scenes
+                "scenes", scenes,
+                "artifact_id", artifact.artifactId().toString(),
+                "artifact_status", artifact.status(),
+                "evaluation", artifact.evaluation()
+        );
+    }
+
+    private Map<String, Object> legacyResult(Chapter chapter, List<String> scenes) {
+        return Map.of(
+                "chapter_display_name", support.chapterDisplayName(chapter),
+                "saved", true,
+                "changed", true,
+                "scenes_count", scenes.size(),
+                "scenes", scenes,
+                "compatibility_mode", true
         );
     }
 

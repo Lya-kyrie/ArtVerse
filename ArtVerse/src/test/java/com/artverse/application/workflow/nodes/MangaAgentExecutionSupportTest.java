@@ -1,5 +1,6 @@
 package com.artverse.application.workflow.nodes;
 
+import com.artverse.agent.AgentMessage;
 import com.artverse.agent.AgentRunRequest;
 import com.artverse.agent.AgentTaskType;
 import com.artverse.agent.AgentWorkspaceSyncService;
@@ -7,13 +8,16 @@ import com.artverse.agent.gateway.AgentScopeHarnessAgentGateway;
 import com.artverse.application.AgentRunToolStatus;
 import com.artverse.application.ApiKeyService;
 import com.artverse.application.MangaAgentConversationService;
+import com.artverse.application.workflow.MangaWorkflowContextSnapshot;
 import com.artverse.application.workflow.MangaWorkflowExecutionContext;
+import com.artverse.application.workflow.MangaWorkflowRoute;
 import com.artverse.application.workflow.MangaWorkflowResult;
 import com.artverse.application.workflow.MangaReviewMetrics;
 import com.artverse.common.BusinessException;
 import com.artverse.config.ArtVerseProperties;
 import com.artverse.domain.MangaAgentConversation;
 import com.artverse.domain.MessageRole;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import reactor.core.publisher.Mono;
@@ -25,6 +29,7 @@ import io.agentscope.core.event.TextBlockDeltaEvent;
 
 import java.util.Map;
 import java.util.UUID;
+import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -55,7 +60,10 @@ class MangaAgentExecutionSupportTest {
                 mock(ApiKeyService.class),
                 gateway,
                 new ArtVerseProperties(),
-                reviewMetrics
+                reviewMetrics,
+                null,
+                null,
+                new ObjectMapper()
         );
         context = mock(MangaWorkflowExecutionContext.class);
         toolState = mock(AgentRunToolStatus.RunState.class);
@@ -79,6 +87,54 @@ class MangaAgentExecutionSupportTest {
         assertThat(result.degraded()).isFalse();
         verify(conversationService).saveMessage(
                 conversation, MessageRole.ASSISTANT, "finished", requestId);
+    }
+
+    @Test
+    void prepareAgentMessagesInjectsServerOwnedChapterSnapshotBeforeCurrentUserMessage() {
+        MangaWorkflowContextSnapshot snapshot = new MangaWorkflowContextSnapshot(
+                3L,
+                7L,
+                "Story",
+                "Chapter 1",
+                "ink",
+                6,
+                2,
+                "source exists",
+                "storyboard exists",
+                "characters exist",
+                "",
+                MangaWorkflowRoute.REVIEW,
+                "hash-123",
+                List.of("storyboard_excerpt"),
+                List.of()
+        );
+        when(context.workflowContext()).thenReturn(snapshot);
+        String userMessage = "本章的漫画情况和小说质量怎么样，给我一份详细的分析报告";
+        when(context.message()).thenReturn(userMessage);
+        when(conversationService.listMessages(conversation)).thenReturn(List.of());
+        when(conversationService.buildMessages(
+                context.chapter(),
+                context.user(),
+                List.of(),
+                userMessage,
+                requestId
+        )).thenReturn(List.of(
+                new AgentMessage("system", "system prompt"),
+                new AgentMessage("user", userMessage)
+        ));
+
+        List<AgentMessage> messages = support.prepareAgentMessages(context);
+
+        assertThat(messages).hasSize(3);
+        assertThat(messages.get(1).role()).isEqualTo("system");
+        assertThat(messages.get(1).content()).contains("artverse_server_data_block")
+                .contains("\"context_hash\" : \"hash-123\"")
+                .contains("\"required_fields\"")
+                .contains("\"scene_count\" : 6")
+                .contains("\"image_count\" : 2")
+                .contains("source exists")
+                .contains("storyboard exists");
+        assertThat(messages.get(2).role()).isEqualTo("user");
     }
 
     @Test

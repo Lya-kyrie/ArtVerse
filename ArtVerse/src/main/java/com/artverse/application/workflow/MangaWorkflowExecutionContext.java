@@ -18,13 +18,23 @@ public record MangaWorkflowExecutionContext(
         User user,
         Chapter chapter,
         MangaWorkflowContextSnapshot workflowContext,
-        boolean persistConversationMessages
+        boolean persistConversationMessages,
+        String stepId
 ) {
     public MangaWorkflowExecutionContext(MangaAgentConversation conversation, String message, UUID requestId,
                                          String llmApiKey, AgentModelSpec modelSpec,
                                          AgentRunToolStatus.RunState toolState, User user, Chapter chapter,
                                          MangaWorkflowContextSnapshot workflowContext) {
         this(conversation, message, requestId, llmApiKey, modelSpec, toolState, user, chapter,
-                workflowContext, true);
+                workflowContext, true, null);
+    }
+
+    public MangaWorkflowExecutionContext(MangaAgentConversation conversation, String message, UUID requestId,
+                                         String llmApiKey, AgentModelSpec modelSpec,
+                                         AgentRunToolStatus.RunState toolState, User user, Chapter chapter,
+                                         MangaWorkflowContextSnapshot workflowContext,
+                                         boolean persistConversationMessages) {
+        this(conversation, message, requestId, llmApiKey, modelSpec, toolState, user, chapter,
+                workflowContext, persistConversationMessages, null);
     }
 }

@@ -51,7 +51,9 @@ class RouterPreFilterTest {
         MangaWorkflowRouter router = new MangaWorkflowRouter(
                 gateway, new ArtVerseProperties(), List.of(second, first),
                 mock(com.artverse.application.workflow.MangaRoutingMetrics.class),
-                new com.artverse.application.workflow.ExecutionPlanValidator());
+                new com.artverse.application.workflow.ExecutionPlanValidator(),
+                new com.artverse.application.workflow.RouteContractValidator(
+                        new com.artverse.application.workflow.ExecutionPlanValidator()));
 
         RoutingDecision actual = router.route(null, "message", UUID.randomUUID(), null, null);
 

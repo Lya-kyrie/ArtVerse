@@ -7,8 +7,6 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
-import java.io.IOException;
-import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 
@@ -25,25 +23,8 @@ public class AgentScopeConfig {
 
     @Bean
     public Path agentScopeWorkspace() {
-        try {
-            Files.createDirectories(DEFAULT_WORKSPACE);
-            Path agentsMd = DEFAULT_WORKSPACE.resolve("AGENTS.md");
-            if (!Files.exists(agentsMd)) {
-                Files.writeString(agentsMd, """
-                        # ArtVerse AI Creative Assistant
-
-                        You help users create novels and manga content in ArtVerse.
-
-                        ## Behavior
-                        - Answer in concise Chinese.
-                        - Keep character settings consistent.
-                        - Explain uncertainty clearly.
-                        - Use available tools for workflow actions instead of pretending work is done.
-                        """);
-            }
-        } catch (IOException e) {
-            log.warn("Failed to init AgentScope workspace: {}", e.getMessage());
-        }
+        // Managed workspace contents are stored by AgentScope RemoteFilesystem.
+        // This path is logical only and is never written by application code.
         return DEFAULT_WORKSPACE;
     }
 

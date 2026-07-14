@@ -8,6 +8,8 @@ import com.artverse.persistence.UserApiKeyRepository;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
+import com.artverse.security.ProviderEndpointPolicy;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.reactive.function.client.WebClient;
@@ -15,27 +17,56 @@ import org.springframework.web.reactive.function.client.WebClientResponseExcepti
 
 import javax.crypto.Cipher;
 import javax.crypto.spec.SecretKeySpec;
+import javax.crypto.spec.GCMParameterSpec;
 import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.security.SecureRandom;
 import java.util.Base64;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 
 @Service
-@RequiredArgsConstructor
 public class ApiKeyService {
 
     public static final String SLOT_LLM = "llm";
     public static final String SLOT_IMAGE = "image";
     public static final String SLOT_WORKFLOW = "workflow";
 
-    private static final String ALGORITHM = "AES";
-    private static final byte[] ENCRYPTION_KEY = "ArtVerse!ApiKey1".getBytes(StandardCharsets.UTF_8);
+    private static final String LEGACY_ALGORITHM = "AES";
+    private static final byte[] LEGACY_ENCRYPTION_KEY =
+            "ArtVerse!ApiKey1".getBytes(StandardCharsets.UTF_8);
+    private static final String ACTIVE_CIPHER = "AES/GCM/NoPadding";
+    private static final String ACTIVE_PREFIX = "v2";
+    private static final int GCM_TAG_BITS = 128;
+    private static final int GCM_NONCE_BYTES = 12;
+    private static final SecureRandom SECURE_RANDOM = new SecureRandom();
 
     private final UserApiKeyRepository repository;
     private final ArtVerseProperties properties;
     private final WebClient.Builder webClientBuilder;
     private final ObjectMapper objectMapper;
+    private final ProviderEndpointPolicy endpointPolicy;
+
+    @Autowired
+    public ApiKeyService(UserApiKeyRepository repository,
+                         ArtVerseProperties properties,
+                         WebClient.Builder webClientBuilder,
+                         ObjectMapper objectMapper,
+                         ProviderEndpointPolicy endpointPolicy) {
+        this.repository = repository;
+        this.properties = properties;
+        this.webClientBuilder = webClientBuilder;
+        this.objectMapper = objectMapper;
+        this.endpointPolicy = endpointPolicy;
+    }
+
+    public ApiKeyService(UserApiKeyRepository repository,
+                         ArtVerseProperties properties,
+                         WebClient.Builder webClientBuilder,
+                         ObjectMapper objectMapper) {
+        this(repository, properties, webClientBuilder, objectMapper, null);
+    }
 
     public record KeyInfo(String provider, String apiKeyMasked) {}
 
@@ -88,6 +119,7 @@ public class ApiKeyService {
                 config.baseUrl(),
                 config.model()
         ));
+        validateProviderUrl(merged.baseUrl());
         String encrypted = encryptSecret(merged.apiKey());
         boolean isNew = entity.getId() == null;
         boolean isFirstProfile = isNew && repository.findByUserIdAndSlotOrderByCreatedAtAsc(user.getId(), slot).isEmpty();
@@ -148,7 +180,57 @@ public class ApiKeyService {
         if (config.apiKey().isBlank()) {
             throw new BusinessException(400, message);
         }
+        validateProviderUrl(config.baseUrl());
         return config;
+    }
+
+    /**
+     * Resolves an active, user-owned provider configuration without falling
+     * back to an operator key. Background agent work must remain BYOK.
+     */
+    public UserProviderConfig requireActiveUserProviderConfig(User user, String slot, String message) {
+        String normalizedSlot = requireSupportedSlot(slot);
+        UserProviderConfig config = repository
+                .findFirstByUserIdAndSlotAndActiveTrueOrderByCreatedAtAscIdAsc(user.getId(), normalizedSlot)
+                .map(entity -> toProviderConfig(entity, normalizedSlot))
+                .orElseThrow(() -> new BusinessException(400, message));
+        if (config.apiKey().isBlank()) {
+            throw new BusinessException(400, message);
+        }
+        validateProviderUrl(config.baseUrl());
+        return config;
+    }
+
+    /**
+     * BYOK request resolution. New clients select a saved config and may
+     * override only the model; legacy clients may still supply their own raw
+     * key/base URL for one release cycle.
+     */
+    public UserProviderConfig requireByokProviderConfig(User user, UserProviderConfig override,
+                                                        Long configId, String message) {
+        UserProviderConfig safeOverride = override == null
+                ? new UserProviderConfig(SLOT_LLM, "", "", "", "", "")
+                : override;
+        if (configId != null || !safeOverride.apiKey().isBlank()) {
+            return requireProviderConfig(user, safeOverride, configId, message);
+        }
+        UserProviderConfig saved = requireActiveUserProviderConfig(user, safeOverride.slot(), message);
+        return new UserProviderConfig(
+                saved.slot(), saved.provider(), saved.label(), saved.apiKey(),
+                saved.baseUrl(), blankToDefault(safeOverride.model(), saved.model()), saved.configId());
+    }
+
+    public String requireActiveUserProviderKey(User user, String slot, String message) {
+        return requireActiveUserProviderConfig(user, slot, message).apiKey();
+    }
+
+    public String activeUserProviderKeyOrBlank(User user, String slot) {
+        String normalizedSlot = requireSupportedSlot(slotFromLegacyProvider(slot));
+        return repository.findFirstByUserIdAndSlotAndActiveTrueOrderByCreatedAtAscIdAsc(
+                        user.getId(), normalizedSlot)
+                .map(UserApiKey::getApiKey)
+                .map(this::decryptSecret)
+                .orElse("");
     }
 
     public UserProviderConfig requireProviderConfig(User user, UserProviderConfig override, String message) {
@@ -172,7 +254,8 @@ public class ApiKeyService {
                     saved.label(),
                     saved.apiKey(),
                     saved.baseUrl(),
-                    blankToDefault(override.model(), saved.model())
+                    blankToDefault(override.model(), saved.model()),
+                    selected.getId()
             );
         } else {
             config = resolveProviderConfig(user, override, null);
@@ -180,6 +263,7 @@ public class ApiKeyService {
         if (config.apiKey().isBlank()) {
             throw new BusinessException(400, message);
         }
+        validateProviderUrl(config.baseUrl());
         return config;
     }
 
@@ -201,7 +285,8 @@ public class ApiKeyService {
                 blankToDefault(override.label(), base.label()),
                 blankToDefault(override.apiKey(), base.apiKey()),
                 blankToDefault(override.baseUrl(), base.baseUrl()),
-                blankToDefault(override.model(), base.model())
+                blankToDefault(override.model(), base.model()),
+                base.configId()
         );
     }
 
@@ -258,6 +343,7 @@ public class ApiKeyService {
         if (SLOT_WORKFLOW.equals(config.slot())) {
             return List.of("workflow");
         }
+        validateProviderUrl(config.baseUrl());
         try {
             String response = webClientBuilder
                     .baseUrl(config.baseUrl())
@@ -355,8 +441,15 @@ public class ApiKeyService {
                 entity.getLabel(),
                 decryptSecret(entity.getApiKey()),
                 entity.getBaseUrl(),
-                firstConfiguredModel(entity.getModel())
+                firstConfiguredModel(entity.getModel()),
+                entity.getId()
         ));
+    }
+
+    private void validateProviderUrl(String baseUrl) {
+        if (endpointPolicy != null) {
+            endpointPolicy.requireSafeBaseUrl(baseUrl);
+        }
     }
 
     private ProviderInfo toProviderInfo(UserApiKey entity) {
@@ -380,7 +473,8 @@ public class ApiKeyService {
                 blankToDefault(config.label(), defaults.label()),
                 config.apiKey(),
                 blankToDefault(config.baseUrl(), defaults.baseUrl()),
-                blankToDefault(config.model(), defaults.model())
+                blankToDefault(config.model(), defaults.model()),
+                config.configId()
         );
     }
 
@@ -455,23 +549,65 @@ public class ApiKeyService {
 
     public String encryptSecret(String plainText) {
         try {
-            SecretKeySpec keySpec = new SecretKeySpec(ENCRYPTION_KEY, ALGORITHM);
-            Cipher cipher = Cipher.getInstance(ALGORITHM);
-            cipher.init(Cipher.ENCRYPT_MODE, keySpec);
-            return Base64.getEncoder().encodeToString(cipher.doFinal(safe(plainText).getBytes(StandardCharsets.UTF_8)));
+            if (properties.getSecrets().getActiveKeyVersion() != 2) {
+                throw new IllegalStateException("Unsupported active secret key version");
+            }
+            byte[] nonce = new byte[GCM_NONCE_BYTES];
+            SECURE_RANDOM.nextBytes(nonce);
+            Cipher cipher = Cipher.getInstance(ACTIVE_CIPHER);
+            cipher.init(Cipher.ENCRYPT_MODE, activeKey(), new GCMParameterSpec(GCM_TAG_BITS, nonce));
+            byte[] encrypted = cipher.doFinal(safe(plainText).getBytes(StandardCharsets.UTF_8));
+            return ACTIVE_PREFIX + ":" + Base64.getUrlEncoder().withoutPadding().encodeToString(nonce)
+                    + ":" + Base64.getUrlEncoder().withoutPadding().encodeToString(encrypted);
         } catch (Exception e) {
             throw new RuntimeException("Failed to encrypt API key", e);
         }
     }
 
     public String decryptSecret(String encrypted) {
+        if (encrypted != null && encrypted.startsWith(ACTIVE_PREFIX + ":")) {
+            return decryptV2(encrypted);
+        }
+        return decryptLegacy(encrypted);
+    }
+
+    private String decryptV2(String encrypted) {
         try {
-            SecretKeySpec keySpec = new SecretKeySpec(ENCRYPTION_KEY, ALGORITHM);
-            Cipher cipher = Cipher.getInstance(ALGORITHM);
+            String[] parts = encrypted.split(":", 3);
+            if (parts.length != 3) throw new IllegalArgumentException("Malformed v2 secret");
+            byte[] nonce = Base64.getUrlDecoder().decode(parts[1]);
+            if (nonce.length != GCM_NONCE_BYTES) throw new IllegalArgumentException("Invalid v2 nonce");
+            byte[] ciphertext = Base64.getUrlDecoder().decode(parts[2]);
+            Cipher cipher = Cipher.getInstance(ACTIVE_CIPHER);
+            cipher.init(Cipher.DECRYPT_MODE, activeKey(), new GCMParameterSpec(GCM_TAG_BITS, nonce));
+            return new String(cipher.doFinal(ciphertext), StandardCharsets.UTF_8);
+        } catch (Exception e) {
+            throw new RuntimeException("Failed to decrypt API key", e);
+        }
+    }
+
+    private String decryptLegacy(String encrypted) {
+        try {
+            SecretKeySpec keySpec = new SecretKeySpec(LEGACY_ENCRYPTION_KEY, LEGACY_ALGORITHM);
+            Cipher cipher = Cipher.getInstance(LEGACY_ALGORITHM);
             cipher.init(Cipher.DECRYPT_MODE, keySpec);
             return new String(cipher.doFinal(Base64.getDecoder().decode(encrypted)), StandardCharsets.UTF_8);
         } catch (Exception e) {
             throw new RuntimeException("Failed to decrypt API key", e);
+        }
+    }
+
+    private SecretKeySpec activeKey() {
+        String configured = properties.getSecrets().getEncryptionKey();
+        if (configured == null || configured.length() < 16) {
+            throw new IllegalStateException("artverse.secrets.encryption-key must contain at least 16 characters");
+        }
+        try {
+            return new SecretKeySpec(
+                    MessageDigest.getInstance("SHA-256").digest(configured.getBytes(StandardCharsets.UTF_8)),
+                    "AES");
+        } catch (Exception error) {
+            throw new IllegalStateException("Unable to derive secret encryption key", error);
         }
     }
 

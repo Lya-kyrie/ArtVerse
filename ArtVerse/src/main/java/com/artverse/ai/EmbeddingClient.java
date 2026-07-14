@@ -4,6 +4,7 @@ import com.artverse.common.BusinessException;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
+import com.artverse.security.ProviderEndpointPolicy;
 import org.springframework.http.HttpHeaders;
 import org.springframework.stereotype.Component;
 import org.springframework.web.reactive.function.client.WebClient;
@@ -20,11 +21,13 @@ import java.util.Map;
 public class EmbeddingClient {
     private final WebClient.Builder webClientBuilder;
     private final ObjectMapper objectMapper;
+    private final ProviderEndpointPolicy endpointPolicy;
 
     public float[] embed(String baseUrl, String apiKey, String model, String headersJson, String input) {
         if (baseUrl == null || baseUrl.isBlank() || apiKey == null || apiKey.isBlank() || model == null || model.isBlank()) {
             throw new BusinessException(400, "Embedding Base URL, API key, and model are required.");
         }
+        endpointPolicy.requireSafeBaseUrl(baseUrl);
         try {
             WebClient.RequestBodySpec request = webClientBuilder.baseUrl(stripTrailingSlash(baseUrl)).build()
                     .post().uri("/embeddings")
@@ -54,6 +57,7 @@ public class EmbeddingClient {
         if (baseUrl == null || baseUrl.isBlank() || apiKey == null || apiKey.isBlank()) {
             throw new BusinessException(400, "Embedding Base URL and API key are required to fetch models.");
         }
+        endpointPolicy.requireSafeBaseUrl(baseUrl);
         try {
             WebClient.RequestHeadersSpec<?> request = webClientBuilder.baseUrl(stripTrailingSlash(baseUrl)).build()
                     .get().uri("/models")
@@ -95,6 +99,7 @@ public class EmbeddingClient {
                     headers.put(field.getKey(), field.getValue().asText());
                 }
             }
+            endpointPolicy.validateCustomHeaders(headers);
             return headers;
         } catch (BusinessException e) { throw e;
         } catch (Exception e) { throw new BusinessException(400, "Custom embedding headers must be valid JSON."); }

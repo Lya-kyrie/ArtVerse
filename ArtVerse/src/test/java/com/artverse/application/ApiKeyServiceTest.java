@@ -23,6 +23,18 @@ import static org.mockito.Mockito.when;
 class ApiKeyServiceTest {
 
     @Test
+    void v2EncryptionIsAuthenticatedVersionedAndRandomized() {
+        ApiKeyService service = service(mock(UserApiKeyRepository.class));
+
+        String first = service.encryptSecret("sk-secret");
+        String second = service.encryptSecret("sk-secret");
+
+        assertThat(first).startsWith("v2:").isNotEqualTo(second);
+        assertThat(service.decryptSecret(first)).isEqualTo("sk-secret");
+        assertThat(service.decryptSecret(second)).isEqualTo("sk-secret");
+    }
+
+    @Test
     void firstSavedProfileIsActivated() {
         UserApiKeyRepository repository = mock(UserApiKeyRepository.class);
         ApiKeyService service = service(repository);
@@ -247,6 +259,49 @@ class ApiKeyServiceTest {
         assertThat(resolved.model()).isEqualTo("openai/gpt-4.1");
     }
 
+    @Test
+    void byokResolutionNeverFallsBackToOperatorSecret() {
+        UserApiKeyRepository repository = mock(UserApiKeyRepository.class);
+        ArtVerseProperties properties = new ArtVerseProperties();
+        properties.getDeepseek().setApiKey("operator-paid-secret");
+        ApiKeyService service = service(repository, properties);
+        User user = user(9L);
+        when(repository.findFirstByUserIdAndSlotAndActiveTrueOrderByCreatedAtAscIdAsc(
+                9L, ApiKeyService.SLOT_LLM)).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> service.requireByokProviderConfig(
+                user,
+                new UserProviderConfig("llm", "", "", "", "", ""),
+                null,
+                "BYOK required"
+        )).isInstanceOf(BusinessException.class)
+                .hasMessageContaining("BYOK required");
+    }
+
+    @Test
+    void byokResolutionUsesSavedIdentityAndAllowsOnlyModelOverride() {
+        UserApiKeyRepository repository = mock(UserApiKeyRepository.class);
+        ApiKeyService service = service(repository);
+        User user = user(9L);
+        UserApiKey saved = profile(user, service, true);
+        when(repository.findFirstByUserIdAndSlotAndActiveTrueOrderByCreatedAtAscIdAsc(
+                9L, ApiKeyService.SLOT_LLM)).thenReturn(Optional.of(saved));
+
+        UserProviderConfig resolved = service.requireByokProviderConfig(
+                user,
+                new UserProviderConfig("llm", "forged", "forged", "",
+                        "https://forged.invalid/v1", "openai/gpt-4.1"),
+                null,
+                "missing"
+        );
+
+        assertThat(resolved.configId()).isEqualTo(42L);
+        assertThat(resolved.provider()).isEqualTo("openrouter");
+        assertThat(resolved.baseUrl()).isEqualTo("https://openrouter.ai/api/v1");
+        assertThat(resolved.apiKey()).isEqualTo("sk-backup");
+        assertThat(resolved.model()).isEqualTo("openai/gpt-4.1");
+    }
+
     private UserApiKey profile(User user, ApiKeyService service, boolean active) {
         UserApiKey saved = new UserApiKey();
         saved.setId(42L);
@@ -262,7 +317,11 @@ class ApiKeyServiceTest {
     }
 
     private ApiKeyService service(UserApiKeyRepository repository) {
-        return new ApiKeyService(repository, new ArtVerseProperties(), mock(WebClient.Builder.class), new ObjectMapper());
+        return service(repository, new ArtVerseProperties());
+    }
+
+    private ApiKeyService service(UserApiKeyRepository repository, ArtVerseProperties properties) {
+        return new ApiKeyService(repository, properties, mock(WebClient.Builder.class), new ObjectMapper());
     }
 
     private User user(Long id) {

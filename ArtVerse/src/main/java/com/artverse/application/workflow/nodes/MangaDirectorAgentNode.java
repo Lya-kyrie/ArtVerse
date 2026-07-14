@@ -4,6 +4,7 @@ import com.artverse.agent.AgentRunEvent;
 import com.artverse.application.AgentUserInputRequiredException;
 import com.artverse.application.MangaAgentRunService;
 import com.artverse.application.workflow.ExecutionPlan;
+import com.artverse.application.workflow.ExecutionPlanCompiler;
 import com.artverse.application.workflow.ExecutionStep;
 import com.artverse.application.workflow.ExecutionPlanValidator;
 import com.artverse.application.workflow.MangaWorkflowContextSnapshot;
@@ -15,19 +16,18 @@ import com.artverse.application.workflow.MangaWorkflowResult;
 import com.artverse.application.workflow.MangaWorkflowRoute;
 import com.artverse.application.workflow.MangaWorkflowStreamContext;
 import com.artverse.application.workflow.RoutingDecision;
+import com.artverse.application.workflow.ToolContractViolationException;
 import com.artverse.common.BusinessException;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.context.annotation.Lazy;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 
-import java.time.OffsetDateTime;
-import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.UUID;
 
 /**
  * Multi-step orchestration agent. Only invoked when the Router detects more
@@ -47,17 +47,30 @@ public class MangaDirectorAgentNode implements MangaWorkflowNodeHandler {
     private final ObjectMapper objectMapper;
     private final MangaAgentExecutionSupport support;
     private final ExecutionPlanValidator planValidator;
+    private final ExecutionPlanCompiler planCompiler;
+
+    @Autowired
+    public MangaDirectorAgentNode(@Lazy MangaWorkflowNodeRegistry nodeRegistry,
+                                   MangaAgentRunService runService,
+                                   ObjectMapper objectMapper,
+                                   MangaAgentExecutionSupport support,
+                                   ExecutionPlanValidator planValidator,
+                                   ExecutionPlanCompiler planCompiler) {
+        this.nodeRegistry = nodeRegistry;
+        this.runService = runService;
+        this.objectMapper = objectMapper;
+        this.support = support;
+        this.planValidator = planValidator;
+        this.planCompiler = planCompiler;
+    }
 
     public MangaDirectorAgentNode(@Lazy MangaWorkflowNodeRegistry nodeRegistry,
                                    MangaAgentRunService runService,
                                    ObjectMapper objectMapper,
                                    MangaAgentExecutionSupport support,
                                    ExecutionPlanValidator planValidator) {
-        this.nodeRegistry = nodeRegistry;
-        this.runService = runService;
-        this.objectMapper = objectMapper;
-        this.support = support;
-        this.planValidator = planValidator;
+        this(nodeRegistry, runService, objectMapper, support, planValidator,
+                new ExecutionPlanCompiler(planValidator));
     }
 
     @Override
@@ -108,14 +121,14 @@ public class MangaDirectorAgentNode implements MangaWorkflowNodeHandler {
             ));
 
             String stepInput = previousOutput;
-            step.markRunning(stepInput);
+            step.markRunning(summarizeResult(stepInput));
             persistPlan(context, plan);
-            MangaWorkflowExecutionContext stepContext = contextForStep(context, step, stepInput);
+            MangaWorkflowExecutionContext stepContext = contextForStep(context, plan.planId(), step, stepInput);
 
             try {
                 MangaWorkflowResult result = nodeRegistry.handlerFor(step.route()).stream(
                         stepContext, streamContext.forStep(plan.planId(), step.sequence(), step.route()));
-                step.markCompleted(summarizeResult(result.stepSummary()), result.handoffContext());
+                step.markCompleted(summarizeResult(result.stepSummary()), truncateHandoff(result.handoffContext()));
                 persistPlan(context, plan);
                 completedSteps++;
                 childDegraded |= result.degraded();
@@ -124,7 +137,7 @@ public class MangaDirectorAgentNode implements MangaWorkflowNodeHandler {
                 persistPlan(context, plan);
                 throw e;
             } catch (Exception e) {
-                if (step.mutating()) {
+                if (step.mutating() || e instanceof ToolContractViolationException) {
                     step.markFailed(e.getMessage());
                     persistPlan(context, plan);
                     throw planFailure(plan, completedSteps, step, e.getMessage());
@@ -187,27 +200,8 @@ public class MangaDirectorAgentNode implements MangaWorkflowNodeHandler {
         return steps;
     }
 
-    private ExecutionPlan buildAndValidatePlan(List<MangaWorkflowRoute> suggested,
-                                               java.util.Set<com.artverse.application.workflow.MangaWorkflowCapability> requiredCapabilities) {
-        planValidator.requireValid(suggested, requiredCapabilities);
-
-        // Ensure all routes have handlers
-        for (MangaWorkflowRoute stepRoute : suggested) {
-            try {
-                nodeRegistry.handlerFor(stepRoute);
-            } catch (IllegalStateException e) {
-                throw new BusinessException(400, "Director plan contains unregistered route: " + stepRoute);
-            }
-        }
-
-        List<ExecutionStep> planSteps = new ArrayList<>();
-        for (int i = 0; i < suggested.size(); i++) {
-            MangaWorkflowRoute stepRoute = suggested.get(i);
-            planSteps.add(new ExecutionStep(i, stepRoute, stepRoute.name(), isMutatingRoute(stepRoute)));
-        }
-
-        return new ExecutionPlan(UUID.randomUUID().toString(), planSteps,
-                RoutingDecision.CURRENT_VERSION, OffsetDateTime.now());
+    private ExecutionPlan buildAndValidatePlan(RoutingDecision decision) {
+        return planCompiler.compile(decision, this::hasRegisteredHandler);
     }
 
     private ExecutionPlan restoreOrBuildPlan(MangaWorkflowExecutionContext context,
@@ -222,11 +216,17 @@ public class MangaDirectorAgentNode implements MangaWorkflowNodeHandler {
                 && restored.steps().stream().map(ExecutionStep::route).toList().equals(suggested)) {
             return restored;
         }
-        return buildAndValidatePlan(suggested, requiredCapabilities);
+        RoutingDecision decision = readRoutingDecision(context);
+        return buildAndValidatePlan(decision);
     }
 
-    private boolean isMutatingRoute(MangaWorkflowRoute route) {
-        return route.isMutating();
+    private boolean hasRegisteredHandler(MangaWorkflowRoute route) {
+        try {
+            nodeRegistry.handlerFor(route);
+            return true;
+        } catch (IllegalStateException ignored) {
+            return false;
+        }
     }
 
     private void persistPlan(MangaWorkflowExecutionContext context, ExecutionPlan plan) {
@@ -253,13 +253,13 @@ public class MangaDirectorAgentNode implements MangaWorkflowNodeHandler {
                 continue;
             }
             String stepInput = previousOutput;
-            step.markRunning(stepInput);
+            step.markRunning(summarizeResult(stepInput));
             persistPlan(context, plan);
-            MangaWorkflowExecutionContext stepContext = contextForStep(context, step, stepInput);
+            MangaWorkflowExecutionContext stepContext = contextForStep(context, plan.planId(), step, stepInput);
 
             try {
                 MangaWorkflowResult result = nodeRegistry.handlerFor(step.route()).run(stepContext);
-                step.markCompleted(summarizeResult(result.stepSummary()), result.handoffContext());
+                step.markCompleted(summarizeResult(result.stepSummary()), truncateHandoff(result.handoffContext()));
                 persistPlan(context, plan);
                 completedSteps++;
                 childDegraded |= result.degraded();
@@ -268,7 +268,7 @@ public class MangaDirectorAgentNode implements MangaWorkflowNodeHandler {
                 persistPlan(context, plan);
                 throw e;
             } catch (Exception e) {
-                if (step.mutating()) {
+                if (step.mutating() || e instanceof ToolContractViolationException) {
                     step.markFailed(e.getMessage());
                     persistPlan(context, plan);
                     throw planFailure(plan, completedSteps, step, e.getMessage());
@@ -283,16 +283,21 @@ public class MangaDirectorAgentNode implements MangaWorkflowNodeHandler {
     }
 
     private MangaWorkflowExecutionContext contextForStep(MangaWorkflowExecutionContext original,
-                                                          ExecutionStep step, String stepInput) {
+                                                          String planId, ExecutionStep step, String stepInput) {
         String enrichedMessage = original.message();
         if (stepInput != null && !stepInput.isBlank() && !stepInput.equals(original.message())) {
             enrichedMessage = original.message() + "\n\n[上一步上下文]" + stepInput;
         }
-        return internalContext(original, enrichedMessage);
+        return internalContext(original, enrichedMessage, planId + ":" + step.sequence());
     }
 
     private MangaWorkflowExecutionContext internalContext(MangaWorkflowExecutionContext original,
                                                            String message) {
+        return internalContext(original, message, null);
+    }
+
+    private MangaWorkflowExecutionContext internalContext(MangaWorkflowExecutionContext original,
+                                                           String message, String stepId) {
         return new MangaWorkflowExecutionContext(
                 original.conversation(),
                 message,
@@ -303,13 +308,15 @@ public class MangaDirectorAgentNode implements MangaWorkflowNodeHandler {
                 original.user(),
                 original.chapter(),
                 original.workflowContext(),
-                false
+                false,
+                stepId
         );
     }
 
     // ---- Result handling ----
 
     private static final int MAX_SUMMARY_LENGTH = 500;
+    private static final int MAX_HANDOFF_LENGTH = 12_000;
 
     private String summarizeResult(String text) {
         return text == null || text.isBlank() ? "No output" : truncateResult(text);
@@ -324,6 +331,11 @@ public class MangaDirectorAgentNode implements MangaWorkflowNodeHandler {
         return new BusinessException(502, "Director plan failed at step " + (failedStep.sequence() + 1)
                 + " (" + failedStep.route() + ") after " + completedSteps + "/" + plan.stepCount()
                 + " completed steps: " + (error == null ? "unknown error" : error));
+    }
+
+    private static String truncateHandoff(String value) {
+        if (value == null || value.length() <= MAX_HANDOFF_LENGTH) return value;
+        return value.substring(0, MAX_HANDOFF_LENGTH);
     }
 
     private MangaWorkflowResult summarizeResults(ExecutionPlan plan, int completedSteps,

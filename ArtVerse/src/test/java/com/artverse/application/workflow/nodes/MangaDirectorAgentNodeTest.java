@@ -10,6 +10,7 @@ import com.artverse.application.workflow.MangaWorkflowStreamContext;
 import com.artverse.application.MangaAgentRunEventPublisher;
 import com.artverse.application.workflow.MangaWorkflowRoute;
 import com.artverse.application.workflow.RoutingDecision;
+import com.artverse.application.workflow.ToolContractViolationException;
 import com.artverse.common.BusinessException;
 import com.artverse.domain.MangaAgentRun;
 import com.artverse.domain.MangaAgentRunStatus;
@@ -153,6 +154,32 @@ class MangaDirectorAgentNodeTest {
         when(registry.handlerFor(MangaWorkflowRoute.STORYBOARD)).thenReturn(storyboard);
         when(registry.handlerFor(MangaWorkflowRoute.REVIEW)).thenReturn(mock(MangaWorkflowNodeHandler.class));
         when(storyboard.run(any())).thenThrow(new BusinessException(502, "write failed"));
+
+        assertThatThrownBy(() -> node.run(TestContexts.context(requestId, run)))
+                .isInstanceOf(BusinessException.class)
+                .hasMessageContaining("Director plan failed");
+    }
+
+    @Test
+    void readOnlyContractViolationAlsoFailsDirectorRun() {
+        MangaWorkflowNodeRegistry registry = mock(MangaWorkflowNodeRegistry.class);
+        MangaAgentRunService runService = mock(MangaAgentRunService.class);
+        MangaWorkflowNodeHandler creative = mock(MangaWorkflowNodeHandler.class);
+        MangaWorkflowNodeHandler review = mock(MangaWorkflowNodeHandler.class);
+        MangaAgentExecutionSupport support = mock(MangaAgentExecutionSupport.class);
+        MangaDirectorAgentNode node = new MangaDirectorAgentNode(registry, runService, objectMapper, support,
+                new ExecutionPlanValidator());
+        UUID requestId = UUID.randomUUID();
+        MangaAgentRun run = new MangaAgentRun();
+        run.setRequestId(requestId);
+        RoutingDecision decision = new RoutingDecision(
+                MangaWorkflowRoute.DIRECTOR, 0.95, List.of("creative"), false, false, "test",
+                List.of(MangaWorkflowRoute.CREATIVE, MangaWorkflowRoute.REVIEW), RoutingDecision.CURRENT_VERSION);
+        when(runService.findRun(1L, 7L, requestId)).thenReturn(Optional.of(run));
+        when(runService.routingDecision(run)).thenReturn(decision);
+        when(registry.handlerFor(MangaWorkflowRoute.CREATIVE)).thenReturn(creative);
+        when(registry.handlerFor(MangaWorkflowRoute.REVIEW)).thenReturn(review);
+        when(creative.run(any())).thenThrow(new ToolContractViolationException("forbidden_tool:commit_storyboard"));
 
         assertThatThrownBy(() -> node.run(TestContexts.context(requestId, run)))
                 .isInstanceOf(BusinessException.class)

@@ -64,7 +64,17 @@ public final class MangaAgentDtos {
                                    String currentPhase,
                                    MangaRouteSource routeSource,
                                    Double routeConfidence,
-                                   String routerVersion) {
+                                   String routerVersion,
+                                   String workflowVersion,
+                                   UUID traceId,
+                                   Map<String, Object> skillVersions,
+                                   Long modelConfigId,
+                                   Long knowledgeSnapshotId,
+                                   Map<String, Object> budgetUsage,
+                                   Map<String, Object> runAttributes,
+                                   MangaAgentRunService.RunContextSnapshot contextSnapshot,
+                                   List<MangaAgentRunService.RunStepSnapshot> steps,
+                                   List<MangaAgentRunService.RunArtifactSnapshot> artifacts) {
         public static RunStateResponse from(MangaAgentRunService.RunSnapshot snapshot) {
             return new RunStateResponse(
                     snapshot.requestId(),
@@ -82,14 +92,24 @@ public final class MangaAgentDtos {
                     snapshot.currentPhase(),
                     snapshot.routeSource(),
                     snapshot.routeConfidence(),
-                    snapshot.routerVersion()
+                    snapshot.routerVersion(),
+                    snapshot.workflowVersion(),
+                    snapshot.traceId(),
+                    snapshot.skillVersions(),
+                    snapshot.modelConfigId(),
+                    snapshot.knowledgeSnapshotId(),
+                    snapshot.budgetUsage(),
+                    snapshot.runAttributes(),
+                    snapshot.contextSnapshot(),
+                    snapshot.steps(),
+                    snapshot.artifacts()
             );
         }
     }
 
-    public record RunEventDto(String eventName, Map<String, Object> data, OffsetDateTime createdAt) {
+    public record RunEventDto(Long eventId, String eventName, Map<String, Object> data, OffsetDateTime createdAt) {
         public static RunEventDto from(MangaAgentRunService.RunEventSnapshot event) {
-            return new RunEventDto(event.eventName(), event.data(), event.createdAt());
+            return new RunEventDto(event.eventId(), event.eventName(), event.data(), event.createdAt());
         }
     }
 

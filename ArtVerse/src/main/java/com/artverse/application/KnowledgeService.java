@@ -9,6 +9,8 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.jdbc.support.GeneratedKeyHolder;
+import org.springframework.jdbc.support.KeyHolder;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -21,6 +23,7 @@ import java.util.*;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
+import java.sql.Statement;
 
 @Slf4j
 @Service
@@ -29,6 +32,8 @@ public class KnowledgeService {
     private static final int CHUNK_SIZE = 800;
     private static final int CHUNK_OVERLAP = 120;
     private static final int CONTEXT_LIMIT = 6000;
+    private static final double MIN_RECALL_SCORE = 0.18;
+    private static final String INDEX_WORKER_ID = "knowledge-" + UUID.randomUUID();
     private final KnowledgeUnitRepository unitRepository;
     private final KnowledgeIndexJobRepository jobRepository;
     private final StoryRepository storyRepository;
@@ -51,7 +56,12 @@ public class KnowledgeService {
                                Integer attempts, String lastError, OffsetDateTime nextRunAt) {}
     public record RevisionView(Integer version, String title, String body, String summary, Map<String, Object> structuredData, OffsetDateTime createdAt) {}
     public record RecallItem(Long knowledgeUnitId, Integer version, String type, String title, String content, double score) {}
-    public record RecallPreview(List<RecallItem> items, String context, String contextHash, Long embeddingSpaceId) {}
+    public record RecallPreview(List<RecallItem> items, String context, String contextHash,
+                                Long embeddingSpaceId, Long snapshotId) {
+        public RecallPreview(List<RecallItem> items, String context, String contextHash, Long embeddingSpaceId) {
+            this(items, context, contextHash, embeddingSpaceId, null);
+        }
+    }
 
     @Transactional(readOnly = true)
     public List<UnitView> list(Long storyId, Long userId, boolean includeArchived) {
@@ -177,6 +187,16 @@ public class KnowledgeService {
     }
 
     @Transactional
+    public UnitView approveCharacterProfile(Long profileId, Long userId) {
+        CharacterProfile profile = characterRepository.findByIdAndUserId(profileId, userId)
+                .orElseThrow(() -> new BusinessException(404, "Character profile not found"));
+        syncCharacterProfile(profile);
+        KnowledgeUnit unit = unitRepository.findByCharacterProfileId(profileId)
+                .orElseThrow(() -> new BusinessException(500, "Character knowledge approval failed"));
+        return toView(unit);
+    }
+
+    @Transactional
     public void archiveCharacterProfile(Long profileId) {
         unitRepository.findByCharacterProfileId(profileId).ifPresent(unit -> unit.setStatus(KnowledgeUnitStatus.ARCHIVED));
     }
@@ -190,36 +210,60 @@ public class KnowledgeService {
         requireStory(storyId, userId);
         EmbeddingSpace space = spaceRepository.findActiveByStoryId(storyId).orElseThrow(() -> new BusinessException(404, "No active embedding space"));
         UserEmbeddingConfig config = space.getConfig();
-        float[] vector = embeddingClient.embed(config.getBaseUrl(), embeddingConfigService.decryptedApiKey(config), config.getModel(), config.getCustomHeaders(), query);
+        float[] vector = embeddingClient.embed(config.getBaseUrl(), embeddingConfigService.decryptedApiKey(config),
+                config.getModel(), embeddingConfigService.decryptedHeaders(config), query);
         if (vector.length != space.getDimensions()) throw new BusinessException(502, "Embedding API dimension no longer matches the active knowledge space.");
         List<RecallItem> candidates = jdbcTemplate.query("""
-                SELECT ku.id, ku.version, ku.type, ku.title, kuc.content,
-                       1 - (kuc.embedding <=> CAST(? AS vector)) AS score
+                WITH recall_query AS (
+                    SELECT CAST(? AS vector) AS embedding,
+                           plainto_tsquery('simple', ?) AS text_query
+                ), ranked AS (
+                    SELECT ku.id, ku.version, ku.type, ku.title, kuc.content, ku.importance,
+                           greatest(0, 1 - (kuc.embedding <=> recall_query.embedding)) AS vector_score,
+                           ts_rank_cd(
+                               to_tsvector('simple', coalesce(ku.title, '') || ' ' || kuc.content),
+                               recall_query.text_query
+                           ) AS text_score
                 FROM knowledge_unit_chunks kuc
                 JOIN knowledge_units ku ON ku.id = kuc.knowledge_unit_id
                 JOIN stories s ON s.id = ku.story_id
+                CROSS JOIN recall_query
                 WHERE ku.story_id = ? AND s.user_id = ? AND kuc.embedding_space_id = ? AND kuc.source_version = ku.version
                   AND ku.status = 'ACTIVE'
                   AND (ku.effective_from_chapter IS NULL OR ku.effective_from_chapter <= ?)
                   AND (ku.effective_to_chapter IS NULL OR ku.effective_to_chapter >= ?)
                   AND NOT (ku.type = 'FORESHADOWING' AND upper(coalesce(ku.structured_data->>'status', '')) IN ('RECOVERED', 'RESOLVED'))
-                ORDER BY kuc.embedding <=> CAST(? AS vector) ASC
+                )
+                SELECT id, version, type, title, content,
+                       vector_score * 0.82
+                           + least(text_score, 1.0) * 0.10
+                           + (importance / 5.0) * 0.08 AS score
+                FROM ranked
+                ORDER BY score DESC
                 LIMIT 40
                 """, (rs, row) -> new RecallItem(rs.getLong("id"), rs.getInt("version"), rs.getString("type"),
-                rs.getString("title"), rs.getString("content"), rs.getDouble("score")), vectorLiteral(vector), storyId, userId, space.getId(), chapterNumber, chapterNumber, vectorLiteral(vector));
+                rs.getString("title"), rs.getString("content"), rs.getDouble("score")),
+                vectorLiteral(vector), query, storyId, userId, space.getId(), chapterNumber, chapterNumber);
         Map<Long, RecallItem> best = new LinkedHashMap<>();
         candidates.forEach(item -> best.merge(item.knowledgeUnitId(), item, (left, right) -> left.score() >= right.score() ? left : right));
         List<RecallItem> selected = applyDynamicBudget(new ArrayList<>(best.values()), query);
         String context = buildContext(selected);
         String contextHash = hash(context);
-        if (snapshot && chapterId != null) persistSnapshot(chapterId, space.getId(), selected, contextHash);
-        return new RecallPreview(selected, context, contextHash, space.getId());
+        Long snapshotId = snapshot && chapterId != null
+                ? persistSnapshot(chapterId, space.getId(), selected, contextHash)
+                : null;
+        return new RecallPreview(selected, context, contextHash, space.getId(), snapshotId);
     }
 
     private List<RecallItem> applyDynamicBudget(List<RecallItem> items, String query) {
         Map<String, Integer> quotas = Map.of("CHARACTER_CARD", 6, "CHARACTER_RELATION", 4, "WORLDVIEW", 4, "TIMELINE", 5, "FORESHADOWING", 3);
         Map<String, Integer> used = new HashMap<>();
-        List<RecallItem> ranked = items.stream().sorted(Comparator.comparingDouble(RecallItem::score).reversed()).toList();
+        List<RecallItem> ranked = items.stream()
+                .filter(item -> item.score() >= MIN_RECALL_SCORE
+                        || (!item.title().isBlank()
+                        && query.toLowerCase(Locale.ROOT).contains(item.title().toLowerCase(Locale.ROOT))))
+                .sorted(Comparator.comparingDouble(RecallItem::score).reversed())
+                .toList();
         List<RecallItem> result = new ArrayList<>();
         for (RecallItem item : ranked) {
             int quota = quotas.getOrDefault(item.type(), 3);
@@ -241,12 +285,28 @@ public class KnowledgeService {
         return facts.toString();
     }
 
-    private void persistSnapshot(Long chapterId, Long spaceId, List<RecallItem> items, String contextHash) {
+    private Long persistSnapshot(Long chapterId, Long spaceId, List<RecallItem> items, String contextHash) {
         try {
             List<Map<String, Object>> data = items.stream().map(i -> Map.<String, Object>of("knowledge_id", i.knowledgeUnitId(), "version", i.version(), "score", i.score())).toList();
-            jdbcTemplate.update("INSERT INTO chapter_knowledge_snapshots(chapter_id, embedding_space_id, knowledge_items, context_hash) VALUES (?, ?, CAST(? AS jsonb), ?)",
-                    chapterId, spaceId, objectMapper.writeValueAsString(data), contextHash);
-        } catch (Exception e) { log.warn("Knowledge snapshot was not persisted: {}", e.getClass().getSimpleName()); }
+            String json = objectMapper.writeValueAsString(data);
+            KeyHolder keyHolder = new GeneratedKeyHolder();
+            jdbcTemplate.update(connection -> {
+                var statement = connection.prepareStatement("""
+                        INSERT INTO chapter_knowledge_snapshots
+                            (chapter_id, embedding_space_id, knowledge_items, context_hash)
+                        VALUES (?, ?, CAST(? AS jsonb), ?)
+                        """, Statement.RETURN_GENERATED_KEYS);
+                statement.setLong(1, chapterId);
+                statement.setLong(2, spaceId);
+                statement.setString(3, json);
+                statement.setString(4, contextHash);
+                return statement;
+            }, keyHolder);
+            return keyHolder.getKey() == null ? null : keyHolder.getKey().longValue();
+        } catch (Exception e) {
+            log.warn("Knowledge snapshot was not persisted: {}", e.getClass().getSimpleName());
+            return null;
+        }
     }
 
     private void enqueueForActiveSpace(KnowledgeUnit unit) {
@@ -270,47 +330,80 @@ public class KnowledgeService {
 
     @Transactional
     protected void process(Long jobId) {
+        int claimed = jdbcTemplate.update("""
+                UPDATE knowledge_index_jobs
+                SET status = 'RUNNING', owner_instance_id = ?,
+                    lease_until = now() + interval '90 seconds',
+                    fencing_token = fencing_token + 1, updated_at = now()
+                WHERE id = ?
+                  AND status IN ('PENDING', 'FAILED', 'RUNNING')
+                  AND next_run_at <= now()
+                  AND (status <> 'RUNNING' OR lease_until IS NULL OR lease_until <= now())
+                """, INDEX_WORKER_ID, jobId);
+        if (claimed == 0) return;
         KnowledgeIndexJob job = jobRepository.findById(jobId).orElse(null);
         if (job == null || job.getStatus() == KnowledgeIndexJobStatus.SUCCEEDED || job.getStatus() == KnowledgeIndexJobStatus.STALE) return;
         KnowledgeUnit unit = job.getKnowledgeUnit();
-        if (job.getEmbeddingSpace() == null || !Objects.equals(unit.getVersion(), job.getSourceVersion())) { job.setStatus(KnowledgeIndexJobStatus.STALE); return; }
-        job.setStatus(KnowledgeIndexJobStatus.RUNNING); job.setNextRunAt(OffsetDateTime.now().plusMinutes(5));
+        if (job.getEmbeddingSpace() == null || !Objects.equals(unit.getVersion(), job.getSourceVersion())) {
+            job.setStatus(KnowledgeIndexJobStatus.STALE);
+            clearJobLease(job);
+            return;
+        }
+        job.setNextRunAt(OffsetDateTime.now().plusMinutes(5));
         try {
             EmbeddingSpace space = job.getEmbeddingSpace();
             UserEmbeddingConfig config = space.getConfig();
             List<String> chunks = chunks(unit);
             List<float[]> vectors = new ArrayList<>();
             for (String chunk : chunks) {
-                float[] vector = embeddingClient.embed(config.getBaseUrl(), embeddingConfigService.decryptedApiKey(config), config.getModel(), config.getCustomHeaders(), chunk);
+                float[] vector = embeddingClient.embed(config.getBaseUrl(), embeddingConfigService.decryptedApiKey(config),
+                        config.getModel(), embeddingConfigService.decryptedHeaders(config), chunk);
                 if (vector.length != space.getDimensions()) throw new BusinessException(502, "Embedding dimension differs from its validated space.");
                 vectors.add(vector);
             }
-            if (!Objects.equals(unit.getVersion(), job.getSourceVersion())) { job.setStatus(KnowledgeIndexJobStatus.STALE); return; }
+            if (!Objects.equals(unit.getVersion(), job.getSourceVersion())) {
+                job.setStatus(KnowledgeIndexJobStatus.STALE);
+                clearJobLease(job);
+                return;
+            }
             jdbcTemplate.update("DELETE FROM knowledge_unit_chunks WHERE knowledge_unit_id = ? AND embedding_space_id = ?", unit.getId(), space.getId());
             for (int i = 0; i < chunks.size(); i++) {
                 jdbcTemplate.update("INSERT INTO knowledge_unit_chunks(knowledge_unit_id, embedding_space_id, source_version, chunk_index, priority, content, content_hash, embedding) VALUES (?, ?, ?, ?, ?, ?, ?, CAST(? AS vector))",
                         unit.getId(), space.getId(), unit.getVersion(), i, i < 2 ? 10 : 0, chunks.get(i), hash(chunks.get(i)), vectorLiteral(vectors.get(i)));
             }
-            job.setStatus(KnowledgeIndexJobStatus.SUCCEEDED); job.setLastError(null);
+            job.setStatus(KnowledgeIndexJobStatus.SUCCEEDED); job.setLastError(null); clearJobLease(job);
             activateIfComplete(unit.getStory().getId(), space.getId());
         } catch (Exception e) {
             int attempts = job.getAttempts() + 1; job.setAttempts(attempts);
             job.setLastError("Embedding request failed");
             if (attempts >= 5) job.setStatus(KnowledgeIndexJobStatus.FAILED);
             else { job.setStatus(KnowledgeIndexJobStatus.FAILED); job.setNextRunAt(OffsetDateTime.now().plusSeconds(new int[]{10, 30, 120, 600}[Math.min(attempts - 1, 3)])); }
+            clearJobLease(job);
             log.warn("Knowledge indexing failed for job {}: {}", jobId, e.getClass().getSimpleName());
         }
     }
 
     private void activateIfComplete(Long storyId, Long spaceId) {
         Integer pending = jdbcTemplate.queryForObject("""
-                SELECT count(*) FROM knowledge_index_jobs j JOIN knowledge_units u ON u.id = j.knowledge_unit_id
-                WHERE u.story_id = ? AND j.embedding_space_id = ? AND j.status <> 'SUCCEEDED'
+                SELECT count(*)
+                FROM knowledge_units u
+                WHERE u.story_id = ? AND u.status = 'ACTIVE'
+                  AND NOT EXISTS (
+                      SELECT 1 FROM knowledge_index_jobs j
+                      WHERE j.knowledge_unit_id = u.id
+                        AND j.embedding_space_id = ?
+                        AND j.source_version = u.version
+                        AND j.status = 'SUCCEEDED'
+                  )
                 """, Integer.class, storyId, spaceId);
         if (pending != null && pending == 0) activateSpace(storyId, spaceId);
     }
     private void activateSpace(Long storyId, Long spaceId) {
         jdbcTemplate.update("INSERT INTO story_embedding_spaces(story_id, embedding_space_id) VALUES (?, ?) ON CONFLICT (story_id) DO UPDATE SET embedding_space_id = EXCLUDED.embedding_space_id, activated_at = now()", storyId, spaceId);
+    }
+    private void clearJobLease(KnowledgeIndexJob job) {
+        job.setOwnerInstanceId(null);
+        job.setLeaseUntil(null);
     }
 
     private List<String> chunks(KnowledgeUnit unit) {

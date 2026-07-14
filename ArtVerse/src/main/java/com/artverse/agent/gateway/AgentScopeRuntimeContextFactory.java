@@ -26,7 +26,11 @@ public class AgentScopeRuntimeContextFactory {
                     request.chapterId(),
                     request.conversationId(),
                     request.requestId(),
-                    String.valueOf(request.variables().getOrDefault("coze_api_key", ""))
+                    String.valueOf(request.variables().getOrDefault("coze_api_key", "")),
+                    request.taskType(),
+                    String.valueOf(request.variables().getOrDefault(
+                            "step_id", request.taskType().sessionSuffix())),
+                    longValue(request.variables().get("fencing_token"))
             ));
         }
         return builder.build();
@@ -40,7 +44,17 @@ public class AgentScopeRuntimeContextFactory {
         }
     }
 
-    static String createSessionId(AgentRunRequest request) {
+    private static Long longValue(Object value) {
+        if (value instanceof Number number) return number.longValue();
+        if (value == null || String.valueOf(value).isBlank()) return 0L;
+        try {
+            return Long.valueOf(String.valueOf(value));
+        } catch (NumberFormatException error) {
+            throw new BusinessException(400, "Invalid agent fencing token");
+        }
+    }
+
+    public static String createSessionId(AgentRunRequest request) {
         return String.join("-",
                 "u", safeSegment(request.userId()),
                 "story", safeSegment(request.storyId()),

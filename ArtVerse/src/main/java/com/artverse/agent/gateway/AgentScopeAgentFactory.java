@@ -5,7 +5,11 @@ import com.artverse.agent.AgentModelSpecFactory;
 import com.artverse.agent.AgentRunRequest;
 import com.artverse.agent.AgentTaskType;
 import com.artverse.agent.AgentWorkspaceService;
+import com.artverse.agent.ArtVerseSkillRepository;
 import com.artverse.agent.MangaAgentPromptProvider;
+import com.artverse.agent.PostgresAgentWorkspaceStore;
+import com.artverse.application.ArtVerseSkillRegistry;
+import com.artverse.application.MangaAgentRunService;
 import com.artverse.agent.gateway.tools.AgentToolConfigurationRegistry;
 import com.artverse.config.ArtVerseProperties;
 import com.github.benmanes.caffeine.cache.Cache;
@@ -14,6 +18,7 @@ import io.agentscope.core.model.Model;
 import io.agentscope.core.model.OpenAIChatModel;
 import io.agentscope.core.state.AgentStateStore;
 import io.agentscope.harness.agent.HarnessAgent;
+import io.agentscope.harness.agent.filesystem.remote.RemoteFilesystem;
 import io.agentscope.harness.agent.memory.compaction.CompactionConfig;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -36,6 +41,10 @@ public class AgentScopeAgentFactory {
     private final MangaAgentPromptProvider promptProvider;
     private final AgentStateStore agentStateStore;
     private final AgentToolConfigurationRegistry toolConfigurationRegistry;
+    private final ArtVerseSkillRegistry skillRegistry;
+    private final ArtVerseSkillRepository skillRepository;
+    private final MangaAgentRunService runService;
+    private final PostgresAgentWorkspaceStore workspaceStore;
     private Cache<String, HarnessAgent> agents;
 
     @PostConstruct
@@ -55,12 +64,24 @@ public class AgentScopeAgentFactory {
     public HarnessAgent getOrCreate(AgentRunRequest request) {
         Path requestWorkspace = agentWorkspaceService.workspaceFor(request);
         AgentModelSpec fallbackSpec = defaultModelSpec(request.llmApiKey());
+        ArtVerseSkillRegistry.SkillManifest skill = properties.getAgent().isSkillRegistryEnabled()
+                ? skillRegistry.requireEnabled(Long.valueOf(request.userId()), request.taskType())
+                : null;
+        if (skill != null && request.requestId() != null && request.chapterId() != null) {
+            runService.recordSkillSelection(Long.valueOf(request.userId()), request.chapterId(), request.requestId(),
+                    skill.skillKey(), skill.semanticVersion(), skill.promptVersion());
+            runService.recordStepSkillSelection(Long.valueOf(request.userId()), request.chapterId(),
+                    request.requestId(), String.valueOf(request.variables().getOrDefault("step_id", "")),
+                    skill.skillKey(), skill.semanticVersion());
+        }
         String agentKey = buildAgentCacheKey(request, fallbackSpec, requestWorkspace,
-                promptProvider.promptVersionFor(request.taskType()));
-        return agents.get(agentKey, key -> buildAgent(request, requestWorkspace, fallbackSpec));
+                promptProvider.promptVersionFor(request.taskType()),
+                skill == null ? "none" : skill.skillKey() + "@" + skill.semanticVersion());
+        return agents.get(agentKey, key -> buildAgent(request, requestWorkspace, fallbackSpec, skill));
     }
 
-    private HarnessAgent buildAgent(AgentRunRequest request, Path requestWorkspace, AgentModelSpec fallbackSpec) {
+    private HarnessAgent buildAgent(AgentRunRequest request, Path requestWorkspace, AgentModelSpec fallbackSpec,
+                                    ArtVerseSkillRegistry.SkillManifest skill) {
         AgentModelSpec modelSpec = request.modelSpec() != null
                 ? request.modelSpec()
                 : fallbackSpec;
@@ -70,11 +91,24 @@ public class AgentScopeAgentFactory {
                 .sysPrompt(promptProvider.promptFor(request.taskType()))
                 .model(effectiveModel)
                 .workspace(requestWorkspace)
+                .abstractFilesystem(new RemoteFilesystem(
+                        workspaceStore, AgentWorkspaceService::namespaceFor))
                 .compaction(compactionConfig)
                 .stateStore(agentStateStore)
+                .maxIters(maxIters(request.taskType()))
+                .maxContextTokens(properties.getAgent().getMaxInputTokens())
                 .enablePendingToolRecovery(true)
                 .disableShellTool()
                 .disableFilesystemTools();
+        if (skill != null) {
+            builder.skillRepository(skillRepository)
+                    .disableDynamicSkills()
+                    .disableDefaultWorkspaceSkills()
+                    .enableSkills(skill.skillKey());
+        }
+        if (request.taskType().subagentDeclarations().size() > properties.getAgent().getMaxSubagents()) {
+            throw new IllegalStateException("Task declares more subagents than the configured hard limit");
+        }
         for (var declaration : request.taskType().subagentDeclarations()) {
             builder.subagent(declaration);
         }
@@ -115,6 +149,24 @@ public class AgentScopeAgentFactory {
 
     static String buildAgentCacheKey(AgentRunRequest request, AgentModelSpec fallbackSpec, Path workspace,
                                      String promptVersion) {
+        return buildAgentCacheKey(request, fallbackSpec, workspace, promptVersion, "none");
+    }
+
+    private int maxIters(AgentTaskType taskType) {
+        ArtVerseProperties.Agent agent = properties.getAgent();
+        return switch (taskType) {
+            case MANGA_ROUTER -> agent.getRouterMaxModelCalls();
+            case MANGA_CONVERSATION, MANGA_CREATIVE -> agent.getConversationMaxModelCalls();
+            case MANGA_STORYBOARD -> agent.getStoryboardMaxModelCalls();
+            case MANGA_REVIEW -> 3;
+            case MANGA_DIRECTOR -> agent.getDirectorMaxModelCalls();
+            case KNOWLEDGE_EXTRACTION -> 2;
+            default -> 4;
+        };
+    }
+
+    static String buildAgentCacheKey(AgentRunRequest request, AgentModelSpec fallbackSpec, Path workspace,
+                                     String promptVersion, String skillVersion) {
         AgentModelSpec spec = request.modelSpec() != null ? request.modelSpec() : fallbackSpec;
         return String.join(":",
                 "user", nullToKey(request.userId()),
@@ -127,6 +179,7 @@ public class AgentScopeAgentFactory {
                 "baseUrl", AgentModelSpecFactory.shortHash(spec.baseUrl()),
                 "key", nullToKey(spec.apiKeyHash()),
                 "prompt", nullToKey(promptVersion),
+                "skill", nullToKey(skillVersion),
                 "workspace", workspace == null ? "none" : AgentModelSpecFactory.shortHash(workspace.toAbsolutePath().normalize().toString())
         );
     }

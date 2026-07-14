@@ -27,8 +27,15 @@ spring:
       port: 6379
       database: 0
       timeout: 5000
+  task:
+    scheduling:
+      pool:
+        size: 4
 
 artverse:
+  secrets:
+    encryption-key: ${ARTVERSE_SECRET_ENCRYPTION_KEY:ArtVerse!ApiKey1}
+    active-key-version: 2
   cors-origins:
     - http://localhost:5173
     - http://127.0.0.1:5173
@@ -93,7 +100,31 @@ artverse:
     model-idle-timeout-seconds: 180
     tool-idle-timeout-seconds: 600
     run-watchdog-interval-ms: 30000
-    max-concurrent-runs: 8
+    max-concurrent-runs: 32
+    max-concurrent-runs-per-user: 2
+    budget-ttl-seconds: 86400
+    router-max-model-calls: 2
+    conversation-max-model-calls: 4
+    conversation-max-tool-calls: 4
+    storyboard-max-model-calls: 8
+    storyboard-max-tool-calls: 6
+    review-max-model-calls: 13
+    review-max-tool-calls: 4
+    director-max-model-calls: 12
+    max-input-tokens: 60000
+    max-output-tokens: 20000
+    max-output-bytes: 160000
+    max-subagents: 4
+    rag-injection-enabled: true
+    skill-registry-enabled: true
+    storyboard-two-phase-enabled: true
+    multi-instance-event-bus-enabled: true
+    outbox-worker-enabled: true
+    outbox-batch-size: 8
+    outbox-lease-seconds: 90
+    outbox-max-attempts: 5
+    provider-allow-http: false
+    provider-allowed-private-cidrs: []
     auto-routing-enabled: true
     routing-shadow-mode: false
     routing-direct-threshold: 0.80
@@ -154,7 +185,7 @@ management:
   endpoints:
     web:
       exposure:
-        include: health,metrics,circuitbreakers,retries
+        include: health,metrics,prometheus,circuitbreakers,retries
   endpoint:
     health:
       show-details: always

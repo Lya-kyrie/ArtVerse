@@ -61,6 +61,22 @@ class AgentRunToolStatusTest {
     }
 
     @Test
+    void filtersToolEventsByStepId() {
+        UUID requestId = UUID.randomUUID();
+
+        try (AgentRunToolStatus.RunScope scope = status.start(1L, 7L, requestId)) {
+            status.recordSucceeded("draft_structured_storyboard", 1L, 7L, requestId,
+                    "plan-a:0", "audit-1", "hash-1", 10L, Map.of("validated", true));
+            status.recordSucceeded("commit_storyboard", 1L, 7L, requestId,
+                    "plan-a:1", "audit-2", "hash-2", 10L, Map.of("saved", true));
+
+            assertThat(scope.state().eventsForStep("plan-a:0")).singleElement()
+                    .extracting(AgentRunToolStatus.ToolEvent::toolName)
+                    .isEqualTo("draft_structured_storyboard");
+        }
+    }
+
+    @Test
     void cancellationRemainsVisibleToWorkerAfterActiveStateIsCleared() {
         UUID requestId = UUID.randomUUID();
 

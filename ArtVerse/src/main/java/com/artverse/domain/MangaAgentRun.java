@@ -23,6 +23,9 @@ public class MangaAgentRun {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
+    @Column(name = "tenant_id")
+    private UUID tenantId;
+
     @ManyToOne(fetch = FetchType.LAZY, optional = false)
     @JoinColumn(name = "user_id", nullable = false)
     @JsonIgnore
@@ -73,6 +76,42 @@ public class MangaAgentRun {
     @Column(name = "execution_plan_json", columnDefinition = "TEXT")
     private String executionPlanJson;
 
+    @Column(name = "workflow_version", nullable = false, length = 64)
+    private String workflowVersion = "manga-workflow-v1";
+
+    @Column(name = "prompt_version", length = 64)
+    private String promptVersion;
+
+    @Column(name = "trace_id", nullable = false)
+    private UUID traceId;
+
+    @Column(name = "skill_versions_json", nullable = false, columnDefinition = "jsonb")
+    private String skillVersionsJson = "{}";
+
+    @Column(name = "model_config_id")
+    private Long modelConfigId;
+
+    @Column(name = "knowledge_snapshot_id")
+    private Long knowledgeSnapshotId;
+
+    @Column(name = "budget_usage_json", nullable = false, columnDefinition = "jsonb")
+    private String budgetUsageJson = "{}";
+
+    @Column(name = "context_snapshot_json", nullable = false, columnDefinition = "jsonb")
+    private String contextSnapshotJson = "{}";
+
+    @Column(name = "run_attributes_json", nullable = false, columnDefinition = "jsonb")
+    private String runAttributesJson = "{}";
+
+    @Column(name = "owner_instance_id", length = 160)
+    private String ownerInstanceId;
+
+    @Column(name = "lease_until")
+    private OffsetDateTime leaseUntil;
+
+    @Column(name = "fencing_token", nullable = false)
+    private Long fencingToken = 0L;
+
     @Column(name = "final_reply", columnDefinition = "TEXT")
     private String finalReply;
 
@@ -104,6 +143,7 @@ public class MangaAgentRun {
         updatedAt = now;
         lastProgressAt = now;
         if (requestId == null) requestId = UUID.randomUUID();
+        if (traceId == null) traceId = UUID.randomUUID();
     }
 
     @PreUpdate

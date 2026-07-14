@@ -19,7 +19,6 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
-import java.util.stream.Collectors;
 
 @Slf4j
 @Component
@@ -30,10 +29,12 @@ public class MangaWorkflowRouter {
     private final List<RouterPreFilter> preFilters;
     private final MangaRoutingMetrics metrics;
     private final ExecutionPlanValidator planValidator;
+    private final RouteContractValidator contractValidator;
 
     public MangaWorkflowRouter(AgentScopeHarnessAgentGateway gateway, ArtVerseProperties properties,
                                List<RouterPreFilter> preFilters, MangaRoutingMetrics metrics,
-                               ExecutionPlanValidator planValidator) {
+                               ExecutionPlanValidator planValidator,
+                               RouteContractValidator contractValidator) {
         this.gateway = gateway;
         this.properties = properties;
         this.preFilters = preFilters.stream()
@@ -41,13 +42,17 @@ public class MangaWorkflowRouter {
                 .toList();
         this.metrics = metrics;
         this.planValidator = planValidator;
+        this.contractValidator = contractValidator;
     }
 
     public RoutingDecision route(MangaAgentConversation conversation, String message, UUID requestId,
                                  AgentModelSpec modelSpec, String llmApiKey) {
         if (!properties.getAgent().isAutoRoutingEnabled()) {
             RoutingDecision decision = RoutingDecision.fixed(
-                    MangaWorkflowRoute.CONVERSATION, "automatic_routing_disabled_safe_fallback");
+                            MangaWorkflowRoute.CONVERSATION, "automatic_routing_disabled_safe_fallback")
+                    .withFallback(MangaWorkflowRoute.CONVERSATION, 1.0,
+                            "automatic_routing_disabled_safe_fallback",
+                            fallbackReason("automatic_routing_disabled_safe_fallback"));
             metrics.recordDecision(decision, "disabled");
             return decision;
         }
@@ -69,7 +74,10 @@ public class MangaWorkflowRouter {
             metrics.recordLatency(System.nanoTime() - startedAt, "failure");
             log.warn("Manga router failed for request {}; using read-only fallback", requestId, error);
             RoutingDecision fallback = RoutingDecision.fixed(
-                    MangaWorkflowRoute.CONVERSATION, "router_unavailable_safe_fallback");
+                            MangaWorkflowRoute.CONVERSATION, "router_unavailable_safe_fallback")
+                    .withFallback(MangaWorkflowRoute.CONVERSATION, 1.0,
+                            "router_unavailable_safe_fallback",
+                            fallbackReason("router_unavailable_safe_fallback"));
             metrics.recordFallback("router_unavailable");
             metrics.recordDecision(fallback, "fallback");
             return fallback;
@@ -102,7 +110,9 @@ public class MangaWorkflowRouter {
 
     private RoutingDecision validate(RoutingDecision raw, boolean shadowMode) {
         if (raw == null || raw.route() == null) {
-            return RoutingDecision.fixed(MangaWorkflowRoute.CONVERSATION, "invalid_router_output");
+            return RoutingDecision.fixed(MangaWorkflowRoute.CONVERSATION, "invalid_router_output")
+                    .withFallback(MangaWorkflowRoute.CONVERSATION, 1.0,
+                            "invalid_router_output", fallbackReason("invalid_router_output"));
         }
         double rawConfidence = raw.confidence();
         if (rawConfidence < 0.0 || rawConfidence > 1.0) {
@@ -113,21 +123,39 @@ public class MangaWorkflowRouter {
         List<MangaWorkflowRoute> suggestedSteps = raw.suggestedSteps();
         Set<MangaWorkflowCapability> requiredCapabilities = raw.requiredCapabilities();
         if (requiredCapabilities.stream().anyMatch(capability -> capability == null)) {
-            return invalidPlanDecision(raw, confidence, requiredCapabilities, "null_capability");
+            return fallbackDecision(raw, confidence, "invalid_plan:null_capability");
         }
         Set<MangaWorkflowCapability> unavailable = MangaWorkflowCapability.unavailable(requiredCapabilities);
         if (!unavailable.isEmpty()) {
-            return unsupportedCapabilityDecision(raw, confidence, requiredCapabilities, unavailable);
+            String unsupported = unavailable.stream().map(Enum::name).sorted()
+                    .reduce((left, right) -> left + "," + right).orElse("");
+            log.info("Router request requires unavailable manga capabilities: {}", unsupported);
+            return fallbackDecision(raw, confidence, "unsupported_capability:" + unsupported);
         }
         ExecutionPlanValidator.ValidationResult planValidation =
                 planValidator.validate(suggestedSteps, requiredCapabilities);
         if (!planValidation.valid()) {
-            return invalidPlanDecision(raw, confidence, requiredCapabilities, planValidation.reasonCode());
+            Optional<List<MangaWorkflowRoute>> repairedSteps =
+                    repairUnsafeReadOnlyReviewPlan(suggestedSteps, requiredCapabilities, planValidation.reasonCode());
+            if (repairedSteps.isPresent()) {
+                log.info("Router corrected read-only review plan {} for required capabilities {}",
+                        suggestedSteps, requiredCapabilities);
+                suggestedSteps = repairedSteps.get();
+                planValidation = planValidator.validate(suggestedSteps, requiredCapabilities);
+            }
+        }
+        if (!planValidation.valid()) {
+            return fallbackDecision(raw, confidence, "invalid_plan:" + planValidation.reasonCode());
         }
 
         MangaWorkflowRoute route = suggestedSteps.size() > 1
                 ? MangaWorkflowRoute.DIRECTOR
                 : suggestedSteps.getFirst();
+        RoutingDecision candidate = normalizedDecision(raw, confidence, route, suggestedSteps, requiredCapabilities);
+        RouteContractValidator.ValidationResult contractValidation = contractValidator.validate(candidate);
+        if (!contractValidation.valid()) {
+            return fallbackDecision(raw, confidence, contractValidation.reasonCode());
+        }
         boolean writeRoute = suggestedSteps.stream().anyMatch(MangaWorkflowRoute::isMutating);
 
         // Shadow mode: never throw clarification, never fallback — always return safe CONVERSATION
@@ -141,7 +169,11 @@ public class MangaWorkflowRouter {
                     "shadow:" + route.name(),
                     List.of(MangaWorkflowRoute.CONVERSATION),
                     RoutingDecision.CURRENT_VERSION,
-                    requiredCapabilities);
+                    requiredCapabilities,
+                    RoutingDecision.ExpectedToolPolicy.forRoute(MangaWorkflowRoute.CONVERSATION),
+                    RoutingDecision.contextFieldsFor(List.of(MangaWorkflowRoute.CONVERSATION)),
+                    RoutingDecision.RouteOutputContract.forRoute(MangaWorkflowRoute.CONVERSATION),
+                    null);
         }
 
         if (raw.needsClarification()
@@ -149,34 +181,55 @@ public class MangaWorkflowRouter {
             throw routingClarification(raw.reasonCode());
         }
         if (!writeRoute && confidence < properties.getAgent().getRoutingReadOnlyThreshold()) {
-            return new RoutingDecision(MangaWorkflowRoute.CONVERSATION, confidence, raw.intents(), false,
-                    false, "low_confidence_read_only_fallback", List.of(MangaWorkflowRoute.CONVERSATION),
-                    RoutingDecision.CURRENT_VERSION, requiredCapabilities);
+            return fallbackDecision(raw, confidence, "low_confidence_read_only_fallback");
         }
-        return new RoutingDecision(route, confidence, raw.intents(), writeRoute, false, raw.reasonCode(),
-                suggestedSteps, RoutingDecision.CURRENT_VERSION, requiredCapabilities);
+        return candidate;
     }
 
-    private RoutingDecision invalidPlanDecision(RoutingDecision raw, double confidence,
-                                                Set<MangaWorkflowCapability> requiredCapabilities,
-                                                String validationReason) {
-        String reason = "invalid_plan:" + validationReason;
+    private Optional<List<MangaWorkflowRoute>> repairUnsafeReadOnlyReviewPlan(
+            List<MangaWorkflowRoute> suggestedSteps,
+            Set<MangaWorkflowCapability> requiredCapabilities,
+            String validationReason) {
+        if (!"capability_route_mismatch".equals(validationReason)
+                || suggestedSteps == null
+                || suggestedSteps.size() != 1
+                || suggestedSteps.getFirst() != MangaWorkflowRoute.STORYBOARD
+                || requiredCapabilities == null
+                || requiredCapabilities.stream().anyMatch(MangaWorkflowCapability::isMutating)) {
+            return Optional.empty();
+        }
+        if (MangaWorkflowRoute.REVIEW.capabilities().containsAll(requiredCapabilities)
+                && requiredCapabilities.contains(MangaWorkflowCapability.STORYBOARD_REVIEW)) {
+            return Optional.of(List.of(MangaWorkflowRoute.REVIEW));
+        }
+        return Optional.empty();
+    }
+
+    private RoutingDecision fallbackDecision(RoutingDecision raw, double confidence, String reason) {
         log.warn("Router returned invalid plan {} for required capabilities {}: {}",
-                raw.suggestedSteps(), requiredCapabilities, validationReason);
+                raw.suggestedSteps(), raw.requiredCapabilities(), reason);
         metrics.recordFallback(reason);
-        return new RoutingDecision(MangaWorkflowRoute.CONVERSATION, confidence, raw.intents(), false,
-                false, reason, List.of(MangaWorkflowRoute.CONVERSATION),
-                RoutingDecision.CURRENT_VERSION, requiredCapabilities);
+        return raw.withFallback(MangaWorkflowRoute.CONVERSATION, confidence, reason, fallbackReason(reason));
     }
 
-    private RoutingDecision unsupportedCapabilityDecision(RoutingDecision raw, double confidence,
-                                                            Set<MangaWorkflowCapability> requiredCapabilities,
-                                                            Set<MangaWorkflowCapability> unavailable) {
-        String unsupported = unavailable.stream().map(Enum::name).sorted().collect(Collectors.joining(","));
-        log.info("Router request requires unavailable manga capabilities: {}", unsupported);
-        return new RoutingDecision(MangaWorkflowRoute.CONVERSATION, confidence, raw.intents(), false,
-                false, "unsupported_capability:" + unsupported, List.of(MangaWorkflowRoute.CONVERSATION),
-                RoutingDecision.CURRENT_VERSION, requiredCapabilities);
+    private RoutingDecision normalizedDecision(RoutingDecision raw, double confidence, MangaWorkflowRoute route,
+                                               List<MangaWorkflowRoute> suggestedSteps,
+                                               Set<MangaWorkflowCapability> requiredCapabilities) {
+        boolean writeRoute = suggestedSteps.stream().anyMatch(MangaWorkflowRoute::isMutating);
+        return new RoutingDecision(route, confidence, raw.intents(), writeRoute, false, raw.reasonCode(),
+                suggestedSteps, RoutingDecision.CURRENT_VERSION, requiredCapabilities,
+                raw.expectedToolPolicy(), raw.requiredContextFields(), raw.outputContract(), raw.fallbackReason());
+    }
+
+    private RoutingDecision.RouteFallbackReason fallbackReason(String reason) {
+        String category = reason;
+        String code = reason;
+        int separator = reason.indexOf(':');
+        if (separator > 0) {
+            category = reason.substring(0, separator);
+            code = reason.substring(separator + 1);
+        }
+        return RoutingDecision.RouteFallbackReason.of(category, code);
     }
 
     private AgentUserInputRequiredException routingClarification(String reason) {
@@ -196,6 +249,9 @@ public class MangaWorkflowRouter {
                                           AgentModelSpec modelSpec, String llmApiKey) {
         String input = "Available capability catalog: " + MangaWorkflowCapability.routingCatalog()
                 + "\nReturn every capability required by the request in requiredCapabilities. "
+                + "Also return the executable route contract fields: expectedToolPolicy, "
+                + "requiredContextFields, outputContract, and fallbackReason when you deliberately fall back. "
+                + "Execution plans are application-owned; suggestedSteps is only a routing hint. "
                 + "Use CONVERSATION when any required capability is UNAVAILABLE."
                 + "\nClassify this user request for the current ArtVerse chapter:\n" + message;
         return new AgentRunRequest(

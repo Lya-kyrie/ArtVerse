@@ -1,20 +1,21 @@
 package com.artverse.agent;
 
-import com.artverse.common.BusinessException;
 import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.stereotype.Service;
 import com.artverse.agent.gateway.AgentScopeRuntimeContextFactory;
+import io.agentscope.core.agent.RuntimeContext;
 
-import java.io.IOException;
-import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.List;
+import java.util.Map;
 
 @Service
 @RequiredArgsConstructor
 public class AgentWorkspaceService {
 
     private final @Qualifier("agentScopeWorkspace") Path workspaceRoot;
+    private final PostgresAgentWorkspaceStore workspaceStore;
 
     public Path workspaceFor(AgentRunRequest request) {
         return workspaceFor(request.userId(), request.storyId(), request.conversationId());
@@ -25,54 +26,59 @@ public class AgentWorkspaceService {
     }
 
     public Path workspaceFor(String userId, Long storyId, Object conversationId) {
-        Path workspace = workspaceRoot
-                .resolve("users")
-                .resolve(AgentScopeRuntimeContextFactory.safeSegment(userId))
-                .resolve("stories")
-                .resolve(AgentScopeRuntimeContextFactory.safeSegment(storyId));
-        if (conversationId != null) {
-            workspace = workspace
-                    .resolve("conversations")
-                    .resolve(AgentScopeRuntimeContextFactory.safeSegment(conversationId));
-        }
-        workspace = workspace.normalize();
-        ensureWithinRoot(workspace);
-        initialize(workspace);
-        return workspace;
+        List<String> namespace = namespaceFor(userId, storyId, conversationId);
+        initialize(namespace);
+        // Harness still requires a logical workspace path for path resolution,
+        // while all managed contents are served by RemoteFilesystem.
+        return workspaceRoot.toAbsolutePath().normalize();
     }
 
     public void writeKnowledge(String userId, Long storyId, String content) {
-        Path workspace = workspaceFor(userId, storyId);
-        try {
-            Files.writeString(workspace.resolve("KNOWLEDGE.md"), content == null ? "" : content);
-        } catch (IOException e) {
-            throw new BusinessException(500, "Failed to write AgentScope knowledge file");
+        writeKnowledge(userId, storyId, null, content);
+    }
+
+    public void writeKnowledge(String userId, Long storyId, Object conversationId, String content) {
+        List<String> namespace = namespaceFor(userId, storyId, conversationId);
+        initialize(namespace);
+        workspaceStore.put(namespace, "KNOWLEDGE.md", fileValue(content == null ? "" : content));
+    }
+
+    private void initialize(List<String> namespace) {
+        writeIfAbsent(namespace, "AGENTS.md", defaultAgentsMd());
+        writeIfAbsent(namespace, "KNOWLEDGE.md",
+                "# Story Knowledge\n\nNo story context has been synced yet.\n");
+        writeIfAbsent(namespace, "MEMORY.md", "# Long Term Memory\n\n");
+    }
+
+    private void writeIfAbsent(List<String> namespace, String key, String content) {
+        if (workspaceStore.get(namespace, key) == null) {
+            workspaceStore.putIfVersion(namespace, key, fileValue(content), 0);
         }
     }
 
-    private void initialize(Path workspace) {
-        try {
-            Files.createDirectories(workspace);
-            writeIfAbsent(workspace.resolve("AGENTS.md"), defaultAgentsMd());
-            writeIfAbsent(workspace.resolve("KNOWLEDGE.md"), "# Story Knowledge\n\nNo story context has been synced yet.\n");
-            writeIfAbsent(workspace.resolve("MEMORY.md"), "# Long Term Memory\n\n");
-        } catch (IOException e) {
-            throw new BusinessException(500, "Failed to initialize AgentScope workspace");
+    public static List<String> namespaceFor(RuntimeContext context) {
+        MangaAgentRuntimeContext manga = context == null ? null : context.get(MangaAgentRuntimeContext.class);
+        if (manga != null) {
+            return namespaceFor(String.valueOf(manga.userId()), manga.storyId(), manga.conversationId());
         }
+        return List.of(
+                "artverse",
+                "user-" + AgentScopeRuntimeContextFactory.safeSegment(context == null ? null : context.getUserId()),
+                "session-" + AgentScopeRuntimeContextFactory.safeSegment(context == null ? null : context.getSessionId())
+        );
     }
 
-    private void ensureWithinRoot(Path workspace) {
-        Path root = workspaceRoot.toAbsolutePath().normalize();
-        Path target = workspace.toAbsolutePath().normalize();
-        if (!target.startsWith(root)) {
-            throw new BusinessException(400, "Invalid AgentScope workspace path");
-        }
+    public static List<String> namespaceFor(String userId, Long storyId, Object conversationId) {
+        return List.of(
+                "artverse",
+                "user-" + AgentScopeRuntimeContextFactory.safeSegment(userId),
+                "story-" + AgentScopeRuntimeContextFactory.safeSegment(storyId),
+                "conversation-" + AgentScopeRuntimeContextFactory.safeSegment(conversationId)
+        );
     }
 
-    private void writeIfAbsent(Path path, String content) throws IOException {
-        if (!Files.exists(path)) {
-            Files.writeString(path, content);
-        }
+    private Map<String, Object> fileValue(String content) {
+        return Map.of("content", content, "encoding", "utf-8");
     }
 
     private String defaultAgentsMd() {

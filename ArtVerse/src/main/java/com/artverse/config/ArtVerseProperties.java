@@ -28,10 +28,17 @@ public class ArtVerseProperties {
     private SingleFlight singleFlight = new SingleFlight();
     private Idempotency idempotency = new Idempotency();
     private Agent agent = new Agent();
+    private Secrets secrets = new Secrets();
 
     @Data
     public static class Storage {
         private String root = "./manga_outputs";
+    }
+
+    @Data
+    public static class Secrets {
+        private String encryptionKey = "ArtVerse!ApiKey1";
+        private int activeKeyVersion = 2;
     }
 
     @Data
@@ -134,7 +141,31 @@ public class ArtVerseProperties {
         private int modelIdleTimeoutSeconds = 180;
         private int toolIdleTimeoutSeconds = 600;
         private long runWatchdogIntervalMs = 30_000;
-        private int maxConcurrentRuns = 8;
+        private int maxConcurrentRuns = 32;
+        private int maxConcurrentRunsPerUser = 2;
+        private int budgetTtlSeconds = 86_400;
+        private int routerMaxModelCalls = 2;
+        private int conversationMaxModelCalls = 4;
+        private int conversationMaxToolCalls = 4;
+        private int storyboardMaxModelCalls = 8;
+        private int storyboardMaxToolCalls = 6;
+        private int reviewMaxModelCalls = 13;
+        private int reviewMaxToolCalls = 4;
+        private int directorMaxModelCalls = 12;
+        private int maxInputTokens = 60_000;
+        private int maxOutputTokens = 20_000;
+        private int maxOutputBytes = 160_000;
+        private int maxSubagents = 4;
+        private boolean ragInjectionEnabled = true;
+        private boolean skillRegistryEnabled = true;
+        private boolean storyboardTwoPhaseEnabled = true;
+        private boolean multiInstanceEventBusEnabled = true;
+        private boolean outboxWorkerEnabled = true;
+        private int outboxBatchSize = 8;
+        private int outboxLeaseSeconds = 90;
+        private int outboxMaxAttempts = 5;
+        private boolean providerAllowHttp = false;
+        private List<String> providerAllowedPrivateCidrs = List.of();
 
         // Automatic multi-agent routing
         private boolean autoRoutingEnabled = true;

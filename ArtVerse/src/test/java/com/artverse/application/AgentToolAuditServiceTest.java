@@ -35,8 +35,17 @@ class AgentToolAuditServiceTest {
                     .build();
 
             Callable<Map<String, Object>> action = () -> Map.of("saved", true);
-            service.around("save_structured_storyboard", 1L, 7L, runtimeContext, action);
+            Map<String, Object> result =
+                    service.around("save_structured_storyboard", 1L, 7L, runtimeContext, action);
+            assertThat(result)
+                    .containsEntry("success", true)
+                    .containsEntry("saved", true)
+                    .containsKeys("data", "errorCode", "retryable", "auditId", "resultHash");
             assertThat(ignored.state().events()).hasSize(1);
+            assertThat(ignored.state().events().getFirst().stepId()).isEqualTo("manga-director");
+            assertThat(ignored.state().events().getFirst().status()).isEqualTo("SUCCEEDED");
+            assertThat(ignored.state().events().getFirst().auditId()).isNotBlank();
+            assertThat(ignored.state().events().getFirst().resultHash()).isNotBlank();
         }
     }
 

@@ -9,7 +9,8 @@ import java.util.Set;
 @Component
 class NoAgentToolsStrategy implements AgentToolConfigurationStrategy {
     private static final Set<AgentTaskType> TASK_TYPES = Set.of(
-            AgentTaskType.CHAT, AgentTaskType.NOVEL, AgentTaskType.MANGA_ROUTER);
+            AgentTaskType.CHAT, AgentTaskType.NOVEL, AgentTaskType.MANGA_ROUTER,
+            AgentTaskType.KNOWLEDGE_EXTRACTION);
 
     @Override
     public Set<AgentTaskType> supportedTaskTypes() {

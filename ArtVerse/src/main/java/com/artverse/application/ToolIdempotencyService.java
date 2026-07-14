@@ -79,16 +79,22 @@ public class ToolIdempotencyService {
 
     public Map<String, Object> execute(UUID requestId, String toolName, String inputFingerprint,
                                        Callable<Map<String, Object>> action) {
-        Optional<Map<String, Object>> cached = lookup(requestId, toolName, inputFingerprint);
+        return execute(requestId, "legacy", toolName, inputFingerprint, action);
+    }
+
+    public Map<String, Object> execute(UUID requestId, String stepId, String toolName, String inputFingerprint,
+                                       Callable<Map<String, Object>> action) {
+        String canonicalFingerprint = safeStep(stepId) + ":" + inputFingerprint;
+        Optional<Map<String, Object>> cached = lookup(requestId, toolName, canonicalFingerprint);
         if (cached.isPresent()) {
             return cached.get();
         }
 
-        String key = idemKey(requestId, toolName, inputFingerprint);
+        String key = idemKey(requestId, toolName, canonicalFingerprint);
         Boolean acquired = redisTemplate.opsForValue().setIfAbsent(
                 key, Map.of("_status", "PROCESSING", "tool", toolName), CACHE_TTL);
         if (!Boolean.TRUE.equals(acquired)) {
-            cached = lookup(requestId, toolName, inputFingerprint);
+            cached = lookup(requestId, toolName, canonicalFingerprint);
             if (cached.isPresent()) {
                 return cached.get();
             }
@@ -97,7 +103,7 @@ public class ToolIdempotencyService {
 
         try {
             Map<String, Object> result = action.call();
-            store(requestId, toolName, inputFingerprint, result);
+            store(requestId, toolName, canonicalFingerprint, result);
             return result;
         } catch (RuntimeException error) {
             redisTemplate.delete(key);
@@ -123,5 +129,9 @@ public class ToolIdempotencyService {
 
     private static String idemKey(UUID requestId, String toolName, String inputHash) {
         return KEY_PREFIX + requestId + ":" + toolName + ":" + inputHash;
+    }
+
+    private static String safeStep(String stepId) {
+        return stepId == null || stepId.isBlank() ? "unknown" : sha256(stepId);
     }
 }

@@ -46,13 +46,14 @@ public class EmbeddingConfigService {
         String baseUrl = first(draft.baseUrl(), base == null ? "" : base.getBaseUrl());
         String model = first(draft.model(), base == null ? "" : base.getModel());
         String displayName = first(draft.displayName(), base == null ? "" : base.getDisplayName());
-        String headers = firstJson(draft.customHeaders(), base == null ? "{}" : base.getCustomHeaders());
+        String baseHeaders = base == null ? "{}" : decryptedHeaders(base);
+        String headers = firstJson(draft.customHeaders(), baseHeaders);
         String apiKey = first(draft.apiKey(), base == null ? "" : apiKeyService.decryptSecret(base.getApiKey()));
         validateDraft(baseUrl, model, apiKey, headers);
         boolean connectionChanged = base == null
                 || !Objects.equals(baseUrl, base.getBaseUrl())
                 || !Objects.equals(model, base.getModel())
-                || !Objects.equals(headers, base.getCustomHeaders())
+                || !Objects.equals(headers, baseHeaders)
                 || (draft.apiKey() != null && !draft.apiKey().isBlank());
         boolean createVersion = base == null || (connectionChanged && isUsed(base));
         UserEmbeddingConfig config = createVersion ? new UserEmbeddingConfig() : base;
@@ -64,7 +65,7 @@ public class EmbeddingConfigService {
         config.setBaseUrl(baseUrl);
         config.setApiKey(apiKeyService.encryptSecret(apiKey));
         config.setModel(model);
-        config.setCustomHeaders(headers);
+        config.setCustomHeaders(apiKeyService.encryptSecret(headers));
         if (connectionChanged) {
             config.setStatus(EmbeddingConfigStatus.UNVERIFIED);
             config.setActualDimension(null);
@@ -79,8 +80,9 @@ public class EmbeddingConfigService {
         UserEmbeddingConfig config = findBase(user, configId);
         if (config == null) throw new BusinessException(400, "Save the embedding configuration before testing it.");
         String apiKey = apiKeyService.decryptSecret(config.getApiKey());
-        validateDraft(config.getBaseUrl(), config.getModel(), apiKey, config.getCustomHeaders());
-        float[] vector = embeddingClient.embed(config.getBaseUrl(), apiKey, config.getModel(), config.getCustomHeaders(), "ArtVerse embedding connection test");
+        String headers = decryptedHeaders(config);
+        validateDraft(config.getBaseUrl(), config.getModel(), apiKey, headers);
+        float[] vector = embeddingClient.embed(config.getBaseUrl(), apiKey, config.getModel(), headers, "ArtVerse embedding connection test");
         config.setStatus(EmbeddingConfigStatus.VERIFIED);
         config.setActualDimension(vector.length);
         config.setVerifiedAt(OffsetDateTime.now());
@@ -127,7 +129,7 @@ public class EmbeddingConfigService {
     public List<String> discoverModels(User user, Draft draft) {
         UserEmbeddingConfig base = findBase(user, draft.configId());
         String baseUrl = first(draft.baseUrl(), base == null ? "" : base.getBaseUrl());
-        String headers = firstJson(draft.customHeaders(), base == null ? "{}" : base.getCustomHeaders());
+        String headers = firstJson(draft.customHeaders(), base == null ? "{}" : decryptedHeaders(base));
         String apiKey = first(draft.apiKey(), base == null ? "" : apiKeyService.decryptSecret(base.getApiKey()));
         validateHeaders(headers);
         List<String> discovered = embeddingClient.discoverModels(baseUrl, apiKey, headers);
@@ -158,6 +160,11 @@ public class EmbeddingConfigService {
     }
 
     public String decryptedApiKey(UserEmbeddingConfig config) { return apiKeyService.decryptSecret(config.getApiKey()); }
+    public String decryptedHeaders(UserEmbeddingConfig config) {
+        String stored = config == null ? "{}" : config.getCustomHeaders();
+        if (stored == null || stored.isBlank()) return "{}";
+        return stored.startsWith("v2:") ? apiKeyService.decryptSecret(stored) : stored;
+    }
 
     private void validateDraft(String baseUrl, String model, String apiKey, String headers) {
         if (baseUrl.isBlank() || model.isBlank() || apiKey.isBlank()) throw new BusinessException(400, "Embedding Base URL, API key, and model are required.");
@@ -190,7 +197,7 @@ public class EmbeddingConfigService {
         boolean used = !titles.isEmpty();
         return new ConfigInfo(config.getId(), config.getDisplayName(), config.getBaseUrl(), config.getModel(),
                 config.getApiKey() == null || config.getApiKey().isBlank() ? "" : "(configured)",
-                config.getCustomHeaders(), config.getStatus().name(), config.getActualDimension(), config.getConfigVersion(),
+                decryptedHeaders(config), config.getStatus().name(), config.getActualDimension(), config.getConfigVersion(),
                 config.isActive(), used, titles);
     }
     private static String first(String preferred, String fallback) { return preferred == null || preferred.isBlank() ? fallback : preferred.trim(); }

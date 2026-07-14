@@ -4,6 +4,7 @@ import com.artverse.application.UserProviderConfig;
 import com.artverse.common.BusinessException;
 import com.artverse.config.ArtVerseProperties;
 import lombok.RequiredArgsConstructor;
+import com.artverse.security.ProviderEndpointPolicy;
 import org.springframework.stereotype.Component;
 
 import java.nio.charset.StandardCharsets;
@@ -16,6 +17,7 @@ public class AgentModelSpecFactory {
     private static final int HASH_PREFIX_LENGTH = 12;
 
     private final ArtVerseProperties properties;
+    private final ProviderEndpointPolicy endpointPolicy;
 
     /**
      * Converts a user-saved provider configuration into the agent model spec
@@ -23,6 +25,7 @@ public class AgentModelSpecFactory {
      * own key takes precedence over the server-configured key.
      */
     public AgentModelSpec fromProviderConfig(UserProviderConfig config) {
+        endpointPolicy.requireSafeBaseUrl(config.baseUrl());
         String effectiveKey = resolveEffectiveApiKey(config.apiKey(),
                 apiKeyForProvider(config.provider()));
         return new AgentModelSpec(
@@ -52,6 +55,7 @@ public class AgentModelSpecFactory {
      */
     public AgentModelSpec defaultLlm(String llmApiKey) {
         ArtVerseProperties.DefaultLlm llm = properties.getAgent().getDefaultLlm();
+        endpointPolicy.requireSafeBaseUrl(llm.getBaseUrl());
         return new AgentModelSpec(
                 llm.getProvider(),
                 llm.getBaseUrl(),
@@ -68,6 +72,7 @@ public class AgentModelSpecFactory {
     @Deprecated
     public AgentModelSpec deepSeek(String llmApiKey) {
         ArtVerseProperties.DeepSeek deepseek = properties.getDeepseek();
+        endpointPolicy.requireSafeBaseUrl(deepseek.getBaseUrl());
         return new AgentModelSpec(
                 "deepseek",
                 deepseek.getBaseUrl(),

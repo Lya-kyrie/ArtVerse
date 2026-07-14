@@ -1838,6 +1838,106 @@ export interface KnowledgeRecallPreview {
   context: string;
   contextHash: string;
   embeddingSpaceId: number;
+  snapshotId?: number | null;
+}
+
+export type KnowledgeCandidateStatus = 'PENDING' | 'APPROVED' | 'REJECTED' | 'SUPERSEDED';
+export interface KnowledgeCandidate {
+  id: number;
+  sourceType: string;
+  sourceId: string | null;
+  knowledgeType: KnowledgeUnitType;
+  title: string;
+  body: string;
+  summary: string;
+  structuredData: Record<string, unknown>;
+  importance: number;
+  effectiveFromChapter: number | null;
+  effectiveToChapter: number | null;
+  status: KnowledgeCandidateStatus;
+  approvedKnowledgeUnitId: number | null;
+  rejectionReason: string | null;
+  createdAt: string;
+  reviewedAt: string | null;
+}
+
+function knowledgeCandidateFromResponse(item: any): KnowledgeCandidate {
+  return {
+    id: Number(item.id),
+    sourceType: String(item.source_type ?? item.sourceType ?? ''),
+    sourceId: item.source_id == null && item.sourceId == null ? null : String(item.source_id ?? item.sourceId),
+    knowledgeType: String(item.knowledge_type ?? item.knowledgeType) as KnowledgeUnitType,
+    title: String(item.title ?? ''),
+    body: String(item.body ?? ''),
+    summary: String(item.summary ?? ''),
+    structuredData: (item.structured_data ?? item.structuredData ?? {}) as Record<string, unknown>,
+    importance: Number(item.importance ?? 3),
+    effectiveFromChapter: item.effective_from_chapter == null && item.effectiveFromChapter == null ? null : Number(item.effective_from_chapter ?? item.effectiveFromChapter),
+    effectiveToChapter: item.effective_to_chapter == null && item.effectiveToChapter == null ? null : Number(item.effective_to_chapter ?? item.effectiveToChapter),
+    status: String(item.status ?? 'PENDING') as KnowledgeCandidateStatus,
+    approvedKnowledgeUnitId: item.approved_knowledge_unit_id == null && item.approvedKnowledgeUnitId == null ? null : Number(item.approved_knowledge_unit_id ?? item.approvedKnowledgeUnitId),
+    rejectionReason: item.rejection_reason == null && item.rejectionReason == null ? null : String(item.rejection_reason ?? item.rejectionReason),
+    createdAt: String(item.created_at ?? item.createdAt ?? ''),
+    reviewedAt: item.reviewed_at == null && item.reviewedAt == null ? null : String(item.reviewed_at ?? item.reviewedAt),
+  };
+}
+
+export async function listKnowledgeCandidates(storyId: number, status: KnowledgeCandidateStatus | '' = 'PENDING'): Promise<KnowledgeCandidate[]> {
+  const query = status ? `?status=${status}` : '';
+  const res = await authFetch(`${BASE}/api/stories/${storyId}/knowledge/candidates${query}`);
+  if (!res.ok) throw new Error(parseApiError(await res.text()));
+  const data = await res.json();
+  return Array.isArray(data) ? data.map(knowledgeCandidateFromResponse) : [];
+}
+
+export async function approveKnowledgeCandidate(storyId: number, candidateId: number): Promise<KnowledgeCandidate> {
+  const res = await authFetch(`${BASE}/api/stories/${storyId}/knowledge/candidates/${candidateId}/approve`, { method: 'POST' });
+  if (!res.ok) throw new Error(parseApiError(await res.text()));
+  return knowledgeCandidateFromResponse(await res.json());
+}
+
+export async function rejectKnowledgeCandidate(storyId: number, candidateId: number, reason = ''): Promise<KnowledgeCandidate> {
+  const res = await authFetch(`${BASE}/api/stories/${storyId}/knowledge/candidates/${candidateId}/reject`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ reason }),
+  });
+  if (!res.ok) throw new Error(parseApiError(await res.text()));
+  return knowledgeCandidateFromResponse(await res.json());
+}
+
+export async function listAgentSkills(): Promise<UserAgentSkill[]> {
+  const res = await authFetch(`${BASE}/api/user/agent-skills`);
+  if (!res.ok) throw new Error(parseApiError(await res.text()));
+  const data = await res.json();
+  return Array.isArray(data) ? data.map(userAgentSkillFromResponse) : [];
+}
+
+export async function setAgentSkillEnabled(skillKey: string, enabled: boolean): Promise<UserAgentSkill> {
+  const res = await authFetch(`${BASE}/api/user/agent-skills/${encodeURIComponent(skillKey)}`, {
+    method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ enabled }),
+  });
+  if (!res.ok) throw new Error(parseApiError(await res.text()));
+  return userAgentSkillFromResponse(await res.json());
+}
+
+function userAgentSkillFromResponse(item: any): UserAgentSkill {
+  const manifest = item.manifest ?? {};
+  return {
+    enabled: Boolean(item.enabled),
+    manifest: {
+      skillKey: String(manifest.skill_key ?? manifest.skillKey ?? ''),
+      semanticVersion: String(manifest.semantic_version ?? manifest.semanticVersion ?? ''),
+      checksum: String(manifest.checksum ?? ''),
+      status: String(manifest.status ?? ''),
+      supportedRoutes: (manifest.supported_routes ?? manifest.supportedRoutes ?? []).map(String),
+      capabilities: (manifest.capabilities ?? []).map(String),
+      promptVersion: String(manifest.prompt_version ?? manifest.promptVersion ?? ''),
+      allowedToolGroups: (manifest.allowed_tool_groups ?? manifest.allowedToolGroups ?? []).map(String),
+      budgetPolicy: (manifest.budget_policy ?? manifest.budgetPolicy ?? {}) as Record<string, unknown>,
+      evaluatorKey: manifest.evaluator_key ?? manifest.evaluatorKey ?? null,
+      hitlPolicy: String(manifest.hitl_policy ?? manifest.hitlPolicy ?? 'NONE'),
+      userConfigurable: Boolean(manifest.user_configurable ?? manifest.userConfigurable),
+    },
+  };
 }
 
 function knowledgePayload(input: KnowledgeUnitInput): Record<string, unknown> {
@@ -2100,6 +2200,7 @@ export interface AgentRunTimelineEvent {
 export type MangaAgentRunStatus = 'RUNNING' | 'WAITING_USER' | 'SUCCEEDED' | 'DEGRADED' | 'FAILED' | 'CANCELLED' | 'INTERRUPTED';
 
 export interface AgentRunPersistedEvent {
+  eventId?: number;
   eventName: MangaAgentRunEvent['type'];
   data: MangaAgentRunEvent['data'];
   createdAt?: string;
@@ -2123,7 +2224,73 @@ export interface MangaAgentRunSnapshot {
   routeSource?: 'AUTO' | 'RESUME_FIXED' | 'RESUME_RECLASSIFIED' | 'SHADOW' | 'FALLBACK' | string;
   routeConfidence?: number | null;
   routerVersion?: string | null;
+  workflowVersion?: string;
+  traceId?: string;
+  skillVersions?: Record<string, string>;
+  modelConfigId?: number | null;
+  knowledgeSnapshotId?: number | null;
+  budgetUsage?: Record<string, number>;
+  runAttributes?: Record<string, unknown>;
+  contextSnapshot?: {
+    storyId?: number | null;
+    chapterId?: number | null;
+    storyTitle?: string | null;
+    chapterDisplayName?: string | null;
+    sceneCount?: number;
+    imageCount?: number;
+    contextHash?: string | null;
+    knowledgeRecallHash?: string | null;
+    requiredFields?: string[];
+    warnings?: string[];
+  } | null;
+  steps?: MangaAgentRunStep[];
+  artifacts?: MangaAgentArtifactSummary[];
 }
+
+export interface MangaAgentRunStep {
+  planId: string;
+  sequence: number;
+  route: MangaWorkflowRoute;
+  status: 'PENDING' | 'RUNNING' | 'COMPLETED' | 'FAILED' | 'SKIPPED';
+  mutating: boolean;
+  skillKey?: string | null;
+  skillVersion?: string | null;
+  inputSummary?: string | null;
+  outputSummary?: string | null;
+  startedAt?: string | null;
+  completedAt?: string | null;
+}
+
+export interface MangaAgentArtifactSummary {
+  artifactId: string;
+  type: string;
+  status: 'DRAFT' | 'VALIDATED' | 'REJECTED' | 'COMMITTED' | 'SUPERSEDED';
+  schemaVersion: string;
+  evaluation: Record<string, unknown>;
+  checksum: string;
+}
+
+export interface MangaAgentArtifact extends MangaAgentArtifactSummary {
+  requestId: string;
+  payload: Record<string, unknown>;
+}
+
+export interface AgentSkillManifest {
+  skillKey: string;
+  semanticVersion: string;
+  checksum: string;
+  status: string;
+  supportedRoutes: string[];
+  capabilities: string[];
+  promptVersion: string;
+  allowedToolGroups: string[];
+  budgetPolicy: Record<string, unknown>;
+  evaluatorKey?: string | null;
+  hitlPolicy: string;
+  userConfigurable: boolean;
+}
+
+export interface UserAgentSkill { manifest: AgentSkillManifest; enabled: boolean; }
 
 export interface AgentUserInputOption {
   id: string;
@@ -2357,54 +2524,7 @@ function startMangaAgentEventStream(
         onEvent({ type: 'error', data: { detail: parseApiError(await res.text()), requestId } });
         return;
       }
-      const reader = res.body?.getReader();
-      if (!reader) {
-        onEvent({ type: 'error', data: { detail: 'Agent stream is unavailable', requestId } });
-        return;
-      }
-      const decoder = new TextDecoder();
-      let buffer = '';
-      let currentEvent = 'message';
-      const handleLine = (line: string) => {
-        const trimmed = line.trim();
-        if (!trimmed || trimmed.startsWith(':')) return;
-        if (trimmed.startsWith('event:')) {
-          currentEvent = trimmed.slice(6).trim();
-          return;
-        }
-        if (!trimmed.startsWith('data:')) return;
-
-        const dataStr = trimmed.slice(5).trim();
-        try {
-          const data = JSON.parse(dataStr);
-          if (isAgUiEventPayload(data) && (currentEvent === 'message' || currentEvent === 'ag_ui_event')) {
-            onEvent({ type: 'ag_ui_event', data });
-          } else if (currentEvent === 'status'
-            || currentEvent === 'run_event'
-            || currentEvent === 'tool'
-            || currentEvent === 'user_input_requested'
-            || currentEvent === 'done'
-            || currentEvent === 'error') {
-            onEvent({ type: currentEvent, data } as MangaAgentRunEvent);
-          }
-        } catch {
-          // Ignore malformed stream chunks.
-        } finally {
-          currentEvent = 'message';
-        }
-      };
-
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        buffer += decoder.decode(value, { stream: true });
-        const lines = buffer.split('\n');
-        buffer = lines.pop() || '';
-        for (const line of lines) {
-          handleLine(line);
-        }
-      }
-      if (buffer.trim()) handleLine(buffer);
+      await consumeMangaAgentEventResponse(res, requestId, onEvent);
     })
     .catch((err) => {
       if (err.name !== 'AbortError') {
@@ -2412,6 +2532,97 @@ function startMangaAgentEventStream(
       }
     });
 
+  return controller;
+}
+
+async function consumeMangaAgentEventResponse(
+  response: Response,
+  requestId: string | undefined,
+  onEvent: (event: MangaAgentRunEvent) => void,
+  onEventId?: (eventId: number) => void,
+): Promise<void> {
+  const reader = response.body?.getReader();
+  if (!reader) throw new Error('Agent stream is unavailable');
+  const decoder = new TextDecoder();
+  let buffer = '';
+  let currentEvent = 'message';
+  const handleLine = (line: string) => {
+    const trimmed = line.trim();
+    if (!trimmed || trimmed.startsWith(':')) return;
+    if (trimmed.startsWith('id:')) {
+      const parsed = Number(trimmed.slice(3).trim());
+      if (Number.isSafeInteger(parsed) && parsed >= 0) onEventId?.(parsed);
+      return;
+    }
+    if (trimmed.startsWith('event:')) {
+      currentEvent = trimmed.slice(6).trim();
+      return;
+    }
+    if (!trimmed.startsWith('data:')) return;
+
+    const dataStr = trimmed.slice(5).trim();
+    try {
+      const data = JSON.parse(dataStr);
+      if (isAgUiEventPayload(data) && (currentEvent === 'message' || currentEvent === 'ag_ui_event')) {
+        onEvent({ type: 'ag_ui_event', data });
+      } else if (currentEvent === 'status'
+        || currentEvent === 'run_event'
+        || currentEvent === 'tool'
+        || currentEvent === 'user_input_requested'
+        || currentEvent === 'done'
+        || currentEvent === 'error') {
+        onEvent({ type: currentEvent, data } as MangaAgentRunEvent);
+      }
+    } catch {
+      // Ignore malformed stream chunks; the durable cursor remains unchanged.
+    } finally {
+      currentEvent = 'message';
+    }
+  };
+
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    buffer += decoder.decode(value, { stream: true });
+    const lines = buffer.split('\n');
+    buffer = lines.pop() || '';
+    for (const line of lines) handleLine(line);
+  }
+  if (buffer.trim()) handleLine(buffer);
+}
+
+export function replayMangaAgentRunEvents(
+  chapterId: number,
+  requestId: string,
+  afterEventId: number,
+  onEvent: (event: MangaAgentRunEvent) => void,
+): AbortController {
+  const controller = new AbortController();
+  let cursor = Number.isSafeInteger(afterEventId) && afterEventId > 0 ? afterEventId : 0;
+
+  const tail = async () => {
+    while (!controller.signal.aborted) {
+      try {
+        const response = await authFetch(
+          `${BASE}/api/chapters/${chapterId}/manga-agent/runs/${requestId}/events`,
+          {
+            headers: {
+              Accept: 'text/event-stream',
+              'Last-Event-ID': String(cursor),
+            },
+            signal: controller.signal,
+          },
+        );
+        if (!response.ok) throw new Error(parseApiError(await response.text()));
+        await consumeMangaAgentEventResponse(response, requestId, onEvent, (eventId) => { cursor = eventId; });
+        return;
+      } catch (error: any) {
+        if (controller.signal.aborted || error?.name === 'AbortError') return;
+        await new Promise((resolve) => window.setTimeout(resolve, 1000));
+      }
+    }
+  };
+  void tail();
   return controller;
 }
 
@@ -2449,6 +2660,22 @@ export async function getMangaAgentRunState(chapterId: number, requestId: string
   const res = await authFetch(`${BASE}/api/chapters/${chapterId}/manga-agent/runs/${requestId}`);
   if (!res.ok) throw new Error(parseApiError(await res.text()));
   return res.json();
+}
+
+export async function getMangaAgentRunArtifacts(chapterId: number, requestId: string): Promise<MangaAgentArtifact[]> {
+  const res = await authFetch(`${BASE}/api/chapters/${chapterId}/manga-agent/runs/${requestId}/artifacts`);
+  if (!res.ok) throw new Error(parseApiError(await res.text()));
+  const data = await res.json();
+  return Array.isArray(data) ? data.map((item: any) => ({
+    artifactId: String(item.artifact_id ?? item.artifactId ?? ''),
+    requestId: String(item.request_id ?? item.requestId ?? requestId),
+    type: String(item.type ?? ''),
+    status: String(item.status ?? 'DRAFT') as MangaAgentArtifact['status'],
+    schemaVersion: String(item.schema_version ?? item.schemaVersion ?? '1'),
+    payload: (item.payload ?? {}) as Record<string, unknown>,
+    evaluation: (item.evaluation ?? {}) as Record<string, unknown>,
+    checksum: String(item.checksum ?? ''),
+  })) : [];
 }
 
 export async function getMangaAgentConversationRunState(

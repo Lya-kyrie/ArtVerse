@@ -13,3 +13,5 @@ artverse:
   minio:
     access-key: "test-key"
     secret-key: "test-secret"
+  agent:
+    outbox-worker-enabled: false

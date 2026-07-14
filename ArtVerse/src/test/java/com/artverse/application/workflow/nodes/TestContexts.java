@@ -50,7 +50,8 @@ final class TestContexts {
                 user,
                 chapter,
                 new MangaWorkflowContextSnapshot(3L, 7L, "Story", "Chapter", "style",
-                        0, 0, "", "", "", MangaWorkflowRoute.DIRECTOR, List.of())
+                        0, 0, "", "", "", "", MangaWorkflowRoute.DIRECTOR, "ctx",
+                        List.of(), List.of())
         );
     }
 

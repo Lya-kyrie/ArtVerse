@@ -1,6 +1,6 @@
-import { Archive, BookOpenCheck, ChevronLeft, Eye, Plus, Save, Search, Sparkles } from 'lucide-react';
+import { Archive, BookOpenCheck, CheckCircle2, ChevronLeft, Eye, Plus, Save, Search, Sparkles, XCircle } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
-import { archiveKnowledge, createKnowledge, getEmbeddingConfigs, listKnowledge, previewKnowledge, rebuildKnowledge, updateKnowledge, type EmbeddingConfigInfo, type KnowledgeUnit, type KnowledgeUnitInput, type KnowledgeUnitType } from '../api';
+import { approveKnowledgeCandidate, archiveKnowledge, createKnowledge, getEmbeddingConfigs, listKnowledge, listKnowledgeCandidates, previewKnowledge, rebuildKnowledge, rejectKnowledgeCandidate, updateKnowledge, type EmbeddingConfigInfo, type KnowledgeCandidate, type KnowledgeUnit, type KnowledgeUnitInput, type KnowledgeUnitType } from '../api';
 
 const TYPES: Array<{ id: KnowledgeUnitType; label: string; fields: Record<string, unknown> }> = [
   { id: 'CHARACTER_CARD', label: '角色卡', fields: { aliases: [], identity: '', personality: '', abilities: '', motivation: '', taboos: '', status: '' } },
@@ -18,6 +18,7 @@ interface Props { storyId: number; chapterNumber?: number; onBack: () => void; }
 
 export default function KnowledgeBasePage({ storyId, chapterNumber = 1, onBack }: Props) {
   const [items, setItems] = useState<KnowledgeUnit[]>([]);
+  const [candidates, setCandidates] = useState<KnowledgeCandidate[]>([]);
   const [configs, setConfigs] = useState<EmbeddingConfigInfo[]>([]);
   const [selected, setSelected] = useState<KnowledgeUnit | null>(null);
   const [draft, setDraft] = useState<KnowledgeUnitInput>(blankInput());
@@ -28,7 +29,7 @@ export default function KnowledgeBasePage({ storyId, chapterNumber = 1, onBack }
   const [preview, setPreview] = useState<Array<{ title: string; type: string; score: number }>>([]);
 
   const load = async () => {
-    try { const [units, spaces] = await Promise.all([listKnowledge(storyId), getEmbeddingConfigs()]); setItems(units); setConfigs(spaces.filter((item) => item.status === 'VERIFIED')); }
+    try { const [units, spaces, pending] = await Promise.all([listKnowledge(storyId), getEmbeddingConfigs(), listKnowledgeCandidates(storyId)]); setItems(units); setConfigs(spaces.filter((item) => item.status === 'VERIFIED')); setCandidates(pending); }
     catch (error) { setMessage(error instanceof Error ? error.message : '知识库加载失败'); }
   };
   useEffect(() => { void load(); }, [storyId]);
@@ -46,6 +47,8 @@ export default function KnowledgeBasePage({ storyId, chapterNumber = 1, onBack }
   const archive = async () => { if (!selected || !confirm('归档这条知识？')) return; await archiveKnowledge(storyId, selected.id); newUnit(); await load(); };
   const rebuild = async (configId: number) => { try { await rebuildKnowledge(storyId, configId); setMessage('全书重建已提交；旧空间会继续服务，直到新空间完成。'); } catch (error) { setMessage(error instanceof Error ? error.message : '重建提交失败'); } };
   const recall = async () => { try { const result = await previewKnowledge(storyId, chapterNumber, `${draft.title}\n${draft.summary}\n${draft.body}`); setPreview(result.items.map((item) => ({ title: item.title, type: item.type, score: item.score }))); } catch (error) { setMessage(error instanceof Error ? error.message : '召回预览失败'); } };
+  const approveCandidate = async (candidateId: number) => { try { await approveKnowledgeCandidate(storyId, candidateId); await load(); setMessage('候选知识已确认并进入正式索引。'); } catch (error) { setMessage(error instanceof Error ? error.message : '确认候选失败'); } };
+  const rejectCandidate = async (candidateId: number) => { try { await rejectKnowledgeCandidate(storyId, candidateId); await load(); setMessage('候选知识已拒绝，不会影响后续创作。'); } catch (error) { setMessage(error instanceof Error ? error.message : '拒绝候选失败'); } };
 
   return <div className="flex min-h-0 flex-1 flex-col bg-bg-base">
     <header className="flex shrink-0 items-center justify-between gap-3 border-b border-border bg-bg-surface px-3 py-2">
@@ -60,7 +63,10 @@ export default function KnowledgeBasePage({ storyId, chapterNumber = 1, onBack }
       <aside className="flex min-h-0 flex-col border-b border-border bg-bg-surface md:border-b-0 md:border-r">
         <div className="flex items-center gap-2 p-3"><div className="relative flex-1"><Search size={14} className="absolute left-2 top-2 text-text-muted" /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="搜索知识" className="w-full rounded-md border border-border bg-bg-base py-1.5 pl-7 pr-2 text-xs text-text-primary outline-none focus:border-accent" /></div><button onClick={() => newUnit()} className="rounded-md border border-border bg-bg-base p-1.5 text-text-secondary hover:text-accent" aria-label="新增知识"><Plus size={16} /></button></div>
         <div className="flex gap-1 overflow-x-auto px-3 pb-2">{[{ id: 'ALL' as const, label: '全部' }, ...TYPES].map((type) => <button key={type.id} onClick={() => setFilter(type.id)} className={'shrink-0 rounded-md px-2 py-1 text-xs ' + (filter === type.id ? 'bg-accent text-white' : 'text-text-secondary hover:bg-bg-base')}>{type.label}</button>)}</div>
-        <div className="min-h-0 flex-1 overflow-y-auto px-2 pb-2">{visible.map((item) => <button key={item.id} onClick={() => select(item)} className={'mb-1 w-full rounded-md border p-2 text-left ' + (selected?.id === item.id ? 'border-accent bg-accent-soft' : 'border-transparent hover:border-border hover:bg-bg-base')}><div className="flex items-center justify-between gap-2"><span className="truncate text-sm text-text-primary">{item.title}</span><span className={'text-[10px] ' + (item.indexStatus === 'SUCCEEDED' ? 'text-emerald-600' : 'text-accent-secondary')}>{item.indexStatus}</span></div><div className="mt-1 text-[11px] text-text-muted">{TYPES.find((type) => type.id === item.type)?.label} · v{item.version}</div></button>)}</div>
+        <div className="min-h-0 flex-1 overflow-y-auto px-2 pb-2">
+          {candidates.length > 0 && <div className="mb-3 rounded-md border border-amber-400/30 bg-amber-400/5 p-2"><div className="mb-2 text-xs font-medium text-amber-700">待确认知识（{candidates.length}）</div>{candidates.map((candidate) => <div key={candidate.id} className="mb-2 rounded border border-border bg-bg-base p-2 last:mb-0"><div className="truncate text-xs font-medium text-text-primary">{candidate.title}</div><div className="mt-1 line-clamp-2 text-[11px] text-text-muted">{candidate.summary || candidate.body}</div><div className="mt-2 flex justify-end gap-1"><button type="button" onClick={() => void rejectCandidate(candidate.id)} className="inline-flex items-center gap-1 rounded px-2 py-1 text-[11px] text-text-secondary hover:bg-red-500/10 hover:text-red-600"><XCircle size={12} />拒绝</button><button type="button" onClick={() => void approveCandidate(candidate.id)} className="inline-flex items-center gap-1 rounded bg-emerald-600 px-2 py-1 text-[11px] text-white hover:bg-emerald-700"><CheckCircle2 size={12} />确认</button></div></div>)}</div>}
+          {visible.map((item) => <button key={item.id} onClick={() => select(item)} className={'mb-1 w-full rounded-md border p-2 text-left ' + (selected?.id === item.id ? 'border-accent bg-accent-soft' : 'border-transparent hover:border-border hover:bg-bg-base')}><div className="flex items-center justify-between gap-2"><span className="truncate text-sm text-text-primary">{item.title}</span><span className={'text-[10px] ' + (item.indexStatus === 'SUCCEEDED' ? 'text-emerald-600' : 'text-accent-secondary')}>{item.indexStatus}</span></div><div className="mt-1 text-[11px] text-text-muted">{TYPES.find((type) => type.id === item.type)?.label} · v{item.version}</div></button>)}
+        </div>
       </aside>
       <section className="min-h-0 overflow-y-auto p-3 md:p-5">
         <div className="mx-auto max-w-3xl">

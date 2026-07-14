@@ -3,7 +3,9 @@ package com.artverse.api;
 import com.artverse.application.CurrentUserService;
 import com.artverse.application.EmbeddingConfigService;
 import com.artverse.application.KnowledgeService;
+import com.artverse.application.KnowledgeCandidateService;
 import com.artverse.domain.User;
+import com.artverse.common.aspect.RateLimit;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
@@ -17,6 +19,7 @@ public class KnowledgeController {
     private final KnowledgeService knowledgeService;
     private final EmbeddingConfigService embeddingConfigService;
     private final CurrentUserService currentUserService;
+    private final KnowledgeCandidateService knowledgeCandidateService;
 
     @GetMapping("/user/embedding-configs")
     public List<EmbeddingConfigService.ConfigInfo> configs() { return embeddingConfigService.list(user()); }
@@ -87,6 +90,31 @@ public class KnowledgeController {
     @GetMapping("/stories/{storyId}/knowledge/preview")
     public KnowledgeService.RecallPreview preview(@PathVariable Long storyId, @RequestParam int chapterNumber, @RequestParam(defaultValue = "") String query) {
         return knowledgeService.preview(storyId, user().getId(), chapterNumber, query);
+    }
+
+    @GetMapping("/stories/{storyId}/knowledge/candidates")
+    public List<KnowledgeCandidateService.CandidateView> candidates(
+            @PathVariable Long storyId,
+            @RequestParam(required = false) String status) {
+        return knowledgeCandidateService.list(storyId, user().getId(), status);
+    }
+
+    @PostMapping("/stories/{storyId}/knowledge/candidates/{candidateId}/approve")
+    @RateLimit(windowSeconds = 60, maxRequests = 5, key = "agent-control-write")
+    public KnowledgeCandidateService.CandidateView approveCandidate(
+            @PathVariable Long storyId,
+            @PathVariable Long candidateId) {
+        return knowledgeCandidateService.approve(storyId, candidateId, user().getId());
+    }
+
+    @PostMapping("/stories/{storyId}/knowledge/candidates/{candidateId}/reject")
+    @RateLimit(windowSeconds = 60, maxRequests = 5, key = "agent-control-write")
+    public KnowledgeCandidateService.CandidateView rejectCandidate(
+            @PathVariable Long storyId,
+            @PathVariable Long candidateId,
+            @RequestBody(required = false) Map<String, Object> body) {
+        String reason = body == null ? null : str(body, "reason");
+        return knowledgeCandidateService.reject(storyId, candidateId, user().getId(), reason);
     }
 
     private User user() { return currentUserService.requireCurrentUser(); }

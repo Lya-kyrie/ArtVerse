@@ -21,6 +21,9 @@ The manga workflow uses capability-validated automatic routing across 5 routes: 
 | `MangaWorkflowRoute` | Specialist routes plus `DIRECTOR`; each route declares its business capabilities |
 | `MangaWorkflowNode` | Pipeline stages: `COLLECTING_CONTEXT`, `GENERATING`, `EVALUATING`, `WAITING_USER`, `COMPLETED` |
 | `MangaWorkflowResult` | Node execution result with degraded flag |
+| `ExecutionPlanCompiler` | Compiles Router output into an application-owned plan of at most three validated steps |
+| `ExecutionPlanValidator` | Rejects recursion, unavailable capabilities, duplicate/multiple write steps, and oversized plans |
+| `RouteContractValidator` | Performs server-side validation of executable routing contract fields after semantic routing and before dispatch |
 
 ## Code Map - Nodes
 
@@ -40,9 +43,12 @@ The manga workflow uses capability-validated automatic routing across 5 routes: 
 2. `MangaWorkflowOrchestrator.runStreamLeader()` validates message text and starts or reuses a `MangaAgentRun`.
 3. `GenerationGuardService.executeMangaAgentRun()` applies idempotency/rate-limit protection.
 4. `MangaWorkflowContextAssembler` assembles context and emits the context summary event.
-5. `MangaWorkflowNodeRegistry.handlerFor(DIRECTOR).stream()` dispatches to `MangaDirectorAgentNode`.
-6. `MangaDirectorAgentNode` delegates request construction and event mapping to `MangaDirectorAgentSupport`, calls AgentScope, and returns the reply/degraded payload.
-7. `MangaWorkflowOrchestrator.completeRun()` marks the run terminal and emits the done event unless the run was already cancelled.
+5. A single intent dispatches directly to its specialist. A compound intent dispatches to `MangaDirectorAgentNode`.
+6. Director restores or compiles an `ExecutionPlan`, persists every step in `manga_agent_run_steps`, and resumes from the first unfinished step.
+7. Specialists delegate deterministic context/RAG assembly, request construction, and event mapping to `MangaAgentExecutionSupport`.
+8. `MangaWorkflowOrchestrator.completeRun()` marks the run terminal and emits the done event unless the run was already cancelled.
+
+Chapter and storyboard writes also enqueue a transactional Outbox event. The background knowledge-extraction workflow is deterministic outside the model: lease/fencing, source loading, schema validation, candidate replacement, retry, and final status are application controlled; the model only proposes structured facts.
 
 ### HITL Resume
 1. `ask_user` stores `AgentUserInputRequest` in `AgentRunToolStatus` and suspends the agent.
@@ -58,5 +64,9 @@ The manga workflow uses capability-validated automatic routing across 5 routes: 
 - Missing route handlers must fail fast; never silently fall back to `DIRECTOR`.
 - `requestId` is the idempotency/resume key. Preserve it across retries and resumes.
 - Mutating tools that succeed but fail the final reply become `DEGRADED`, not `FAILED`.
-- `MangaWorkflowOrchestrator` should not build AgentScope requests directly; keep AgentScope request/event details inside `MangaDirectorAgentNode` and `MangaDirectorAgentSupport`.
+- `MangaWorkflowOrchestrator` should not build AgentScope requests directly; keep AgentScope request/event details inside specialist nodes and `MangaAgentExecutionSupport`.
+- Router output is data only. Only `ExecutionPlanCompiler` may create a multi-step plan; Director may not add routes at runtime.
+- `RoutingDecision` is an executable contract: `expectedToolPolicy`, `requiredContextFields`, `outputContract`, and structured `fallbackReason` are validated server-side. Illegal, recursive, multi-write, unavailable-capability, and invalid-contract decisions degrade to `CONVERSATION` before dispatch.
+- Model and Tool hard budgets are enforced outside the Agent by `AgentBudgetService` and persisted in `agent_usage_ledger`.
+- The sole new storyboard write is `commit_storyboard`; it requires a validated artifact, a current chapter version, and a current run fencing token.
 - See `docs/knowledge/modules/manga-agent/flow.md` for detailed run lifecycle and event ordering.

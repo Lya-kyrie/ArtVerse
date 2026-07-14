@@ -8,7 +8,7 @@ import com.artverse.domain.*;
 import com.artverse.persistence.ChapterRepository;
 import com.artverse.persistence.ChatMessageRepository;
 import com.artverse.persistence.MangaImageRepository;
-import lombok.RequiredArgsConstructor;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -18,7 +18,6 @@ import java.util.Map;
 import java.util.UUID;
 
 @Service
-@RequiredArgsConstructor
 public class NovelService {
 
     private final ChapterRepository chapterRepository;
@@ -27,6 +26,34 @@ public class NovelService {
     private final AgentScopeHarnessAgentGateway harnessAgentGateway;
     private final AgentModelSpecFactory agentModelSpecFactory;
     private final ArtVerseProperties properties;
+    private final AgentOutboxService outboxService;
+
+    @Autowired
+    public NovelService(ChapterRepository chapterRepository,
+                        ChatMessageRepository chatMessageRepository,
+                        MangaImageRepository mangaImageRepository,
+                        AgentScopeHarnessAgentGateway harnessAgentGateway,
+                        AgentModelSpecFactory agentModelSpecFactory,
+                        ArtVerseProperties properties,
+                        AgentOutboxService outboxService) {
+        this.chapterRepository = chapterRepository;
+        this.chatMessageRepository = chatMessageRepository;
+        this.mangaImageRepository = mangaImageRepository;
+        this.harnessAgentGateway = harnessAgentGateway;
+        this.agentModelSpecFactory = agentModelSpecFactory;
+        this.properties = properties;
+        this.outboxService = outboxService;
+    }
+
+    public NovelService(ChapterRepository chapterRepository,
+                        ChatMessageRepository chatMessageRepository,
+                        MangaImageRepository mangaImageRepository,
+                        AgentScopeHarnessAgentGateway harnessAgentGateway,
+                        AgentModelSpecFactory agentModelSpecFactory,
+                        ArtVerseProperties properties) {
+        this(chapterRepository, chatMessageRepository, mangaImageRepository,
+                harnessAgentGateway, agentModelSpecFactory, properties, null);
+    }
 
     @Transactional
     public String generateNovel(Long chapterId) {
@@ -75,6 +102,7 @@ public class NovelService {
 
         chapter.setNovelContent(novelContent);
         chapterRepository.save(chapter);
+        enqueueContentChanged(chapter, "GENERATED");
 
         return novelContent;
     }
@@ -106,7 +134,9 @@ public class NovelService {
 
         chapter.setNovelContent(content);
         chapter.setContentSource(ContentSource.IMPORT);
-        return chapterRepository.save(chapter);
+        Chapter saved = chapterRepository.save(chapter);
+        enqueueContentChanged(saved, "IMPORTED");
+        return saved;
     }
 
     private String buildNovelSystemPrompt() {
@@ -120,5 +150,16 @@ public class NovelService {
                 - 强化环境描写、对话、心理活动、微表情、肢体动作
                 - 直接输出正文，不输出解释或字数统计
                 """;
+    }
+
+    private void enqueueContentChanged(Chapter chapter, String source) {
+        if (outboxService == null) return;
+        outboxService.enqueue("CHAPTER", String.valueOf(chapter.getId()),
+                "CHAPTER_CONTENT_CHANGED", Map.of(
+                        "user_id", chapter.getStory().getUser().getId(),
+                        "story_id", chapter.getStory().getId(),
+                        "chapter_id", chapter.getId(),
+                        "chapter_number", chapter.getChapterNumber(),
+                        "source", source));
     }
 }

@@ -1,8 +1,10 @@
 package com.artverse.application;
 
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.stereotype.Service;
 
+import java.time.OffsetDateTime;
 import java.time.Duration;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -27,7 +29,8 @@ public class AgentRunToolStatus {
     private static final Set<String> MUTATING_TOOLS = Set.of(
             "generate_storyboard",
             "save_storyboard",
-            "save_structured_storyboard"
+            "save_structured_storyboard",
+            "commit_storyboard"
     );
 
     private static final String KEY_PREFIX = "artverse:tool_status:";
@@ -36,10 +39,18 @@ public class AgentRunToolStatus {
     private static final Duration CACHE_TTL = Duration.ofMinutes(10);
 
     private final RedisTemplate<String, Object> redisTemplate;
+    private final MangaAgentRunService mangaAgentRunService;
     private final ConcurrentMap<ScopeKey, RunState> localCache = new ConcurrentHashMap<>();
 
     public AgentRunToolStatus(RedisTemplate<String, Object> redisTemplate) {
+        this(redisTemplate, null);
+    }
+
+    @Autowired
+    public AgentRunToolStatus(RedisTemplate<String, Object> redisTemplate,
+                              MangaAgentRunService mangaAgentRunService) {
         this.redisTemplate = redisTemplate;
+        this.mangaAgentRunService = mangaAgentRunService;
     }
 
     private static String stateKey(Long userId, Long chapterId, UUID requestId) {
@@ -60,22 +71,43 @@ public class AgentRunToolStatus {
 
     public void recordSucceeded(String toolName, Long userId, Long chapterId, long durationMs,
                                 Map<String, Object> result) {
-        record(new ToolEvent(toolName, true, durationMs, null, result == null ? Map.of() : new LinkedHashMap<>(result)),
+        record(new ToolEvent(null, null, toolName, "SUCCEEDED", true, durationMs,
+                        resultHash(result), null, auditId(result),
+                        result == null ? Map.of() : new LinkedHashMap<>(result), OffsetDateTime.now()),
                 userId, chapterId);
     }
 
     public void recordSucceeded(String toolName, Long userId, Long chapterId, UUID requestId, long durationMs,
                                 Map<String, Object> result) {
-        record(new ToolEvent(toolName, true, durationMs, null, result == null ? Map.of() : new LinkedHashMap<>(result)),
+        record(new ToolEvent(requestId, null, toolName, "SUCCEEDED", true, durationMs,
+                        resultHash(result), null, auditId(result),
+                        result == null ? Map.of() : new LinkedHashMap<>(result), OffsetDateTime.now()),
+                new ScopeKey(userId, chapterId, requestId));
+    }
+
+    public void recordSucceeded(String toolName, Long userId, Long chapterId, UUID requestId, String stepId,
+                                String auditId, String resultHash, long durationMs,
+                                Map<String, Object> result) {
+        record(new ToolEvent(requestId, stepId, toolName, "SUCCEEDED", true, durationMs,
+                        resultHash, null, auditId,
+                        result == null ? Map.of() : new LinkedHashMap<>(result), OffsetDateTime.now()),
                 new ScopeKey(userId, chapterId, requestId));
     }
 
     public void recordFailed(String toolName, Long userId, Long chapterId, long durationMs, String error) {
-        record(new ToolEvent(toolName, false, durationMs, error, Map.of()), userId, chapterId);
+        record(new ToolEvent(null, null, toolName, "FAILED", false, durationMs,
+                null, error, null, Map.of(), OffsetDateTime.now()), userId, chapterId);
     }
 
     public void recordFailed(String toolName, Long userId, Long chapterId, UUID requestId, long durationMs, String error) {
-        record(new ToolEvent(toolName, false, durationMs, error, Map.of()), new ScopeKey(userId, chapterId, requestId));
+        record(new ToolEvent(requestId, null, toolName, "FAILED", false, durationMs,
+                null, error, null, Map.of(), OffsetDateTime.now()), new ScopeKey(userId, chapterId, requestId));
+    }
+
+    public void recordFailed(String toolName, Long userId, Long chapterId, UUID requestId, String stepId,
+                             String auditId, long durationMs, String error) {
+        record(new ToolEvent(requestId, stepId, toolName, "FAILED", false, durationMs,
+                null, error, auditId, Map.of(), OffsetDateTime.now()), new ScopeKey(userId, chapterId, requestId));
     }
 
     public void requestUserInput(Long userId, Long chapterId, UUID requestId, AgentUserInputRequest request) {
@@ -145,6 +177,7 @@ public class AgentRunToolStatus {
         }
         state.add(event);
         persistState(state);
+        persistAuditEvent(new ScopeKey(userId, chapterId, state.requestId()), event);
     }
 
     private void record(ToolEvent event, ScopeKey key) {
@@ -153,6 +186,14 @@ public class AgentRunToolStatus {
             state.add(event);
             persistState(state);
         }
+        persistAuditEvent(key, event);
+    }
+
+    private void persistAuditEvent(ScopeKey key, ToolEvent event) {
+        if (mangaAgentRunService == null || key == null || key.requestId() == null || event == null) {
+            return;
+        }
+        mangaAgentRunService.appendToolAuditEvent(key.userId(), key.chapterId(), key.requestId(), event);
     }
 
     private void persistState(RunState state) {
@@ -241,6 +282,13 @@ public class AgentRunToolStatus {
             return List.copyOf(events);
         }
 
+        public List<ToolEvent> eventsForStep(String stepId) {
+            String expected = normalizeStepId(stepId);
+            return events.stream()
+                    .filter(event -> normalizeStepId(event.stepId()).equals(expected))
+                    .toList();
+        }
+
         public List<ToolEvent> successfulMutatingEvents() {
             return events.stream()
                     .filter(event -> event.succeeded() && MUTATING_TOOLS.contains(event.toolName()))
@@ -280,11 +328,17 @@ public class AgentRunToolStatus {
                                     AgentUserInputRequest userInputRequest) {
     }
 
-    public record ToolEvent(String toolName,
+    public record ToolEvent(UUID requestId,
+                            String stepId,
+                            String toolName,
+                            String status,
                             boolean succeeded,
                             long durationMs,
+                            String resultHash,
                             String error,
-                            Map<String, Object> result) {
+                            String auditId,
+                            Map<String, Object> result,
+                            OffsetDateTime createdAt) {
     }
 
     private record ScopeKey(Long userId, Long chapterId, UUID requestId) {
@@ -293,7 +347,23 @@ public class AgentRunToolStatus {
                     && java.util.Objects.equals(this.chapterId, chapterId);
         }
     }
+    private static String normalizeStepId(String stepId) {
+        return stepId == null || stepId.isBlank() ? "unknown" : stepId;
+    }
 
-    private record RunKey(Long userId, Long chapterId, UUID requestId) {
+    private static String auditId(Map<String, Object> result) {
+        if (result == null) {
+            return null;
+        }
+        Object value = result.get("auditId");
+        return value == null ? null : String.valueOf(value);
+    }
+
+    private static String resultHash(Map<String, Object> result) {
+        if (result == null) {
+            return null;
+        }
+        Object value = result.get("resultHash");
+        return value == null ? null : String.valueOf(value);
     }
 }

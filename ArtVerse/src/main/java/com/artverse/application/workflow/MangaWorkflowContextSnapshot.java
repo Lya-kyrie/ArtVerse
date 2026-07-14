@@ -11,9 +11,12 @@ public record MangaWorkflowContextSnapshot(
         int sceneCount,
         int imageCount,
         String sourceExcerpt,
+        String storyboardExcerpt,
         String characterSummary,
         String conversationSummary,
         MangaWorkflowRoute route,
+        String contextHash,
+        List<String> requiredFields,
         List<String> warnings
 ) {
 }

@@ -3,6 +3,7 @@ package com.artverse.application.workflow;
 import com.artverse.agent.AgentModelSpec;
 import com.artverse.agent.gateway.AgentScopeHarnessAgentGateway;
 import com.artverse.application.workflow.prefilter.EmptyMessageRouterPreFilter;
+import com.artverse.application.workflow.prefilter.ReviewReportRouterPreFilter;
 import com.artverse.application.workflow.prefilter.TooShortMessageRouterPreFilter;
 import com.artverse.config.ArtVerseProperties;
 import com.artverse.domain.MangaAgentConversation;
@@ -30,6 +31,8 @@ class MangaWorkflowRouterTest {
     private AgentScopeHarnessAgentGateway gateway;
     private MangaWorkflowRouter router;
     private MangaAgentConversation conversation;
+    private ExecutionPlanValidator planValidator;
+    private RouteContractValidator contractValidator;
 
     @BeforeEach
     void setUp() {
@@ -38,9 +41,12 @@ class MangaWorkflowRouterTest {
         properties.getAgent().setAutoRoutingEnabled(true);
         properties.getAgent().setRoutingDirectThreshold(0.8);
         properties.getAgent().setRoutingReadOnlyThreshold(0.55);
+        planValidator = new ExecutionPlanValidator();
+        contractValidator = new RouteContractValidator(planValidator);
         router = new MangaWorkflowRouter(gateway, properties,
-                List.of(new EmptyMessageRouterPreFilter(), new TooShortMessageRouterPreFilter()),
-                mock(MangaRoutingMetrics.class), new ExecutionPlanValidator());
+                List.of(new EmptyMessageRouterPreFilter(), new TooShortMessageRouterPreFilter(),
+                        new ReviewReportRouterPreFilter()),
+                mock(MangaRoutingMetrics.class), planValidator, contractValidator);
 
         User user = mock(User.class);
         when(user.getId()).thenReturn(7L);
@@ -67,6 +73,8 @@ class MangaWorkflowRouterTest {
 
         assertThat(result.route()).isEqualTo(MangaWorkflowRoute.CONVERSATION);
         assertThat(result.reasonCode()).isEqualTo("unsupported_capability:IMAGE_GENERATION");
+        assertThat(result.fallbackReason()).isNotNull();
+        assertThat(result.fallbackReason().category()).isEqualTo("unsupported_capability");
         assertThat(result.requiredCapabilities()).containsExactly(MangaWorkflowCapability.IMAGE_GENERATION);
         verify(gateway).generateStructured(any(), any());
     }
@@ -84,6 +92,22 @@ class MangaWorkflowRouterTest {
 
         assertThat(result.route()).isEqualTo(MangaWorkflowRoute.CONVERSATION);
         assertThat(result.reasonCode()).isEqualTo("invalid_plan:capability_route_mismatch");
+    }
+
+    @Test
+    void correctsUnsafeStoryboardPlanWhenCapabilitiesRequireReadOnlyReview() {
+        RoutingDecision classified = decision(
+                MangaWorkflowRoute.STORYBOARD,
+                Set.of(MangaWorkflowCapability.STORYBOARD_READ, MangaWorkflowCapability.STORYBOARD_REVIEW),
+                List.of(MangaWorkflowRoute.STORYBOARD)
+        );
+        when(gateway.generateStructured(any(), any())).thenReturn(Mono.just(classified));
+
+        RoutingDecision result = route("review this chapter's manga status and novel quality in detail");
+
+        assertThat(result.route()).isEqualTo(MangaWorkflowRoute.REVIEW);
+        assertThat(result.mutating()).isFalse();
+        assertThat(result.suggestedSteps()).containsExactly(MangaWorkflowRoute.REVIEW);
     }
 
     @Test
@@ -105,6 +129,62 @@ class MangaWorkflowRouterTest {
 
         assertThat(result.route()).isEqualTo(MangaWorkflowRoute.STORYBOARD);
         assertThat(result.mutating()).isTrue();
+        assertThat(result.expectedToolPolicy()).isEqualTo(RoutingDecision.ExpectedToolPolicy.WRITE_WITH_HITL);
+        assertThat(result.requiredContextFields()).contains("chapter_source_excerpt", "character_summary");
+        assertThat(result.outputContract().schemaName()).isEqualTo("storyboard.mutation_result");
+    }
+
+    @Test
+    void invalidToolPolicyContractFallsBackBeforeDispatch() {
+        RoutingDecision classified = new RoutingDecision(
+                MangaWorkflowRoute.STORYBOARD,
+                0.95,
+                List.of("rewrite"),
+                true,
+                false,
+                "storyboard_rewrite",
+                List.of(MangaWorkflowRoute.STORYBOARD),
+                "model-version",
+                Set.of(MangaWorkflowCapability.STORYBOARD_WRITE),
+                RoutingDecision.ExpectedToolPolicy.READ_ONLY_CONTEXT,
+                RoutingDecision.contextFieldsFor(List.of(MangaWorkflowRoute.STORYBOARD)),
+                RoutingDecision.RouteOutputContract.forRoute(MangaWorkflowRoute.STORYBOARD),
+                null
+        );
+        when(gateway.generateStructured(any(), any())).thenReturn(Mono.just(classified));
+
+        RoutingDecision result = route("rewrite storyboard");
+
+        assertThat(result.route()).isEqualTo(MangaWorkflowRoute.CONVERSATION);
+        assertThat(result.reasonCode()).isEqualTo("invalid_contract:tool_policy_mismatch");
+        assertThat(result.fallbackReason().category()).isEqualTo("invalid_contract");
+        assertThat(result.fallbackReason().code()).isEqualTo("tool_policy_mismatch");
+    }
+
+    @Test
+    void incompleteContextContractFallsBackBeforeDispatch() {
+        RoutingDecision classified = new RoutingDecision(
+                MangaWorkflowRoute.REVIEW,
+                0.95,
+                List.of("review"),
+                false,
+                false,
+                "review",
+                List.of(MangaWorkflowRoute.REVIEW),
+                "model-version",
+                Set.of(MangaWorkflowCapability.STORYBOARD_REVIEW),
+                RoutingDecision.ExpectedToolPolicy.READ_ONLY_CONTEXT,
+                Set.of("conversation_summary"),
+                RoutingDecision.RouteOutputContract.forRoute(MangaWorkflowRoute.REVIEW),
+                null
+        );
+        when(gateway.generateStructured(any(), any())).thenReturn(Mono.just(classified));
+
+        RoutingDecision result = route("review storyboard continuity");
+
+        assertThat(result.route()).isEqualTo(MangaWorkflowRoute.CONVERSATION);
+        assertThat(result.reasonCode()).isEqualTo("invalid_contract:context_fields_incomplete");
+        assertThat(result.fallbackReason().code()).isEqualTo("context_fields_incomplete");
     }
 
     @Test
@@ -189,18 +269,35 @@ class MangaWorkflowRouterTest {
         verify(gateway, never()).generateStructured(any(), any());
     }
 
+    @ParameterizedTest
+    @ValueSource(strings = {
+            "本章的漫画情况和小说质量怎么样，给我一份详细的分析报告",
+            "本章的漫画情况和小说质量怎么样，给我一份详细的分析报告 "
+    })
+    void routesCurrentChapterQualityReportToReviewWithoutSemanticGuessing(String message) {
+        RoutingDecision result = route(message);
+
+        assertThat(result.route()).isEqualTo(MangaWorkflowRoute.REVIEW);
+        assertThat(result.reasonCode()).isEqualTo("prefilter:chapter_quality_report");
+        assertThat(result.requiredCapabilities()).contains(
+                MangaWorkflowCapability.STORYBOARD_READ,
+                MangaWorkflowCapability.STORYBOARD_REVIEW);
+        verify(gateway, never()).generateStructured(any(), any());
+    }
+
     @Test
     void disabledRoutingUsesSafeConcreteFallbackInsteadOfRecursiveDirector() {
         ArtVerseProperties properties = new ArtVerseProperties();
         properties.getAgent().setAutoRoutingEnabled(false);
         MangaWorkflowRouter disabled = new MangaWorkflowRouter(
-                gateway, properties, List.of(), mock(MangaRoutingMetrics.class), new ExecutionPlanValidator());
+                gateway, properties, List.of(), mock(MangaRoutingMetrics.class), planValidator, contractValidator);
 
         RoutingDecision result = disabled.route(conversation, "rewrite", UUID.randomUUID(),
                 mock(AgentModelSpec.class), "key");
 
         assertThat(result.route()).isEqualTo(MangaWorkflowRoute.CONVERSATION);
         assertThat(result.suggestedSteps()).containsExactly(MangaWorkflowRoute.CONVERSATION);
+        assertThat(result.fallbackReason().code()).isEqualTo("automatic_routing_disabled_safe_fallback");
     }
 
     @Test
@@ -209,7 +306,7 @@ class MangaWorkflowRouterTest {
         properties.getAgent().setAutoRoutingEnabled(true);
         properties.getAgent().setRoutingShadowMode(true);
         MangaWorkflowRouter shadow = new MangaWorkflowRouter(
-                gateway, properties, List.of(), mock(MangaRoutingMetrics.class), new ExecutionPlanValidator());
+                gateway, properties, List.of(), mock(MangaRoutingMetrics.class), planValidator, contractValidator);
         RoutingDecision classified = decision(
                 MangaWorkflowRoute.REVIEW,
                 Set.of(MangaWorkflowCapability.STORYBOARD_REVIEW),
@@ -230,7 +327,7 @@ class MangaWorkflowRouterTest {
         properties.getAgent().setRoutingShadowMode(true);
         // Use default thresholds: routingDirectThreshold=0.80
         MangaWorkflowRouter shadow = new MangaWorkflowRouter(
-                gateway, properties, List.of(), mock(MangaRoutingMetrics.class), new ExecutionPlanValidator());
+                gateway, properties, List.of(), mock(MangaRoutingMetrics.class), planValidator, contractValidator);
         RoutingDecision classified = new RoutingDecision(
                 MangaWorkflowRoute.STORYBOARD,
                 0.65,  // below routingDirectThreshold of 0.80 — would trigger clarification normally

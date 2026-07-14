@@ -12,7 +12,7 @@ All endpoints are scoped to `/api/chapters/{chapterId}/manga-agent`.
 - `POST /conversations/{conversationId}/archive`: archives a specific conversation.
 - `DELETE /conversations/{conversationId}`: deletes a specific conversation.
 - `GET /conversations/{conversationId}/messages`: returns messages for one conversation.
-- `POST /conversations/{conversationId}/ag-ui/run`: preferred AG-UI streaming run for a specific conversation. Body includes `message`, optional `requestId`, and provider/model fields.
+- `POST /conversations/{conversationId}/ag-ui/run`: preferred AG-UI streaming run for a specific conversation. Body includes `message`, optional `requestId`, `configId`, and optional model override. Raw provider/baseUrl/apiKey fields are deprecated compatibility fields.
 - `GET /conversations/{conversationId}/runs/open`: returns the latest open run for one conversation.
 - `GET /conversations/{conversationId}/runs/{requestId}`: returns a run snapshot scoped to one conversation.
 - `POST /conversations/{conversationId}/runs/{requestId}/cancel`: cancels a run scoped to one conversation.
@@ -21,6 +21,8 @@ All endpoints are scoped to `/api/chapters/{chapterId}/manga-agent`.
 - `POST /ag-ui/run`: default streaming run for AG-UI clients. Body includes `message`, optional `requestId`, and provider/model fields. Emits AG-UI protocol events as default SSE `message` frames.
 - `GET /runs/open`: returns the latest `RUNNING` or `WAITING_USER` run snapshot, if any.
 - `GET /runs/{requestId}`: returns a persisted run snapshot with events.
+- `GET /runs/{requestId}/events`: replays and tails durable events after optional `Last-Event-ID`; frames carry database event ids and can be served by any instance.
+- `GET /runs/{requestId}/artifacts`: restores storyboard drafts and structured evaluation results.
 - `POST /runs/{requestId}/cancel`: marks an open run as `CANCELLED`. The frontend should also abort its active AG-UI subscription, but persisted run state is the source of truth.
 - `POST /runs/{requestId}/resume`: synchronous resume. Body: `{ answer }` plus provider/model fields.
 - `POST /ag-ui/runs/{requestId}/resume`: default AG-UI streaming resume. Body: `{ answer }` plus provider/model fields.
@@ -40,13 +42,14 @@ Frontend types and stream parsing live in `frontend/src/api.ts`. The frontend de
 7. `MangaWorkflowContextAssembler` builds story, chapter, image, character, and conversation metadata.
 8. `MangaWorkflowNodeRegistry.handlerFor(route)` selects the routed specialist or `MangaDirectorAgentNode` for a validated compound plan; missing handlers fail fast instead of falling back.
 9. `MangaAgentExecutionSupport.prepareAgentMessages` saves the user message and builds history-limited agent messages from the selected conversation only.
-10. `AgentWorkspaceSyncService.syncMangaDirectorKnowledge` writes `KNOWLEDGE.md` for the user/story workspace.
-11. `MangaAgentExecutionSupport.buildRunRequest` creates an `AgentRunRequest` with user, story, chapter, conversation id, task type, model, user API key, and request id.
-12. `AgentScopeHarnessAgentGateway.streamEvents` obtains the cached `HarnessAgent`, builds per-call runtime context, and sends messages to AgentScope.
-13. `MangaAgentExecutionSupport.mapAgentScopeEvent` maps AgentScope events into `AgentRunEvent`. Director child-step events carry `planId`, `step`, `route`, and `agentName`; child text is retained as handoff context but suppressed from the primary reply stream.
-14. `MangaAgentRunEventPublisher` sends SSE events and persists non-text run events. It maps run lifecycle into formal AG-UI events.
-15. On success, `MangaWorkflowOrchestrator.completeRun` marks the run `SUCCEEDED` or `DEGRADED` and emits `done`.
-16. The frontend synchronizes final persisted messages after `RUN_FINISHED`.
+10. `MangaAgentExecutionSupport` performs deterministic hybrid RAG, records the immutable knowledge snapshot/context hash, and injects approved facts as sourced untrusted data blocks.
+11. `AgentWorkspaceSyncService.syncMangaDirectorKnowledge` writes `KNOWLEDGE.md` to the conversation-scoped workspace projection.
+12. `MangaAgentExecutionSupport.buildRunRequest` creates an `AgentRunRequest` with server-owned identity, request, step, fencing, model-config, and Skill-version values.
+13. `AgentScopeHarnessAgentGateway.streamEvents` consumes the route budget, obtains the Skill-versioned cached `HarnessAgent`, builds runtime context, and sends messages to AgentScope.
+14. `MangaAgentExecutionSupport.mapAgentScopeEvent` maps AgentScope events into `AgentRunEvent`. Director child-step events carry `planId`, `step`, `route`, and `agentName`; child text is retained as handoff context but suppressed from the primary reply stream.
+15. `MangaAgentRunEventPublisher` persists non-text events before publishing Redis Stream notifications and sending live AG-UI events.
+16. On success, `MangaWorkflowOrchestrator.completeRun` marks the run `SUCCEEDED` or `DEGRADED` and emits `done`.
+17. The frontend synchronizes final persisted messages after `RUN_FINISHED`; an open run is tailed from its largest persisted event id.
 
 ## Human-In-The-Loop Resume
 
@@ -70,9 +73,15 @@ The cancel endpoint marks the active in-memory tool/run state before removing it
 
 `manga_agent_messages` belongs to one conversation. Legacy chapter-level message endpoints resolve the current active conversation for compatibility.
 
-`manga_agent_runs` stores status, route, input message, final reply, error, user input request JSON, routing decision JSON, execution plan JSON, and timestamps. Runs belong to one conversation. New executions are routed by the `MangaWorkflowRouter` to one of five specialist handlers (`CONVERSATION`, `CREATIVE`, `STORYBOARD`, `REVIEW`, `DIRECTOR`) based on capability-based LLM classification. Valid statuses are `RUNNING`, `WAITING_USER`, `SUCCEEDED`, `DEGRADED`, `FAILED`, `CANCELLED`, and `INTERRUPTED`.
+`manga_agent_runs` stores status, route, input/final/error data, waiting/routing/plan JSON, workflow/trace/model/Skill/knowledge/budget metadata, lease owner, fencing token, and timestamps. Runs belong to one conversation. New executions are routed by `MangaWorkflowRouter`; `ExecutionPlanCompiler` creates at most three validated Director steps. Valid statuses are `RUNNING`, `WAITING_USER`, `SUCCEEDED`, `DEGRADED`, `FAILED`, `CANCELLED`, and `INTERRUPTED`.
 
-`manga_agent_run_events` stores event name, type, phase, label, status, full JSON payload, and creation time. Persisted events allow the frontend to restore progress after refresh or reconnect. Do not persist `text_delta` events by default.
+`manga_agent_run_steps` is the durable step journal used to resume from the first unfinished compiled step. `manga_agent_run_artifacts` stores storyboard drafts, validation/evaluation results, checksums, and commit status. A chapter changes only through `commit_storyboard`, which validates artifact state, chapter version, idempotency key, and fencing token.
+
+`manga_agent_run_events` stores event name, type, phase, label, status, full JSON payload, creation time, and its monotonic database id. Persisted events are the replay/audit source; Redis Stream is the cross-instance live notification channel. Do not persist `text_delta` events by default.
+
+`agent_outbox_events` records chapter/storyboard changes and knowledge decisions. A worker claims rows with `SKIP LOCKED`, renews a lease, and completes/fails only with the current fencing token. Chapter events use the user's active saved LLM profile to create `PENDING` knowledge candidates; missing BYOK configuration is retried and never replaced with a platform key.
+
+`agent_workspace_items` is the shared AgentScope `RemoteFilesystem` backing store. Workspace paths are logical; business projections must not depend on an application instance's local disk.
 
 ## Recovery Behavior
 
@@ -82,10 +91,11 @@ If no mutating tool succeeded, failures are saved as system failure messages and
 
 ## Token Context Surfaces
 
-There are three separate context channels:
+There are four separate context channels:
 
 - Conversation prompt from `MangaAgentConversationService.buildSystemPrompt` plus visible history from the selected conversation.
-- Story workspace knowledge from `AgentWorkspaceSyncService.buildKnowledge`, written to AgentScope `KNOWLEDGE.md`.
+- Approved RAG knowledge selected by deterministic hybrid retrieval and injected with source/version/score/context hash.
+- Conversation workspace projection from `AgentWorkspaceSyncService.buildKnowledge`, written to AgentScope `KNOWLEDGE.md` but never treated as the business fact source.
 - AgentScope agent system prompt from `MangaAgentPromptProvider`.
 
 AgentScope `RuntimeContext.sessionId` includes user, story, chapter, conversation id, and task suffix. A new conversation must produce a new session id. `RuntimeContext.userId` remains the ArtVerse user id for multi-tenant isolation. `MangaAgentRuntimeContext` carries the per-call business context that tools need.

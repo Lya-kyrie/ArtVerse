@@ -3,30 +3,128 @@ package com.artverse.config;
 import io.agentscope.core.state.AgentStateStore;
 import io.agentscope.extensions.redis.state.RedisAgentStateStore;
 import io.lettuce.core.RedisClient;
+import io.lettuce.core.RedisURI;
+import io.lettuce.core.cluster.RedisClusterClient;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.boot.autoconfigure.data.redis.RedisProperties;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
+import java.time.Duration;
+import java.util.List;
+
 @Slf4j
 @Configuration
 public class RedisAgentStateStoreConfig {
 
-    @Bean("agentScopeRedisClient")
-    public RedisClient agentScopeRedisClient(RedisProperties redisProperties) {
-        String host = redisProperties.getHost();
-        int port = redisProperties.getPort();
-        int database = redisProperties.getDatabase();
-        String url = "redis://" + host + ":" + port + "/" + database;
-        log.info("Creating AgentScope RedisClient for state store: {}", url);
-        return RedisClient.create(url);
+    @Bean(destroyMethod = "close")
+    public AgentScopeRedisBackend agentScopeRedisBackend(RedisProperties properties) {
+        if (properties.getCluster() != null && properties.getCluster().getNodes() != null
+                && !properties.getCluster().getNodes().isEmpty()) {
+            List<RedisURI> nodes = properties.getCluster().getNodes().stream()
+                    .map(node -> nodeUri(node, properties))
+                    .toList();
+            log.info("Creating AgentScope Redis Cluster state backend with {} nodes", nodes.size());
+            return AgentScopeRedisBackend.cluster(RedisClusterClient.create(nodes));
+        }
+        RedisURI uri = properties.getSentinel() == null
+                ? standaloneUri(properties)
+                : sentinelUri(properties);
+        log.info("Creating AgentScope Redis state backend: mode={} ssl={} database={}",
+                properties.getSentinel() == null ? "standalone" : "sentinel",
+                properties.getSsl().isEnabled(), properties.getDatabase());
+        return AgentScopeRedisBackend.standalone(RedisClient.create(uri));
     }
 
     @Bean
-    public AgentStateStore redisAgentStateStore(@org.springframework.beans.factory.annotation.Qualifier("agentScopeRedisClient") RedisClient agentScopeRedisClient) {
-        return RedisAgentStateStore.builder()
-                .lettuceClient(agentScopeRedisClient)
-                .keyPrefix("artverse:agent:")
-                .build();
+    public AgentStateStore redisAgentStateStore(AgentScopeRedisBackend backend) {
+        RedisAgentStateStore.Builder builder = RedisAgentStateStore.builder()
+                .keyPrefix("artverse:agent:");
+        return backend.clusterClient == null
+                ? builder.lettuceClient(backend.client).build()
+                : builder.lettuceClusterClient(backend.clusterClient).build();
+    }
+
+    private RedisURI standaloneUri(RedisProperties properties) {
+        if (properties.getUrl() != null && !properties.getUrl().isBlank()) {
+            return RedisURI.create(properties.getUrl());
+        }
+        RedisURI.Builder builder = RedisURI.Builder.redis(properties.getHost(), properties.getPort());
+        applyCommon(builder, properties);
+        return builder.build();
+    }
+
+    private RedisURI sentinelUri(RedisProperties properties) {
+        RedisProperties.Sentinel sentinel = properties.getSentinel();
+        if (sentinel.getNodes() == null || sentinel.getNodes().isEmpty()) {
+            throw new IllegalStateException("Redis Sentinel nodes are required");
+        }
+        HostPort first = hostPort(sentinel.getNodes().get(0));
+        RedisURI.Builder builder = sentinel.getPassword() == null || sentinel.getPassword().isBlank()
+                ? RedisURI.Builder.sentinel(first.host(), first.port(), sentinel.getMaster())
+                : RedisURI.Builder.sentinel(first.host(), first.port(), sentinel.getMaster(), sentinel.getPassword());
+        sentinel.getNodes().stream().skip(1).map(this::hostPort)
+                .forEach(node -> builder.withSentinel(node.host(), node.port()));
+        applyCommon(builder, properties);
+        return builder.build();
+    }
+
+    private RedisURI nodeUri(String node, RedisProperties properties) {
+        HostPort address = hostPort(node);
+        RedisURI.Builder builder = RedisURI.Builder.redis(address.host(), address.port());
+        applyCommon(builder, properties);
+        return builder.build();
+    }
+
+    private void applyCommon(RedisURI.Builder builder, RedisProperties properties) {
+        builder.withDatabase(properties.getDatabase())
+                .withSsl(properties.getSsl().isEnabled())
+                .withTimeout(properties.getTimeout() == null ? Duration.ofSeconds(5) : properties.getTimeout());
+        if (properties.getPassword() != null && !properties.getPassword().isBlank()) {
+            if (properties.getUsername() != null && !properties.getUsername().isBlank()) {
+                builder.withAuthentication(properties.getUsername(), properties.getPassword());
+            } else {
+                builder.withPassword(properties.getPassword());
+            }
+        }
+        if (properties.getClientName() != null && !properties.getClientName().isBlank()) {
+            builder.withClientName(properties.getClientName());
+        }
+    }
+
+    private HostPort hostPort(String node) {
+        int separator = node.lastIndexOf(':');
+        if (separator <= 0 || separator == node.length() - 1) {
+            throw new IllegalStateException("Redis node must use host:port format");
+        }
+        String host = node.substring(0, separator).replace("[", "").replace("]", "");
+        return new HostPort(host, Integer.parseInt(node.substring(separator + 1)));
+    }
+
+    private record HostPort(String host, int port) {
+    }
+
+    public static final class AgentScopeRedisBackend implements AutoCloseable {
+        private final RedisClient client;
+        private final RedisClusterClient clusterClient;
+
+        private AgentScopeRedisBackend(RedisClient client, RedisClusterClient clusterClient) {
+            this.client = client;
+            this.clusterClient = clusterClient;
+        }
+
+        static AgentScopeRedisBackend standalone(RedisClient client) {
+            return new AgentScopeRedisBackend(client, null);
+        }
+
+        static AgentScopeRedisBackend cluster(RedisClusterClient client) {
+            return new AgentScopeRedisBackend(null, client);
+        }
+
+        @Override
+        public void close() {
+            if (client != null) client.shutdown();
+            if (clusterClient != null) clusterClient.shutdown();
+        }
     }
 }

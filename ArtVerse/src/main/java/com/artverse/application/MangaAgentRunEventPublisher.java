@@ -6,6 +6,9 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import jakarta.annotation.PreDestroy;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.data.redis.core.StringRedisTemplate;
+import com.artverse.config.ArtVerseProperties;
 import org.springframework.http.MediaType;
 import org.springframework.stereotype.Service;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
@@ -24,18 +27,45 @@ import java.util.WeakHashMap;
 
 @Slf4j
 @Service
-@RequiredArgsConstructor
 public class MangaAgentRunEventPublisher {
 
     private final MangaAgentRunService mangaAgentRunService;
     private final ObjectMapper objectMapper;
     private final AgUiEventFactory agUiEventFactory;
+    private final StringRedisTemplate redisTemplate;
+    private final ArtVerseProperties properties;
     private final Set<String> activeTextMessages = ConcurrentHashMap.newKeySet();
     private final Set<SseEmitter> completedEmitters =
             Collections.newSetFromMap(Collections.synchronizedMap(new WeakHashMap<>()));
     private final ScheduledExecutorService heartbeatExecutor = Executors.newSingleThreadScheduledExecutor(
             Thread.ofVirtual().name("manga-agent-sse-heartbeat-", 0).factory()
     );
+
+    @Autowired
+    public MangaAgentRunEventPublisher(MangaAgentRunService mangaAgentRunService,
+                                       ObjectMapper objectMapper,
+                                       AgUiEventFactory agUiEventFactory,
+                                       StringRedisTemplate redisTemplate,
+                                       ArtVerseProperties properties) {
+        this.mangaAgentRunService = mangaAgentRunService;
+        this.objectMapper = objectMapper;
+        this.agUiEventFactory = agUiEventFactory;
+        this.redisTemplate = redisTemplate;
+        this.properties = properties;
+    }
+
+    public MangaAgentRunEventPublisher(MangaAgentRunService mangaAgentRunService,
+                                       ObjectMapper objectMapper,
+                                       AgUiEventFactory agUiEventFactory,
+                                       StringRedisTemplate redisTemplate) {
+        this(mangaAgentRunService, objectMapper, agUiEventFactory, redisTemplate, null);
+    }
+
+    public MangaAgentRunEventPublisher(MangaAgentRunService mangaAgentRunService,
+                                       ObjectMapper objectMapper,
+                                       AgUiEventFactory agUiEventFactory) {
+        this(mangaAgentRunService, objectMapper, agUiEventFactory, null, null);
+    }
 
     public RunEventSink newSink(SseEmitter emitter) {
         emitter.onCompletion(() -> markCompleted(emitter));
@@ -105,8 +135,6 @@ public class MangaAgentRunEventPublisher {
     }
 
     private void sendToolEvent(MangaAgentRun run, SseEmitter emitter, AgentRunToolStatus.ToolEvent event) {
-        Map<String, Object> payload = toolEventPayload(event);
-        appendRunEvent(run, "tool", payload);
         UUID requestId = run == null ? null : run.getRequestId();
         sendAgUi(emitter, agUiEventFactory.toolAudit(requestId, event));
     }
@@ -156,8 +184,12 @@ public class MangaAgentRunEventPublisher {
     private Map<String, Object> toolEventPayload(AgentRunToolStatus.ToolEvent event) {
         Map<String, Object> payload = new LinkedHashMap<>();
         payload.put("tool", event.toolName());
+        payload.put("stepId", event.stepId());
+        payload.put("status", event.status());
         payload.put("succeeded", event.succeeded());
         payload.put("durationMs", event.durationMs());
+        payload.put("resultHash", event.resultHash());
+        payload.put("auditId", event.auditId());
         if (event.error() != null && !event.error().isBlank()) {
             payload.put("error", event.error());
         }
@@ -188,7 +220,8 @@ public class MangaAgentRunEventPublisher {
             return;
         }
         try {
-            mangaAgentRunService.appendEvent(run, eventName, payload);
+            Long eventId = mangaAgentRunService.appendEvent(run, eventName, payload);
+            publishRedisEvent(run, eventId, eventName, payload);
         } catch (Exception e) {
             log.warn("Failed to persist manga agent run event {}", eventName, e);
         }
@@ -243,6 +276,24 @@ public class MangaAgentRunEventPublisher {
             emitter.complete();
         } catch (Exception e) {
             log.debug("Manga agent SSE was already closed during completion", e);
+        }
+    }
+
+    private void publishRedisEvent(MangaAgentRun run, Long eventId, String eventName,
+                                   Map<String, Object> payload) {
+        if (redisTemplate == null || eventId == null
+                || (properties != null && !properties.getAgent().isMultiInstanceEventBusEnabled())) return;
+        try {
+            Map<String, String> streamBody = new LinkedHashMap<>();
+            streamBody.put("event_id", String.valueOf(eventId));
+            streamBody.put("event_name", eventName);
+            streamBody.put("payload", objectMapper.writeValueAsString(payload));
+            redisTemplate.opsForStream().add(
+                    "artverse:agent:run-events:" + run.getRequestId(), streamBody);
+            redisTemplate.opsForStream().trim(
+                    "artverse:agent:run-events:" + run.getRequestId(), 2000, true);
+        } catch (Exception error) {
+            log.warn("Run event {} was persisted but Redis publication failed", eventId);
         }
     }
 

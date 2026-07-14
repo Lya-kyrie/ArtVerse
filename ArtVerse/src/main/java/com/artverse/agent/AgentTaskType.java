@@ -12,7 +12,8 @@ public enum AgentTaskType {
     MANGA_CREATIVE("manga-creative"),
     MANGA_STORYBOARD("manga-storyboard"),
     MANGA_REVIEW("manga-review", MangaReviewSubagentDeclarations.all()),
-    MANGA_DIRECTOR("manga-director");
+    MANGA_DIRECTOR("manga-director"),
+    KNOWLEDGE_EXTRACTION("knowledge-extraction");
 
     private final String sessionSuffix;
     private final List<SubagentDeclaration> subagentDeclarations;

@@ -15,7 +15,7 @@ public class UserEmbeddingConfig {
     @Column(name = "base_url", nullable = false) private String baseUrl = "";
     @Column(name = "api_key", nullable = false) private String apiKey = "";
     @Column(nullable = false) private String model = "";
-    @Column(name = "custom_headers", columnDefinition = "jsonb", nullable = false) private String customHeaders = "{}";
+    @Column(name = "custom_headers", columnDefinition = "TEXT", nullable = false) private String customHeaders = "{}";
     @Enumerated(EnumType.STRING) @Column(nullable = false) private EmbeddingConfigStatus status = EmbeddingConfigStatus.UNVERIFIED;
     @Column(nullable = false) private boolean active;
     @Column(name = "actual_dimension") private Integer actualDimension;

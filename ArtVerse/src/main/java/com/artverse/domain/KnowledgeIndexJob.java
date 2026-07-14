@@ -15,6 +15,10 @@ public class KnowledgeIndexJob {
     @Column(nullable = false) private Integer attempts = 0;
     @Column(name = "next_run_at", nullable = false) private OffsetDateTime nextRunAt = OffsetDateTime.now();
     @Column(name = "last_error") private String lastError;
+    @Column(name = "owner_instance_id") private String ownerInstanceId;
+    @Column(name = "lease_until") private OffsetDateTime leaseUntil;
+    @Column(name = "fencing_token", nullable = false) private Long fencingToken = 0L;
+    @Column(name = "tenant_id") private java.util.UUID tenantId;
     @Column(name = "created_at", nullable = false, updatable = false) private OffsetDateTime createdAt;
     @Column(name = "updated_at", nullable = false) private OffsetDateTime updatedAt;
     @PrePersist void onCreate() { OffsetDateTime now = OffsetDateTime.now(); createdAt = now; updatedAt = now; }
