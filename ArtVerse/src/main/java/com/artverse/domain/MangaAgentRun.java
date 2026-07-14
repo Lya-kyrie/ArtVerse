@@ -7,6 +7,7 @@ import lombok.Setter;
 
 import java.time.OffsetDateTime;
 import java.util.UUID;
+import com.artverse.application.workflow.MangaRouteSource;
 import com.artverse.application.workflow.MangaWorkflowRoute;
 
 @Entity
@@ -55,6 +56,22 @@ public class MangaAgentRun {
     @Enumerated(EnumType.STRING)
     @Column(nullable = false, length = 32)
     private MangaWorkflowRoute route = MangaWorkflowRoute.DIRECTOR;
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "route_source", nullable = false, length = 32)
+    private MangaRouteSource routeSource = MangaRouteSource.AUTO;
+
+    @Column(name = "route_confidence")
+    private Double routeConfidence;
+
+    @Column(name = "router_version", length = 32)
+    private String routerVersion;
+
+    @Column(name = "routing_decision_json", columnDefinition = "TEXT")
+    private String routingDecisionJson;
+
+    @Column(name = "execution_plan_json", columnDefinition = "TEXT")
+    private String executionPlanJson;
 
     @Column(name = "final_reply", columnDefinition = "TEXT")
     private String finalReply;

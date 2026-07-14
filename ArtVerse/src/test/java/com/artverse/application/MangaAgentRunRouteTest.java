@@ -1,6 +1,7 @@
 package com.artverse.application;
 
 import com.artverse.application.workflow.MangaWorkflowRoute;
+import com.artverse.application.workflow.MangaRouteSource;
 import com.artverse.domain.Chapter;
 import com.artverse.domain.MangaAgentRun;
 import com.artverse.domain.MangaAgentRunStatus;
@@ -30,6 +31,7 @@ class MangaAgentRunRouteTest {
         MangaAgentRun run = run(fixture.user, fixture.chapter, UUID.randomUUID(), "hello");
         run.setStatus(MangaAgentRunStatus.WAITING_USER);
         run.setRoute(MangaWorkflowRoute.DIRECTOR);
+        run.setRouteSource(MangaRouteSource.RESUME_RECLASSIFIED);
         run.setUserInputRequestJson("{\"question\":\"选择方案\",\"options\":[],\"allowFreeText\":false,\"reason\":\"\"}");
 
         when(fixture.eventRepository.findByRunIdOrderByIdAsc(99L)).thenReturn(List.of());
@@ -37,6 +39,7 @@ class MangaAgentRunRouteTest {
         MangaAgentRunService.RunSnapshot snapshot = fixture.service.snapshot(run);
 
         assertThat(snapshot.route()).isEqualTo(MangaWorkflowRoute.DIRECTOR);
+        assertThat(snapshot.routeSource()).isEqualTo(MangaRouteSource.RESUME_RECLASSIFIED);
     }
 
     @Test

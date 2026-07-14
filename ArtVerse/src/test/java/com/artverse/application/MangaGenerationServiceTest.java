@@ -100,7 +100,7 @@ class MangaGenerationServiceTest {
                 new ObjectMapper()
         );
 
-        service.generateMangaStream(7L, imageConfig("image-key"), null);
+        service.generateMangaStream(7L, imageConfig("image-key"));
 
         assertThat(image2Client.awaitRequest()).isTrue();
         ImageGenerationRequest request = image2Client.request.get();
@@ -168,7 +168,7 @@ class MangaGenerationServiceTest {
                 new ObjectMapper()
         );
 
-        service.generateMangaStream(7L, 11L, 99L, imageConfig("image-key"), null, () -> {}, error -> {});
+        service.generateMangaStream(7L, 11L, 99L, imageConfig("image-key"), () -> {}, error -> {});
 
         assertThat(image2Client.awaitRequest()).isTrue();
         ImageGenerationRequest request = image2Client.request.get();

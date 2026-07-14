@@ -3,35 +3,30 @@ package com.artverse.agent.gateway;
 import com.artverse.agent.AgentModelSpec;
 import com.artverse.agent.AgentModelSpecFactory;
 import com.artverse.agent.AgentRunRequest;
+import com.artverse.agent.AgentTaskType;
 import com.artverse.agent.AgentWorkspaceService;
 import com.artverse.agent.MangaAgentPromptProvider;
-import com.artverse.application.tools.MangaContextTools;
-import com.artverse.application.tools.MangaHitlTools;
-import com.artverse.application.tools.MangaStoryboardTools;
-import com.artverse.application.tools.MangaToolSupport;
+import com.artverse.agent.gateway.tools.AgentToolConfigurationRegistry;
 import com.artverse.config.ArtVerseProperties;
+import com.github.benmanes.caffeine.cache.Cache;
+import com.github.benmanes.caffeine.cache.Caffeine;
 import io.agentscope.core.model.Model;
 import io.agentscope.core.model.OpenAIChatModel;
 import io.agentscope.core.state.AgentStateStore;
-import io.agentscope.core.tool.Toolkit;
 import io.agentscope.harness.agent.HarnessAgent;
 import io.agentscope.harness.agent.memory.compaction.CompactionConfig;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import jakarta.annotation.PostConstruct;
 import org.springframework.stereotype.Component;
 
 import java.nio.file.Path;
-import java.util.List;
-import java.util.concurrent.ConcurrentHashMap;
+import java.time.Duration;
 
 @Slf4j
 @Component
 @RequiredArgsConstructor
 public class AgentScopeAgentFactory {
-
-    private static final String CONTEXT_TOOLS = "context-tools";
-    private static final String STORYBOARD_TOOLS = "storyboard-tools";
-    private static final String HITL_TOOLS = "hitl-tools";
 
     private final Model model;
     private final CompactionConfig compactionConfig;
@@ -40,25 +35,37 @@ public class AgentScopeAgentFactory {
     private final AgentWorkspaceService agentWorkspaceService;
     private final MangaAgentPromptProvider promptProvider;
     private final AgentStateStore agentStateStore;
-    private final MangaToolSupport mangaToolSupport;
-    private final MangaContextTools mangaContextTools;
-    private final MangaStoryboardTools mangaStoryboardTools;
-    private final MangaHitlTools mangaHitlTools;
-    private final ConcurrentHashMap<String, HarnessAgent> agents = new ConcurrentHashMap<>();
+    private final AgentToolConfigurationRegistry toolConfigurationRegistry;
+    private Cache<String, HarnessAgent> agents;
+
+    @PostConstruct
+    void initializeCache() {
+        agents = Caffeine.newBuilder()
+                .maximumSize(Math.max(1, properties.getAgent().getAgentCacheMaxSize()))
+                .expireAfterAccess(Duration.ofMinutes(
+                        Math.max(1, properties.getAgent().getAgentCacheExpireAfterMinutes())))
+                .removalListener((String key, HarnessAgent agent, com.github.benmanes.caffeine.cache.RemovalCause cause) -> {
+                    if (agent != null) {
+                        agent.close();
+                    }
+                })
+                .build();
+    }
 
     public HarnessAgent getOrCreate(AgentRunRequest request) {
         Path requestWorkspace = agentWorkspaceService.workspaceFor(request);
-        String agentKey = buildAgentCacheKey(request, defaultModelSpec(request.userApiKey()), requestWorkspace,
+        AgentModelSpec fallbackSpec = defaultModelSpec(request.llmApiKey());
+        String agentKey = buildAgentCacheKey(request, fallbackSpec, requestWorkspace,
                 promptProvider.promptVersionFor(request.taskType()));
-        return agents.computeIfAbsent(agentKey, k -> buildAgent(request, requestWorkspace));
+        return agents.get(agentKey, key -> buildAgent(request, requestWorkspace, fallbackSpec));
     }
 
-    private HarnessAgent buildAgent(AgentRunRequest request, Path requestWorkspace) {
+    private HarnessAgent buildAgent(AgentRunRequest request, Path requestWorkspace, AgentModelSpec fallbackSpec) {
         AgentModelSpec modelSpec = request.modelSpec() != null
                 ? request.modelSpec()
-                : defaultModelSpec(request.userApiKey());
-        Model effectiveModel = resolveModel(request.userApiKey(), modelSpec);
-        HarnessAgent agent = HarnessAgent.builder()
+                : fallbackSpec;
+        Model effectiveModel = resolveModel(request.llmApiKey(), modelSpec);
+        HarnessAgent.Builder builder = HarnessAgent.builder()
                 .name("artverse-story-" + request.storyId() + "-ch" + request.chapterId())
                 .sysPrompt(promptProvider.promptFor(request.taskType()))
                 .model(effectiveModel)
@@ -67,41 +74,19 @@ public class AgentScopeAgentFactory {
                 .stateStore(agentStateStore)
                 .enablePendingToolRecovery(true)
                 .disableShellTool()
-                .disableFilesystemTools()
-                .build();
-        configureTools(agent.getToolkit());
+                .disableFilesystemTools();
+        for (var declaration : request.taskType().subagentDeclarations()) {
+            builder.subagent(declaration);
+        }
+        HarnessAgent agent = builder.build();
+        toolConfigurationRegistry.configure(agent.getToolkit(), request.taskType());
         return agent;
     }
 
-    private void configureTools(Toolkit toolkit) {
-        toolkit.createToolGroup(
-                CONTEXT_TOOLS,
-                "Read-only manga chapter, story, storyboard, and image context tools.",
-                true
-        );
-        toolkit.createToolGroup(
-                STORYBOARD_TOOLS,
-                "Storyboard generation and storyboard persistence tools.",
-                true
-        );
-        toolkit.createToolGroup(
-                HITL_TOOLS,
-                "Human-in-the-loop tools for asking the user to choose or confirm.",
-                true
-        );
-
-        toolkit.registration().tool(mangaContextTools).group(CONTEXT_TOOLS).apply();
-        toolkit.registration().tool(mangaStoryboardTools).group(STORYBOARD_TOOLS).apply();
-        toolkit.registration().tool(mangaHitlTools).group(HITL_TOOLS).apply();
-
-        toolkit.setActiveGroups(List.of(CONTEXT_TOOLS, STORYBOARD_TOOLS, HITL_TOOLS));
-        toolkit.registerMetaTool();
-    }
-
-    private Model resolveModel(String userApiKey, AgentModelSpec modelSpec) {
-        if (userApiKey != null && !userApiKey.isBlank()) {
+    private Model resolveModel(String llmApiKey, AgentModelSpec modelSpec) {
+        if (hasApiKey(llmApiKey)) {
             log.info("Using user-provided {} API key for model: {}", modelSpec.provider(), modelSpec.model());
-            return buildChatModel(userApiKey, modelSpec);
+            return buildChatModel(llmApiKey, modelSpec);
         }
         return model;
     }
@@ -111,31 +96,21 @@ public class AgentScopeAgentFactory {
      * All currently supported providers (deepseek, openai, openroute) use the
      * OpenAI-compatible protocol. Non-compatible providers can be added here.
      */
-    private OpenAIChatModel buildChatModel(String userApiKey, AgentModelSpec modelSpec) {
-        return switch (modelSpec.provider()) {
-            case "deepseek", "openai", "openroute" ->
-                    OpenAIChatModel.builder()
-                            .apiKey(userApiKey)
-                            .modelName(modelSpec.model())
-                            .baseUrl(modelSpec.baseUrl())
-                            .stream(true)
-                            .build();
-            default ->
-                    // Unknown providers default to OpenAI-compatible protocol
-                    OpenAIChatModel.builder()
-                            .apiKey(userApiKey)
-                            .modelName(modelSpec.model())
-                            .baseUrl(modelSpec.baseUrl())
-                            .stream(true)
-                            .build();
-        };
+    private OpenAIChatModel buildChatModel(String llmApiKey, AgentModelSpec modelSpec) {
+        return OpenAIChatModel.builder()
+                .apiKey(llmApiKey)
+                .modelName(modelSpec.model())
+                .baseUrl(modelSpec.baseUrl())
+                .stream(true)
+                .build();
     }
 
-    private AgentModelSpec defaultModelSpec(String userApiKey) {
-        if (userApiKey != null && !userApiKey.isBlank()) {
-            return agentModelSpecFactory.deepSeek(userApiKey);
-        }
-        return agentModelSpecFactory.deepSeek(null);
+    private AgentModelSpec defaultModelSpec(String llmApiKey) {
+        return agentModelSpecFactory.defaultLlm(llmApiKey);
+    }
+
+    private static boolean hasApiKey(String key) {
+        return key != null && !key.isBlank();
     }
 
     static String buildAgentCacheKey(AgentRunRequest request, AgentModelSpec fallbackSpec, Path workspace,

@@ -127,7 +127,7 @@ public class MangaAgentRunEventPublisher {
                                         AgentUserInputRequest request) {
         Map<String, Object> payload = userInputPayload(requestId, request);
         appendRunEvent(run, "user_input_requested", payload);
-        sendAgUi(emitter, agUiEventFactory.userInputRequested(null, requestId, request));
+        sendAgUi(emitter, agUiEventFactory.userInputRequested(run, requestId, request));
         sendAgUi(emitter, agUiEventFactory.stateSnapshot(run, requestId, "WAITING_USER", request.question()));
         complete(emitter);
     }
@@ -179,6 +179,7 @@ public class MangaAgentRunEventPublisher {
         payload.put("options", request.options());
         payload.put("allowFreeText", request.allowFreeText());
         payload.put("reason", request.reason());
+        payload.put("purpose", request.purpose());
         return payload;
     }
 

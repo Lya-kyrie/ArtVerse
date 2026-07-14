@@ -195,10 +195,18 @@ public class MangaAgentConversationService {
 
     public Map<String, Object> fallbackAfterToolSuccess(MangaAgentConversation conversation, UUID requestId,
                                                         AgentRunToolStatus.RunState toolState, String error) {
+        return fallbackAfterToolSuccess(conversation, requestId, toolState, error, true);
+    }
+
+    public Map<String, Object> fallbackAfterToolSuccess(MangaAgentConversation conversation, UUID requestId,
+                                                        AgentRunToolStatus.RunState toolState, String error,
+                                                        boolean persistMessages) {
         AgentRunToolStatus.ToolEvent event = toolState.lastSuccessfulMutatingEvent();
         String fallbackMessage = fallbackMessage(event);
-        saveMessage(conversation, MessageRole.ASSISTANT, fallbackMessage, requestId);
-        saveFailureMessage(conversation, error, requestId);
+        if (persistMessages) {
+            saveMessage(conversation, MessageRole.ASSISTANT, fallbackMessage, requestId);
+            saveFailureMessage(conversation, error, requestId);
+        }
         return Map.of(
                 "reply", fallbackMessage,
                 "agent_final_response_degraded", true

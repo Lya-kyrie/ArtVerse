@@ -29,9 +29,8 @@ public class MangaGenerationController {
         User user = currentUser();
         GenerationGuardService.MangaStreamGuard guard = generationGuardService.guardMangaStream(user.getId(), chapterId);
         UserProviderConfig imageConfig = apiKeyService.resolveProviderConfig(user, ApiKeyService.SLOT_IMAGE);
-        String deepseekApiKey = apiKeyService.getDecryptedKey(user, "deepseek");
         Long assetGroupId = optionalLong(body == null ? null : body.get("assetGroupId"));
-        return mangaGenerationService.generateMangaStream(chapterId, assetGroupId, user.getId(), imageConfig, deepseekApiKey,
+        return mangaGenerationService.generateMangaStream(chapterId, assetGroupId, user.getId(), imageConfig,
                 guard.onComplete(),
                 guard.onError());
     }
@@ -42,14 +41,13 @@ public class MangaGenerationController {
                                       @RequestBody Map<String, String> body) {
         User user = currentUser();
         UserProviderConfig imageConfig = apiKeyService.resolveProviderConfig(user, ApiKeyService.SLOT_IMAGE);
-        String deepseekApiKey = apiKeyService.getDecryptedKey(user, "deepseek");
         String prompt = body.get("prompt");
         Map<String, Object> result = generationGuardService.executeImageRegeneration(
                 user.getId(),
                 chapterId,
                 imageNumber,
                 prompt,
-                () -> mangaImageToMap(mangaGenerationService.regenerateImage(chapterId, imageNumber, prompt, imageConfig, deepseekApiKey))
+                () -> mangaImageToMap(mangaGenerationService.regenerateImage(chapterId, imageNumber, prompt, imageConfig))
         );
         return mapToMangaImage(result);
     }

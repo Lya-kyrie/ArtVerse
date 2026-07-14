@@ -106,6 +106,10 @@
             <artifactId>agentscope-extensions-redis</artifactId>
             <version>${agentscope.version}</version>
         </dependency>
+        <dependency>
+            <groupId>com.github.ben-manes.caffeine</groupId>
+            <artifactId>caffeine</artifactId>
+        </dependency>
 
         <!-- Sa-Token (替代 Spring Security + JWT) -->
         <dependency>

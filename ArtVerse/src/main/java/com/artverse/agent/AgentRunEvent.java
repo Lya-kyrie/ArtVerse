@@ -33,6 +33,15 @@ public record AgentRunEvent(
                 data == null ? Map.of() : Map.copyOf(data), OffsetDateTime.now());
     }
 
+    public AgentRunEvent withData(Map<String, Object> additionalData) {
+        LinkedHashMap<String, Object> merged = new LinkedHashMap<>(data == null ? Map.of() : data);
+        if (additionalData != null) {
+            merged.putAll(additionalData);
+        }
+        return new AgentRunEvent(type, phase, label, toolName, status, text,
+                Map.copyOf(merged), createdAt);
+    }
+
     private static Map<String, Object> merge(String node, String status, Map<String, Object> data) {
         LinkedHashMap<String, Object> merged = new LinkedHashMap<>();
         merged.put("node", node);

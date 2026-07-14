@@ -60,6 +60,18 @@ class AgentRunToolStatusTest {
         }
     }
 
+    @Test
+    void cancellationRemainsVisibleToWorkerAfterActiveStateIsCleared() {
+        UUID requestId = UUID.randomUUID();
+
+        try (AgentRunToolStatus.RunScope scope = status.start(1L, 7L, requestId)) {
+            status.markCancelled(1L, 7L, requestId);
+            status.clearWaitingInput(1L, 7L, requestId);
+
+            assertThat(scope.state().isCancelled()).isTrue();
+        }
+    }
+
     private RedisTemplate<String, Object> redisTemplate() {
         @SuppressWarnings("unchecked")
         RedisTemplate<String, Object> redisTemplate = mock(RedisTemplate.class);

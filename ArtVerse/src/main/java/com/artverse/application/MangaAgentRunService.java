@@ -9,6 +9,9 @@ import com.artverse.domain.MangaAgentRunEventRecord;
 import com.artverse.domain.MangaAgentRunStatus;
 import com.artverse.domain.User;
 import com.artverse.application.workflow.MangaWorkflowRoute;
+import com.artverse.application.workflow.MangaRouteSource;
+import com.artverse.application.workflow.RoutingDecision;
+import com.artverse.application.workflow.ExecutionPlan;
 import com.artverse.persistence.MangaAgentRunEventRepository;
 import com.artverse.persistence.MangaAgentRunRepository;
 import com.fasterxml.jackson.core.JsonProcessingException;
@@ -79,8 +82,8 @@ public class MangaAgentRunService {
         MangaWorkflowRoute effectiveRoute = route == null ? MangaWorkflowRoute.DIRECTOR : route;
         return runRepository.findByConversationIdAndRequestId(conversation.getId(), requestId)
                 .map(existing -> {
-                    existing.setRoute(effectiveRoute);
                     if (existing.getStatus() == MangaAgentRunStatus.WAITING_USER) {
+                        existing.setRoute(effectiveRoute);
                         existing.setStatus(MangaAgentRunStatus.RUNNING);
                         existing.setUserInputRequestJson(null);
                         existing.setErrorMessage(null);
@@ -102,6 +105,38 @@ public class MangaAgentRunService {
                     run.setStatus(MangaAgentRunStatus.RUNNING);
                     run.setCurrentPhase("MODEL");
                     return runRepository.save(run);
+                });
+    }
+
+    @Transactional
+    public MangaAgentRun updateRoutingDecision(MangaAgentRun run, RoutingDecision decision, MangaRouteSource source) {
+        MangaAgentRun attached = runRepository.getReferenceById(run.getId());
+        attached.setRoute(decision.route());
+        attached.setRouteSource(source == null ? MangaRouteSource.AUTO : source);
+        attached.setRouteConfidence(decision.confidence());
+        attached.setRouterVersion(decision.routerVersion());
+        attached.setRoutingDecisionJson(toJson(decision));
+        attached.setCurrentPhase("AGENT");
+        attached.setLastProgressAt(OffsetDateTime.now());
+        return runRepository.save(attached);
+    }
+
+    @Transactional
+    public MangaAgentRun markRouting(MangaAgentRun run) {
+        MangaAgentRun attached = runRepository.getReferenceById(run.getId());
+        attached.setCurrentPhase("ROUTER");
+        attached.setLastProgressAt(OffsetDateTime.now());
+        return runRepository.save(attached);
+    }
+
+    @Transactional
+    public void updateExecutionPlan(Long userId, Long chapterId, UUID requestId, String executionPlanJson) {
+        runRepository.findByUserIdAndChapterIdAndRequestId(userId, chapterId, requestId)
+                .ifPresent(run -> {
+                    run.setExecutionPlanJson(executionPlanJson);
+                    run.setCurrentPhase("AGENT");
+                    run.setLastProgressAt(OffsetDateTime.now());
+                    runRepository.save(run);
                 });
     }
 
@@ -171,6 +206,32 @@ public class MangaAgentRunService {
         }
     }
 
+    @Transactional(readOnly = true)
+    public RoutingDecision routingDecision(MangaAgentRun run) {
+        if (run.getRoutingDecisionJson() == null || run.getRoutingDecisionJson().isBlank()) {
+            return null;
+        }
+        try {
+            return objectMapper.readValue(run.getRoutingDecisionJson(), RoutingDecision.class);
+        } catch (Exception e) {
+            log.warn("Failed to parse stored routing decision JSON for run {}; treating as absent", run.getId(), e);
+            return null;
+        }
+    }
+
+    @Transactional(readOnly = true)
+    public ExecutionPlan executionPlan(MangaAgentRun run) {
+        if (run == null || run.getExecutionPlanJson() == null || run.getExecutionPlanJson().isBlank()) {
+            return null;
+        }
+        try {
+            return objectMapper.readValue(run.getExecutionPlanJson(), ExecutionPlan.class);
+        } catch (Exception error) {
+            log.warn("Failed to parse stored execution plan for run {}", run.getId(), error);
+            return null;
+        }
+    }
+
     @Transactional
     public void markWaiting(UUID requestId, Long userId, Long chapterId, AgentUserInputRequest request) {
         MangaAgentRun run = runRepository.findByUserIdAndChapterIdAndRequestId(userId, chapterId, requestId)
@@ -225,6 +286,19 @@ public class MangaAgentRunService {
     @Transactional
     public void markSucceeded(MangaAgentConversation conversation, UUID requestId, String reply) {
         markTerminal(conversation, requestId, MangaAgentRunStatus.SUCCEEDED, reply, null);
+    }
+
+    /**
+     * Closes the short window where the assistant reply is stored before the run becomes terminal.
+     * The row lock makes a concurrent cancellation authoritative when it wins the transition first.
+     */
+    @Transactional
+    public Optional<MangaAgentRun> reconcileCachedReply(MangaAgentConversation conversation, UUID requestId,
+                                                        String reply) {
+        return runRepository.findForUpdate(conversation.getId(), requestId)
+                .map(run -> isTerminal(run.getStatus())
+                        ? run
+                        : applyTerminal(run, MangaAgentRunStatus.SUCCEEDED, reply, null));
     }
 
     @Transactional
@@ -350,7 +424,10 @@ public class MangaAgentRunService {
                 run.getUpdatedAt(),
                 run.getCompletedAt(),
                 run.getLastProgressAt(),
-                run.getCurrentPhase()
+                run.getCurrentPhase(),
+                run.getRouteSource(),
+                run.getRouteConfidence(),
+                run.getRouterVersion()
         );
     }
 
@@ -388,27 +465,25 @@ public class MangaAgentRunService {
 
     private MangaAgentRun markTerminal(UUID requestId, Long userId, Long chapterId, MangaAgentRunStatus status,
                                        String reply, String error) {
-        MangaAgentRun run = runRepository.findByUserIdAndChapterIdAndRequestId(userId, chapterId, requestId)
+        MangaAgentRun run = runRepository.findForUpdate(userId, chapterId, requestId)
                 .orElseThrow(() -> new BusinessException(404, "Agent run not found"));
         if (isTerminal(run.getStatus())) {
             return run;
         }
-        run.setStatus(status);
-        run.setFinalReply(reply);
-        run.setErrorMessage(error);
-        run.setUserInputRequestJson(null);
-        run.setCompletedAt(OffsetDateTime.now());
-        run.setUpdatedAt(OffsetDateTime.now());
-        return runRepository.save(run);
+        return applyTerminal(run, status, reply, error);
     }
 
     private MangaAgentRun markTerminal(MangaAgentConversation conversation, UUID requestId, MangaAgentRunStatus status,
                                        String reply, String error) {
-        MangaAgentRun run = runRepository.findByConversationIdAndRequestId(conversation.getId(), requestId)
+        MangaAgentRun run = runRepository.findForUpdate(conversation.getId(), requestId)
                 .orElseThrow(() -> new BusinessException(404, "Agent run not found"));
         if (isTerminal(run.getStatus())) {
             return run;
         }
+        return applyTerminal(run, status, reply, error);
+    }
+
+    private MangaAgentRun applyTerminal(MangaAgentRun run, MangaAgentRunStatus status, String reply, String error) {
         run.setStatus(status);
         run.setFinalReply(reply);
         run.setErrorMessage(error);
@@ -427,7 +502,13 @@ public class MangaAgentRunService {
     }
 
     private String normalizePhase(String phase) {
-        return "TOOL".equalsIgnoreCase(phase) ? "TOOL" : "MODEL";
+        if (phase == null) {
+            return "MODEL";
+        }
+        return switch (phase.toUpperCase()) {
+            case "ROUTER", "AGENT", "TOOL", "MODEL" -> phase.toUpperCase();
+            default -> "MODEL";
+        };
     }
 
     private RunEventSnapshot toPayload(MangaAgentRunEventRecord event) {
@@ -479,8 +560,18 @@ public class MangaAgentRunService {
             OffsetDateTime updatedAt,
             OffsetDateTime completedAt,
             OffsetDateTime lastProgressAt,
-            String currentPhase
+            String currentPhase,
+            MangaRouteSource routeSource,
+            Double routeConfidence,
+            String routerVersion
     ) {
+        public RunSnapshot(UUID requestId, MangaAgentRunStatus status, String inputMessage, String finalReply,
+                           String errorMessage, MangaWorkflowRoute route, AgentUserInputRequest userInputRequest,
+                           List<RunEventSnapshot> events, OffsetDateTime createdAt, OffsetDateTime updatedAt,
+                           OffsetDateTime completedAt, OffsetDateTime lastProgressAt, String currentPhase) {
+            this(requestId, status, inputMessage, finalReply, errorMessage, route, userInputRequest, events,
+                    createdAt, updatedAt, completedAt, lastProgressAt, currentPhase, MangaRouteSource.AUTO, null, null);
+        }
     }
 
     public record RunEventSnapshot(

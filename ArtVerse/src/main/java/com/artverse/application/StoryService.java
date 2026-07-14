@@ -1,6 +1,8 @@
 package com.artverse.application;
 
 import cn.dev33.satoken.stp.StpUtil;
+import com.artverse.application.publication.PublicationFormat;
+import com.artverse.application.publication.PublicationStrategyRegistry;
 import com.artverse.common.BusinessException;
 import com.artverse.domain.Chapter;
 import com.artverse.domain.Story;
@@ -12,8 +14,10 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 @Service
 @RequiredArgsConstructor
@@ -22,6 +26,7 @@ public class StoryService {
     private final StoryRepository storyRepository;
     private final ChapterRepository chapterRepository;
     private final UserRepository userRepository;
+    private final PublicationStrategyRegistry publicationStrategies;
 
     @Transactional(readOnly = true)
     public List<Story> listAll() {
@@ -92,26 +97,22 @@ public class StoryService {
 
     @Transactional
     public Story publish(Long id, Boolean isPublished, List<Long> chapterIds) {
+        return publish(id, PublicationFormat.MANGA, isPublished, chapterIds);
+    }
+
+    @Deprecated(forRemoval = false)
+    @Transactional
+    public Story publish(Long id, String format, Boolean isPublished, List<Long> chapterIds) {
+        return publish(id, PublicationFormat.fromApiValue(format), isPublished, chapterIds);
+    }
+
+    @Transactional
+    public Story publish(Long id, PublicationFormat format, Boolean isPublished, List<Long> chapterIds) {
         Story story = getRequired(id);
-        story.setIsPublished(isPublished);
-        if (isPublished) {
-            story.setPublishedAt(java.time.OffsetDateTime.now());
-            if (chapterIds != null && !chapterIds.isEmpty()) {
-                for (Chapter ch : story.getChapters()) {
-                    ch.setIsPublished(chapterIds.contains(ch.getId()));
-                }
-            } else {
-                for (Chapter ch : story.getChapters()) {
-                    ch.setIsPublished(true);
-                    ch.setDisplayOrder(ch.getChapterNumber());
-                }
-            }
-        } else {
-            story.setPublishedAt(null);
-            for (Chapter ch : story.getChapters()) {
-                ch.setIsPublished(false);
-            }
-        }
+        Set<Long> selectedChapterIds = chapterIds == null || chapterIds.isEmpty()
+                ? Set.of()
+                : new HashSet<>(chapterIds);
+        publicationStrategies.apply(format, story, Boolean.TRUE.equals(isPublished), selectedChapterIds);
         return storyRepository.save(story);
     }
 

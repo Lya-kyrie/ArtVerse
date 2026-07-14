@@ -46,19 +46,39 @@ public class AgentModelSpecFactory {
         return value == null ? "" : value;
     }
 
-    public AgentModelSpec deepSeek(String userApiKey) {
+    /**
+     * Returns the system-default LLM model spec, reading provider/baseUrl/model/apiKey
+     * from {@code artverse.agent.default-llm} configuration.
+     */
+    public AgentModelSpec defaultLlm(String llmApiKey) {
+        ArtVerseProperties.DefaultLlm llm = properties.getAgent().getDefaultLlm();
+        return new AgentModelSpec(
+                llm.getProvider(),
+                llm.getBaseUrl(),
+                llm.getModel(),
+                shortHash(resolveEffectiveApiKey(llmApiKey, llm.getApiKey()))
+        );
+    }
+
+    /**
+     * @deprecated Prefer {@link #defaultLlm(String)} for system-default resolution.
+     * Use this only when code explicitly needs a DeepSeek model spec regardless
+     * of the configured system default.
+     */
+    @Deprecated
+    public AgentModelSpec deepSeek(String llmApiKey) {
         ArtVerseProperties.DeepSeek deepseek = properties.getDeepseek();
         return new AgentModelSpec(
                 "deepseek",
                 deepseek.getBaseUrl(),
                 deepseek.getModel(),
-                shortHash(resolveEffectiveApiKey(userApiKey, deepseek.getApiKey()))
+                shortHash(resolveEffectiveApiKey(llmApiKey, deepseek.getApiKey()))
         );
     }
 
-    private String resolveEffectiveApiKey(String userApiKey, String configuredApiKey) {
-        if (userApiKey != null && !userApiKey.isBlank()) {
-            return userApiKey;
+    private String resolveEffectiveApiKey(String llmApiKey, String configuredApiKey) {
+        if (llmApiKey != null && !llmApiKey.isBlank()) {
+            return llmApiKey;
         }
         if (configuredApiKey != null && !configuredApiKey.isBlank()) {
             return configuredApiKey;

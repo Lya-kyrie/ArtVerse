@@ -19,7 +19,7 @@ public class AgentScopeRuntimeContextFactory {
         RuntimeContext.Builder builder = RuntimeContext.builder()
                 .sessionId(createSessionId(request))
                 .userId(request.userId());
-        if (request.taskType() == AgentTaskType.MANGA_DIRECTOR) {
+        if (request.taskType() != null && request.taskType().isMangaExecutionTask()) {
             builder.put(MangaAgentRuntimeContext.class, new MangaAgentRuntimeContext(
                     parseUserIdForTool(request.userId()),
                     request.storyId(),

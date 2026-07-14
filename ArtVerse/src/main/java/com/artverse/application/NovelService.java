@@ -34,7 +34,7 @@ public class NovelService {
     }
 
     @Transactional
-    public String generateNovel(Long chapterId, Long userId, String userApiKey) {
+    public String generateNovel(Long chapterId, Long userId, String llmApiKey) {
         Chapter chapter = chapterRepository.findById(chapterId)
                 .orElseThrow(() -> new BusinessException(404, "Chapter not found"));
 
@@ -57,8 +57,8 @@ public class NovelService {
                 AgentTaskType.NOVEL,
                 agentMessages,
                 Map.of(),
-                agentModelSpecFactory.deepSeek(userApiKey),
-                userApiKey,
+                agentModelSpecFactory.defaultLlm(llmApiKey),
+                llmApiKey,
                 requestId,
                 null
         );

@@ -4,6 +4,7 @@ import com.artverse.domain.MangaAgentMessage;
 import com.artverse.application.AgentUserInputRequest;
 import com.artverse.application.MangaAgentRunService;
 import com.artverse.application.workflow.MangaWorkflowRoute;
+import com.artverse.application.workflow.MangaRouteSource;
 import com.artverse.domain.MangaAgentConversation;
 
 import java.time.OffsetDateTime;
@@ -60,7 +61,10 @@ public final class MangaAgentDtos {
                                    OffsetDateTime updatedAt,
                                    OffsetDateTime completedAt,
                                    OffsetDateTime lastProgressAt,
-                                   String currentPhase) {
+                                   String currentPhase,
+                                   MangaRouteSource routeSource,
+                                   Double routeConfidence,
+                                   String routerVersion) {
         public static RunStateResponse from(MangaAgentRunService.RunSnapshot snapshot) {
             return new RunStateResponse(
                     snapshot.requestId(),
@@ -75,7 +79,10 @@ public final class MangaAgentDtos {
                     snapshot.updatedAt(),
                     snapshot.completedAt(),
                     snapshot.lastProgressAt(),
-                    snapshot.currentPhase()
+                    snapshot.currentPhase(),
+                    snapshot.routeSource(),
+                    snapshot.routeConfidence(),
+                    snapshot.routerVersion()
             );
         }
     }

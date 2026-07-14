@@ -41,6 +41,12 @@ public class Story {
     @Column(name = "published_at")
     private java.time.OffsetDateTime publishedAt;
 
+    @Column(name = "novel_is_published", nullable = false)
+    private Boolean novelIsPublished = false;
+
+    @Column(name = "novel_published_at")
+    private java.time.OffsetDateTime novelPublishedAt;
+
     @Column(name = "manga_style", length = 32, nullable = false)
     private String mangaStyle = "japanese_manga";
 

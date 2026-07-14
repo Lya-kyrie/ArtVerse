@@ -94,6 +94,17 @@ artverse:
     tool-idle-timeout-seconds: 600
     run-watchdog-interval-ms: 30000
     max-concurrent-runs: 8
+    auto-routing-enabled: true
+    routing-shadow-mode: false
+    routing-direct-threshold: 0.80
+    routing-read-only-threshold: 0.55
+    agent-cache-max-size: 256
+    agent-cache-expire-after-minutes: 30
+    default-llm:
+      provider: deepseek
+      base-url: https://api.deepseek.com
+      model: deepseek-v4-flash
+      api-key: ""
     max-retries: 2
     retry-min-backoff-ms: 1000
     retry-max-backoff-ms: 10000

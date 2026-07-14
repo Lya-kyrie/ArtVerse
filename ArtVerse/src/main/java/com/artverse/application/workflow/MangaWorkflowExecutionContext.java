@@ -12,11 +12,19 @@ public record MangaWorkflowExecutionContext(
         MangaAgentConversation conversation,
         String message,
         UUID requestId,
-        String deepseekApiKey,
+        String llmApiKey,
         AgentModelSpec modelSpec,
         AgentRunToolStatus.RunState toolState,
         User user,
         Chapter chapter,
-        MangaWorkflowContextSnapshot workflowContext
+        MangaWorkflowContextSnapshot workflowContext,
+        boolean persistConversationMessages
 ) {
+    public MangaWorkflowExecutionContext(MangaAgentConversation conversation, String message, UUID requestId,
+                                         String llmApiKey, AgentModelSpec modelSpec,
+                                         AgentRunToolStatus.RunState toolState, User user, Chapter chapter,
+                                         MangaWorkflowContextSnapshot workflowContext) {
+        this(conversation, message, requestId, llmApiKey, modelSpec, toolState, user, chapter,
+                workflowContext, true);
+    }
 }

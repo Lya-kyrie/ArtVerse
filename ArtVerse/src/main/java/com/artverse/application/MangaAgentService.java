@@ -2,6 +2,8 @@ package com.artverse.application;
 
 import com.artverse.application.workflow.MangaWorkflowOrchestrator;
 import com.artverse.application.workflow.MangaWorkflowRoute;
+import com.artverse.application.workflow.MangaRouteSource;
+import com.artverse.application.workflow.MangaRoutingMetrics;
 import com.artverse.common.BusinessException;
 import com.artverse.config.ArtVerseProperties;
 import com.artverse.domain.MangaAgentConversation;
@@ -38,6 +40,7 @@ public class MangaAgentService {
 
     @Qualifier("mangaGenerationExecutor")
     private final ExecutorService executor;
+    private final MangaRoutingMetrics routingMetrics;
 
     @Transactional(readOnly = true)
     public List<MangaAgentMessage> listMessages(Long chapterId, User user) {
@@ -74,7 +77,7 @@ public class MangaAgentService {
 
     public RunResult run(Long chapterId, String message, UUID requestId, User user, UserProviderConfig llmConfig) {
         MangaAgentConversation conversation = conversationService.activeOrCreate(chapterId, user);
-        return runInternal(conversation, message, requestId, MangaWorkflowRoute.DIRECTOR, llmConfig);
+        return runInternal(conversation, message, requestId, null, MangaRouteSource.AUTO, llmConfig);
     }
 
     public RunResult run(Long chapterId, UUID conversationId, String message, UUID requestId, User user) {
@@ -84,11 +87,12 @@ public class MangaAgentService {
     public RunResult run(Long chapterId, UUID conversationId, String message, UUID requestId, User user,
                          UserProviderConfig llmConfig) {
         MangaAgentConversation conversation = conversationService.requireConversation(chapterId, user, conversationId);
-        return runInternal(conversation, message, requestId, MangaWorkflowRoute.DIRECTOR, llmConfig);
+        return runInternal(conversation, message, requestId, null, MangaRouteSource.AUTO, llmConfig);
     }
 
     private RunResult runInternal(MangaAgentConversation conversation, String message, UUID requestId,
-                                  MangaWorkflowRoute route, UserProviderConfig llmConfig) {
+                                  MangaWorkflowRoute route, MangaRouteSource routeSource,
+                                  UserProviderConfig llmConfig) {
         UUID effectiveRequestId = requestId == null ? UUID.randomUUID() : requestId;
         agentConcurrencyGate.acquireOrReject();
         try {
@@ -99,11 +103,24 @@ public class MangaAgentService {
             )) {
                 return new RunResult(
                         String.valueOf(mangaWorkflowOrchestrator.runWithToolState(
-                                        conversation, message, effectiveRequestId, route, scope.state(), llmConfig)
+                                        conversation, message, effectiveRequestId, route, scope.state(), llmConfig, routeSource)
                                 .getOrDefault("reply", "")),
                         effectiveRequestId
                 );
             }
+        } catch (AgentUserInputRequiredException e) {
+            mangaAgentRunService.findRun(conversation, effectiveRequestId)
+                    .ifPresent(run -> mangaAgentRunService.markWaiting(conversation, effectiveRequestId, e.request()));
+            throw e;
+        } catch (RuntimeException e) {
+            mangaAgentRunService.findRun(conversation, effectiveRequestId).ifPresent(run -> {
+                if (!mangaAgentRunService.isTerminal(conversation, effectiveRequestId)) {
+                    mangaAgentRunService.markFailed(conversation, effectiveRequestId,
+                            e.getMessage() == null ? "Agent request failed" : e.getMessage());
+                    routingMetrics.recordRunOutcome(run.getRoute(), "FAILED");
+                }
+            });
+            throw e;
         } finally {
             agentConcurrencyGate.release();
         }
@@ -116,7 +133,7 @@ public class MangaAgentService {
     public SseEmitter runAgUiStream(Long chapterId, String message, UUID requestId, User user,
                                     UserProviderConfig llmConfig) {
         MangaAgentConversation conversation = conversationService.activeOrCreate(chapterId, user);
-        return runStreamInternal(conversation, message, requestId, MangaWorkflowRoute.DIRECTOR, llmConfig);
+        return runStreamInternal(conversation, message, requestId, null, llmConfig);
     }
 
     public SseEmitter runAgUiStream(Long chapterId, UUID conversationId, String message, UUID requestId, User user) {
@@ -127,7 +144,7 @@ public class MangaAgentService {
     public SseEmitter runAgUiStream(Long chapterId, UUID conversationId, String message, UUID requestId, User user,
                                     UserProviderConfig llmConfig) {
         MangaAgentConversation conversation = conversationService.requireConversation(chapterId, user, conversationId);
-        return runStreamInternal(conversation, message, requestId, MangaWorkflowRoute.DIRECTOR, llmConfig);
+        return runStreamInternal(conversation, message, requestId, null, llmConfig);
     }
 
     private SseEmitter runStreamInternal(MangaAgentConversation conversation, String message, UUID requestId,
@@ -142,6 +159,7 @@ public class MangaAgentService {
                 message,
                 effectiveRequestId,
                 route,
+                MangaRouteSource.AUTO,
                 llmConfig,
                 sink,
                 runRef
@@ -167,7 +185,8 @@ public class MangaAgentService {
     }
 
     private void executeStreamConversation(MangaAgentConversation conversation, String message, UUID requestId,
-                                           MangaWorkflowRoute route, UserProviderConfig llmConfig,
+                                           MangaWorkflowRoute route, MangaRouteSource routeSource,
+                                           UserProviderConfig llmConfig,
                                            MangaAgentRunEventPublisher.RunEventSink sink,
                                            AtomicReference<MangaAgentRun> runRef) {
         User user = conversation.getUser();
@@ -183,7 +202,7 @@ public class MangaAgentService {
                 }
         )) {
             mangaWorkflowOrchestrator.runStreamLeader(
-                    conversation, message, requestId, route, ignored.state(), sink, runRef, llmConfig);
+                    conversation, message, requestId, route, ignored.state(), sink, runRef, llmConfig, routeSource);
         }
     }
 
@@ -216,11 +235,15 @@ public class MangaAgentService {
 
         submitStreamTask(() -> runStreamTask(() -> {
             MangaAgentRunService.RunSnapshot snapshot = requireWaitingSnapshot(conversation, requestId);
+            if (handleMutationDecision(conversation, snapshot, answer, sink, runRef)) {
+                return;
+            }
             executeStreamConversation(
                     conversation,
                     resumeMessage(snapshot, answer),
                     requestId,
-                    snapshot.route(),
+                    routeForResume(snapshot, answer),
+                    routeSourceForResume(snapshot, answer),
                     llmConfig,
                     sink,
                     runRef
@@ -246,6 +269,7 @@ public class MangaAgentService {
             MangaAgentRun run = runRef.get();
             if (run != null && !mangaAgentRunService.isTerminal(conversation, requestId)) {
                 mangaAgentRunService.markFailed(conversation, requestId, detail);
+                routingMetrics.recordRunOutcome(run.getRoute(), "FAILED");
             }
             sink.sendError(run, requestId, detail);
         } finally {
@@ -285,9 +309,21 @@ public class MangaAgentService {
         if (waiting == null) {
             throw new BusinessException(409, "No waiting user input request on the run");
         }
-        String message = conversationService.resumeMessage("Continue", waiting, answer);
+        if ("MUTATION_CONFIRMATION".equalsIgnoreCase(waiting.purpose())) {
+            if (!isAffirmative(answer)) {
+                String reply = "已取消覆盖操作，当前分镜保持不变。";
+                conversationService.saveMessage(
+                        conversation, com.artverse.domain.MessageRole.ASSISTANT, reply, requestId);
+                mangaAgentRunService.markSucceeded(conversation, requestId, reply);
+                return new RunResult(reply, requestId);
+            }
+            agentRunToolStatus.authorizeMutation(
+                    conversation.getUser().getId(), conversation.getChapter().getId(), requestId);
+        }
+        String message = conversationService.resumeMessage(snapshot.inputMessage(), waiting, answer);
         try {
-            RunResult result = runInternal(conversation, message, requestId, snapshot.route(), llmConfig);
+            RunResult result = runInternal(conversation, message, requestId, routeForResume(snapshot, answer),
+                    routeSourceForResume(snapshot, answer), llmConfig);
             mangaAgentRunService.markSucceeded(conversation, requestId, result.reply());
             return result;
         } catch (AgentUserInputRequiredException e) {
@@ -347,6 +383,8 @@ public class MangaAgentService {
         chapterAccessService.requireVisible(chapterId, user.getId());
         MangaAgentConversation conversation = conversationService.activeOrCreate(chapterId, user);
         MangaAgentRun run = mangaAgentRunService.cancel(conversation, requestId, "Agent run cancelled by user");
+        routingMetrics.recordRunOutcome(run.getRoute(), "CANCELLED");
+        agentRunToolStatus.markCancelled(user.getId(), chapterId, requestId);
         agentRunToolStatus.clearWaitingInput(user.getId(), chapterId, requestId);
         return mangaAgentRunService.snapshot(run);
     }
@@ -357,6 +395,8 @@ public class MangaAgentService {
         }
         MangaAgentConversation conversation = conversationService.requireConversation(chapterId, user, conversationId);
         MangaAgentRun run = mangaAgentRunService.cancel(conversation, requestId, "Agent run cancelled by user");
+        routingMetrics.recordRunOutcome(run.getRoute(), "CANCELLED");
+        agentRunToolStatus.markCancelled(user.getId(), chapterId, requestId);
         agentRunToolStatus.clearWaitingInput(user.getId(), chapterId, requestId);
         return mangaAgentRunService.snapshot(run);
     }
@@ -377,7 +417,72 @@ public class MangaAgentService {
         if (waiting == null) {
             throw new BusinessException(409, "No waiting user input request on the run");
         }
-        return conversationService.resumeMessage("Continue", waiting, answer);
+        return conversationService.resumeMessage(snapshot.inputMessage(), waiting, answer);
+    }
+
+    private MangaWorkflowRoute routeForResume(MangaAgentRunService.RunSnapshot snapshot, String answer) {
+        AgentUserInputRequest waiting = snapshot.userInputRequest();
+        if (waiting != null && "ROUTING".equalsIgnoreCase(waiting.purpose())) {
+            // If user chose "advice" (只给建议), force safe read-only route instead of re-routing
+            if (isAdviceSelection(waiting, answer)) {
+                return MangaWorkflowRoute.CONVERSATION;
+            }
+            return null; // re-route via LLM for "edit" selection
+        }
+        return snapshot.route();
+    }
+
+    private MangaRouteSource routeSourceForResume(MangaAgentRunService.RunSnapshot snapshot, String answer) {
+        AgentUserInputRequest waiting = snapshot.userInputRequest();
+        if (waiting != null && "ROUTING".equalsIgnoreCase(waiting.purpose())
+                && !isAdviceSelection(waiting, answer)) {
+            return MangaRouteSource.RESUME_RECLASSIFIED;
+        }
+        return MangaRouteSource.RESUME_FIXED;
+    }
+
+    private boolean isAdviceSelection(AgentUserInputRequest waiting, String answer) {
+        if (waiting == null || waiting.options() == null || answer == null) {
+            return false;
+        }
+        String trimmed = answer.trim();
+        return waiting.options().stream()
+                .filter(opt -> !opt.recommended())
+                .anyMatch(opt -> opt.id().equals(trimmed));
+    }
+
+    private boolean handleMutationDecision(MangaAgentConversation conversation,
+                                           MangaAgentRunService.RunSnapshot snapshot,
+                                           String answer,
+                                           MangaAgentRunEventPublisher.RunEventSink sink,
+                                           AtomicReference<MangaAgentRun> runRef) {
+        AgentUserInputRequest waiting = snapshot.userInputRequest();
+        if (waiting == null || !"MUTATION_CONFIRMATION".equalsIgnoreCase(waiting.purpose())) {
+            return false;
+        }
+        if (isAffirmative(answer)) {
+            agentRunToolStatus.authorizeMutation(
+                    conversation.getUser().getId(), conversation.getChapter().getId(), snapshot.requestId());
+            return false;
+        }
+        MangaAgentRun run = mangaAgentRunService.findRun(conversation, snapshot.requestId())
+                .orElseThrow(() -> new BusinessException(404, "Agent run not found"));
+        runRef.set(run);
+        String reply = "已取消覆盖操作，当前分镜保持不变。";
+        conversationService.saveMessage(
+                conversation, com.artverse.domain.MessageRole.ASSISTANT, reply, snapshot.requestId());
+        mangaAgentRunService.markSucceeded(conversation, snapshot.requestId(), reply);
+        sink.sendDone(run, reply, snapshot.requestId());
+        return true;
+    }
+
+    private boolean isAffirmative(String answer) {
+        if (answer == null) {
+            return false;
+        }
+        String normalized = answer.trim().toLowerCase();
+        return normalized.equals("confirm") || normalized.equals("yes") || normalized.equals("确认")
+                || normalized.equals("确认覆盖") || normalized.equals("继续");
     }
 
     private void interruptStalledRunningRuns() {

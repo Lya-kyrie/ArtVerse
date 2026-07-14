@@ -6,10 +6,12 @@
 api/MangaAgentController  (SSE + sync endpoints)
   -> MangaAgentService.run() / runAgUiStream() / resume()
     -> MangaWorkflowOrchestrator.runWithToolState() / runStreamLeader()
+      -> MangaWorkflowRouter.route()  (AgentScope structured classification + capability validation)
       -> MangaWorkflowContextAssembler.assemble()
-      -> MangaWorkflowNodeRegistry.handlerFor(DIRECTOR)
-        -> MangaDirectorAgentNode.run() / stream()
-          -> MangaDirectorAgentSupport
+      -> MangaWorkflowNodeRegistry.handlerFor(selectedRoute)
+        -> Conversation / Creative / Storyboard / Review specialist
+        -> MangaDirectorAgentNode for validated multi-step plans
+          -> MangaAgentExecutionSupport
           -> AgentScopeHarnessAgentGateway
 ```
 
@@ -24,6 +26,7 @@ MangaWorkflowOrchestrator
   -> GenerationGuardService         (idempotency + rate limiting)
   -> MangaWorkflowContextAssembler  (context snapshots)
   -> MangaWorkflowNodeRegistry      (node dispatch)
+  -> MangaWorkflowRouter            (automatic route decision)
 
 MangaWorkflowContextAssembler
   -> MangaAgentConversationService  (conversation history)
@@ -31,10 +34,13 @@ MangaWorkflowContextAssembler
   -> CharacterProfileService        (effective character profile)
 
 MangaDirectorAgentNode
-  -> AgentScopeHarnessAgentGateway  (LLM communication)
-  -> MangaDirectorAgentSupport      (request build, workspace sync, event mapping, persistence helpers)
+  -> MangaAgentRunService           (routing decision and execution-plan recovery)
+  -> MangaWorkflowNodeRegistry      (serial child-step dispatch)
 
-MangaDirectorAgentSupport
+MangaConversationAgentNode / MangaCreativeAgentNode / MangaStoryboardAgentNode / MangaReviewAgentNode
+  -> MangaAgentExecutionSupport     (shared request construction and execution)
+
+MangaAgentExecutionSupport
   -> MangaAgentConversationService  (message management)
   -> AgentWorkspaceSyncService      (knowledge sync)
   -> ApiKeyService                  (Coze key lookup for runtime metadata)
@@ -47,6 +53,7 @@ Agent Tools (MangaContextTools, MangaStoryboardTools, MangaHitlTools)
   -> GenerationGuardService         (concurrency guard)
   -> AgentToolAuditService          (audit logging)
   -> AgentRunToolStatus             (per-run state)
+  -> ToolIdempotencyService         (atomic request-scoped write deduplication)
 ```
 
 ## Key Dependencies

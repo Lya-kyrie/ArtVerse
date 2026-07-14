@@ -65,6 +65,9 @@ public class Chapter {
     @Column(name = "is_published", nullable = false)
     private Boolean isPublished = false;
 
+    @Column(name = "novel_is_published", nullable = false)
+    private Boolean novelIsPublished = false;
+
     @Column(name = "display_order")
     private Integer displayOrder = 0;
 

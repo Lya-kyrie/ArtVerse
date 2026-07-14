@@ -5,7 +5,7 @@ description: Manga agent workflow orchestration - context assembly, node dispatc
 
 # Workflow Engine
 
-The current manga workflow has one execution route: `DIRECTOR`. Keep the route abstraction explicit, but do not document or add pseudo-routes until product behavior and node handlers actually exist.
+The manga workflow uses capability-validated automatic routing across 5 routes: `CONVERSATION`, `CREATIVE`, `STORYBOARD`, `REVIEW`, and `DIRECTOR`. `DIRECTOR` is reserved for validated multi-step plans (2-3 steps); single-intent requests dispatch directly to a specialist (Conversation, Creative, Storyboard, or Review).
 
 ## Code Map - Workflow Core
 
@@ -18,7 +18,7 @@ The current manga workflow has one execution route: `DIRECTOR`. Keep the route a
 | `MangaWorkflowExecutionContext` | Immutable context record for node execution |
 | `MangaWorkflowContextSnapshot` | Chapter state snapshot passed to nodes |
 | `MangaWorkflowStreamContext` | SSE sink plus run reference for streaming nodes |
-| `MangaWorkflowRoute` | Enum: `DIRECTOR` only |
+| `MangaWorkflowRoute` | Specialist routes plus `DIRECTOR`; each route declares its business capabilities |
 | `MangaWorkflowNode` | Pipeline stages: `COLLECTING_CONTEXT`, `GENERATING`, `EVALUATING`, `WAITING_USER`, `COMPLETED` |
 | `MangaWorkflowResult` | Node execution result with degraded flag |
 
@@ -26,9 +26,12 @@ The current manga workflow has one execution route: `DIRECTOR`. Keep the route a
 
 | Class | Route | Behavior |
 |-------|-------|----------|
-| `MangaDirectorAgentNode` | `DIRECTOR` | Calls AgentScope through the harness gateway and persists final/degraded replies |
-| `MangaDirectorAgentSupport` | helper | Builds `AgentRunRequest`, syncs workspace knowledge, maps AgentScope events, and saves reply/failure messages |
-| `AbstractStaticReplyNode` | base | Dormant base for future static nodes; no concrete non-director nodes are registered |
+| `MangaConversationAgentNode` | `CONVERSATION` | Read-only Q&A agent for status queries, help, and general discussion. Uses context tools only. No write tools, no HITL, no DEGRADED fallback. |
+| `MangaCreativeAgentNode` | `CREATIVE` | Read-only creative discussion agent for plot, character, world-building, and storyboard ideas. Uses context tools only. No write tools, no HITL, no DEGRADED fallback. |
+| `MangaStoryboardAgentNode` | `STORYBOARD` | Sole mutating agent. Generates, edits, and persists storyboard scenes. Includes write-guard validation, DEGRADED fallback when tools succeed but the final response fails, and HITL confirmation via `ask_user`. |
+| `MangaReviewAgentNode` | `REVIEW` | Read-only review agent for quality and consistency analysis. Uses parallel multi-dimensional review (camera language, character consistency, pacing, continuity). No write tools, no DEGRADED fallback. |
+| `MangaDirectorAgentNode` | `DIRECTOR` | Restores and executes a persisted, validated multi-step plan and owns the single final conversation reply. Only invoked when Router detects more than one suggested step. |
+| `MangaAgentExecutionSupport` | helper | Shared request construction, workspace sync, AgentScope event mapping, and specialist execution support used by all five specialist nodes. |
 
 ## Key Flows
 
@@ -49,7 +52,9 @@ The current manga workflow has one execution route: `DIRECTOR`. Keep the route a
 
 ## Invariants
 
-- `DIRECTOR` is the only registered workflow route today.
+- Every workflow route must have exactly one registered handler; duplicate or missing handlers fail startup.
+- Child steps in a Director plan must not persist user/assistant conversation messages. Director owns the final reply.
+- A mutating step failure is `FAILED`; `DEGRADED` is reserved for a successful mutation followed by a response failure.
 - Missing route handlers must fail fast; never silently fall back to `DIRECTOR`.
 - `requestId` is the idempotency/resume key. Preserve it across retries and resumes.
 - Mutating tools that succeed but fail the final reply become `DEGRADED`, not `FAILED`.

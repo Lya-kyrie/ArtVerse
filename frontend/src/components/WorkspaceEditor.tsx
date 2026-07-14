@@ -10,9 +10,14 @@ type MobileTab = 'chat' | 'manga';
 interface Props {
   storyId: number;
   onBack: () => void;
+  onLoadError?: (message: string) => void;
 }
 
-export default function WorkspaceEditor({ storyId, onBack }: Props) {
+const LS_STORY_ID = 'lorevista.currentStoryId';
+const LS_CHAPTER_ID = 'lorevista.currentChapterId';
+const LS_CHAPTER_IDX = 'lorevista.currentChapterIdx';
+
+export default function WorkspaceEditor({ storyId, onBack, onLoadError }: Props) {
   const [currentIdx, setCurrentIdx] = useState(0);
   const [chapters, setChapters] = useState<Chapter[]>([]);
   const [currentChapter, setCurrentChapter] = useState<Chapter | null>(null);
@@ -26,20 +31,33 @@ export default function WorkspaceEditor({ storyId, onBack }: Props) {
     try {
       const chs = await listChapters(storyId);
       setChapters(chs);
-      const savedIdx = Number(localStorage.getItem('lorevista.currentChapterIdx') || '0');
-      const idx = chs.length > 0 ? Math.min(savedIdx, chs.length - 1) : 0;
+      const sameStory = Number(localStorage.getItem(LS_STORY_ID)) === storyId;
+      const savedChapterId = sameStory ? Number(localStorage.getItem(LS_CHAPTER_ID)) : 0;
+      const savedChapterIdx = chs.findIndex((chapter) => chapter.id === savedChapterId);
+      const idx = savedChapterIdx >= 0 ? savedChapterIdx : 0;
+      localStorage.setItem(LS_STORY_ID, String(storyId));
       setCurrentIdx(idx);
       if (chs.length > 0) {
         const ch = await getChapter(chs[idx].id);
         setCurrentChapter(ch);
-        localStorage.setItem('lorevista.currentChapterId', String(chs[idx].id));
+        localStorage.setItem(LS_CHAPTER_ID, String(chs[idx].id));
+        localStorage.setItem(LS_CHAPTER_IDX, String(idx));
       } else {
         setCurrentChapter(null);
+        localStorage.removeItem(LS_CHAPTER_ID);
+        localStorage.removeItem(LS_CHAPTER_IDX);
       }
+    } catch (error) {
+      setChapters([]);
+      setCurrentChapter(null);
+      const detail = error instanceof Error ? error.message : '';
+      onLoadError?.(detail
+        ? `无法打开该故事：${detail}`
+        : '故事不存在或当前账号无权访问，已返回故事工作区。');
     } finally {
       setLoading(false);
     }
-  }, [storyId]);
+  }, [onLoadError, storyId]);
 
   useEffect(() => {
     void loadChapters();
@@ -67,8 +85,8 @@ export default function WorkspaceEditor({ storyId, onBack }: Props) {
     setCurrentIdx(idx);
     const ch = await getChapter(chapters[idx].id);
     setCurrentChapter(ch);
-    localStorage.setItem('lorevista.currentChapterId', String(chapters[idx].id));
-    localStorage.setItem('lorevista.currentChapterIdx', String(idx));
+    localStorage.setItem(LS_CHAPTER_ID, String(chapters[idx].id));
+    localStorage.setItem(LS_CHAPTER_IDX, String(idx));
   };
 
   const handlePrevChapter = () => {
@@ -88,8 +106,8 @@ export default function WorkspaceEditor({ storyId, onBack }: Props) {
       const idx = chs.length - 1;
       setCurrentIdx(idx);
       setCurrentChapter(await getChapter(chs[idx].id));
-      localStorage.setItem('lorevista.currentChapterId', String(chs[idx].id));
-      localStorage.setItem('lorevista.currentChapterIdx', String(idx));
+      localStorage.setItem(LS_CHAPTER_ID, String(chs[idx].id));
+      localStorage.setItem(LS_CHAPTER_IDX, String(idx));
     } catch (e: any) {
       alert('操作失败：' + e.message);
     } finally {
@@ -106,8 +124,15 @@ export default function WorkspaceEditor({ storyId, onBack }: Props) {
       setChapters(chs);
       const idx = Math.min(currentIdx, chs.length - 1);
       setCurrentIdx(idx);
-      if (chs.length > 0) setCurrentChapter(await getChapter(chs[idx].id));
-      else setCurrentChapter(null);
+      if (chs.length > 0) {
+        setCurrentChapter(await getChapter(chs[idx].id));
+        localStorage.setItem(LS_CHAPTER_ID, String(chs[idx].id));
+        localStorage.setItem(LS_CHAPTER_IDX, String(idx));
+      } else {
+        setCurrentChapter(null);
+        localStorage.removeItem(LS_CHAPTER_ID);
+        localStorage.removeItem(LS_CHAPTER_IDX);
+      }
     } catch (e: any) {
       alert('操作失败：' + e.message);
     }

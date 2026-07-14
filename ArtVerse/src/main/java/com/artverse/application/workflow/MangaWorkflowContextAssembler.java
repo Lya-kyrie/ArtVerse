@@ -2,6 +2,7 @@ package com.artverse.application.workflow;
 
 import com.artverse.application.CharacterProfileService;
 import com.artverse.application.MangaAgentConversationService;
+import com.artverse.application.tools.MangaToolSupport;
 import com.artverse.domain.Chapter;
 import com.artverse.domain.MangaAgentConversation;
 import com.artverse.domain.MangaAgentMessage;
@@ -25,8 +26,10 @@ public class MangaWorkflowContextAssembler {
     private final MangaAgentConversationService mangaAgentConversationService;
     private final MangaImageRepository mangaImageRepository;
     private final CharacterProfileService characterProfileService;
+    private final MangaToolSupport mangaToolSupport;
 
-    public MangaWorkflowContextSnapshot assemble(MangaAgentConversation conversation, String userMessage) {
+    public MangaWorkflowContextSnapshot assemble(MangaAgentConversation conversation, String userMessage,
+                                                  MangaWorkflowRoute route) {
         Chapter chapter = conversation.getChapter();
         Story story = chapter.getStory();
         List<MangaImage> images = mangaImageRepository.findByChapterIdOrderByImageNumberAsc(chapter.getId());
@@ -44,7 +47,7 @@ public class MangaWorkflowContextAssembler {
                 excerpt(chapter.novelContentOrJoinedMessages(), EXCERPT_LIMIT),
                 excerpt(String.valueOf(characterProfile.getOrDefault("content", "")), EXCERPT_LIMIT),
                 summarizeConversation(history, userMessage),
-                MangaWorkflowRoute.DIRECTOR,
+                route,
                 warningsFor(chapter, images)
         );
     }
@@ -85,18 +88,11 @@ public class MangaWorkflowContextAssembler {
     }
 
     private String chapterDisplayName(Chapter chapter) {
-        if (chapter.getDisplayTitle() != null && !chapter.getDisplayTitle().isBlank()) {
-            return chapter.getDisplayTitle();
-        }
-        return "Chapter " + chapter.getChapterNumber();
+        return mangaToolSupport.chapterDisplayName(chapter);
     }
 
     private String excerpt(String text, int limit) {
-        if (text == null || text.isBlank()) {
-            return "";
-        }
-        String normalized = text.replaceAll("\\s+", " ").trim();
-        return normalized.length() <= limit ? normalized : normalized.substring(0, limit) + "...";
+        return mangaToolSupport.excerpt(text, limit);
     }
 
     private int countScenes(String scenesText) {

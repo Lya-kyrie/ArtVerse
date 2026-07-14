@@ -43,13 +43,13 @@ public class MangaGenerationService {
     private final Map<Long, MangaGenerationJob> activeJobs = new ConcurrentHashMap<>();
 
     @Transactional
-    public SseEmitter generateMangaStream(Long chapterId, UserProviderConfig imageConfig, String deepseekApiKey) {
-        return generateMangaStream(chapterId, null, null, imageConfig, deepseekApiKey, () -> {}, error -> {});
+    public SseEmitter generateMangaStream(Long chapterId, UserProviderConfig imageConfig) {
+        return generateMangaStream(chapterId, null, null, imageConfig, () -> {}, error -> {});
     }
 
     @Transactional
     public SseEmitter generateMangaStream(Long chapterId, Long assetGroupId, Long userId,
-                                          UserProviderConfig imageConfig, String deepseekApiKey,
+                                          UserProviderConfig imageConfig,
                                           Runnable onComplete, Consumer<String> onError) {
         Chapter chapter = chapterRepository.findByIdForIdempotency(chapterId)
                 .orElseThrow(() -> new BusinessException(404, "Chapter not found"));
@@ -240,7 +240,7 @@ public class MangaGenerationService {
     }
 
     @Transactional
-    public MangaImage regenerateImage(Long chapterId, int imageNumber, String prompt, UserProviderConfig imageConfig, String deepseekApiKey) {
+    public MangaImage regenerateImage(Long chapterId, int imageNumber, String prompt, UserProviderConfig imageConfig) {
         Chapter chapter = chapterRepository.findByIdForIdempotency(chapterId)
                 .orElseThrow(() -> new BusinessException(404, "Chapter not found"));
 

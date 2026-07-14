@@ -2043,7 +2043,7 @@ export interface MangaAgentConversation {
   archivedAt?: string | null;
 }
 
-export type MangaWorkflowRoute = 'DIRECTOR';
+export type MangaWorkflowRoute = 'CONVERSATION' | 'CREATIVE' | 'STORYBOARD' | 'REVIEW' | 'DIRECTOR';
 
 export type MangaAgentRunEvent =
   | { type: 'status'; data: { message?: string; requestId?: string; request_id?: string } }
@@ -2079,6 +2079,8 @@ export type ArtVerseAgUiEvent = AGUIEvent & {
         question?: string;
         options?: AgentUserInputOption[];
         allowFreeText?: boolean;
+        purpose?: AgentUserInputRequest['purpose'];
+        reason?: string;
       };
     }>;
   };
@@ -2118,6 +2120,9 @@ export interface MangaAgentRunSnapshot {
   completedAt?: string | null;
   lastProgressAt?: string;
   currentPhase?: 'MODEL' | 'TOOL' | string;
+  routeSource?: 'AUTO' | 'RESUME_FIXED' | 'RESUME_RECLASSIFIED' | 'SHADOW' | 'FALLBACK' | string;
+  routeConfidence?: number | null;
+  routerVersion?: string | null;
 }
 
 export interface AgentUserInputOption {
@@ -2134,6 +2139,7 @@ export interface AgentUserInputRequest {
   options: AgentUserInputOption[];
   allowFreeText?: boolean;
   reason?: string;
+  purpose?: 'ROUTING' | 'MUTATION_CONFIRMATION' | 'BUSINESS_CONFIRMATION' | string;
 }
 
 export async function getMangaAgentMessages(chapterId: number): Promise<MangaAgentMessage[]> {

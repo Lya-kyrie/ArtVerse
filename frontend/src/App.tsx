@@ -1,4 +1,4 @@
-import { useEffect, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useState, type ReactNode } from 'react';
 import {
   BookOpenText,
   FileText,
@@ -21,8 +21,17 @@ import SquarePage from './components/SquarePage';
 import ThemeToggle from './components/ThemeToggle';
 import WorkspaceEditor from './components/WorkspaceEditor';
 import { isAuthenticated, logoutUser, type Story } from './api';
+import {
+  isProtectedRoute,
+  parseAppHash,
+  pushAppRoute,
+  replaceAppRoute,
+  type AppRoute,
+  type AppView,
+} from './appRouting';
 
-type View = 'home' | 'square' | 'workspace' | 'editor' | 'imagegen' | 'myworks' | 'settings';
+type View = AppView;
+type TopLevelView = Exclude<AppView, 'editor'>;
 
 const LS_STORY_ID = 'lorevista.currentStoryId';
 const LS_CHAPTER_ID = 'lorevista.currentChapterId';
@@ -75,14 +84,17 @@ export default function App() {
   const isMobile = useIsMobile();
   const [authenticated, setAuthenticated] = useState(false);
   const [authCheck, setAuthCheck] = useState(false);
-  const [view, setView] = useState<View>('home');
+  const [route, setRoute] = useState<AppRoute | null>(() => parseAppHash(window.location.hash));
   const [sidebarOpen, setSidebarOpen] = useState(!isMobile);
   const [loginOpen, setLoginOpen] = useState(false);
   const [loginMessage, setLoginMessage] = useState('请先登录后再使用该功能');
-  const [pendingView, setPendingView] = useState<View | null>(null);
+  const [pendingRoute, setPendingRoute] = useState<AppRoute | null>(null);
   const [pendingCreateStory, setPendingCreateStory] = useState(false);
   const [workspaceCreateSignal, setWorkspaceCreateSignal] = useState<number | null>(null);
-  const [activeStoryId, setActiveStoryId] = useState<number | null>(null);
+  const [navigationMessage, setNavigationMessage] = useState('');
+
+  const visibleRoute = route && (!authenticated && isProtectedRoute(route)) ? { view: 'square' as const } : route;
+  const view: View = visibleRoute?.view ?? 'square';
 
   useEffect(() => {
     setAuthenticated(isAuthenticated());
@@ -90,91 +102,135 @@ export default function App() {
   }, []);
 
   useEffect(() => {
+    const syncRoute = () => {
+      const parsed = parseAppHash(window.location.hash);
+      if (parsed) {
+        setRoute(parsed);
+        return;
+      }
+      replaceAppRoute({ view: isAuthenticated() ? 'home' : 'square' });
+    };
+
+    window.addEventListener('hashchange', syncRoute);
+    syncRoute();
+    return () => window.removeEventListener('hashchange', syncRoute);
+  }, []);
+
+  useEffect(() => {
+    if (!authCheck || authenticated || !route || !isProtectedRoute(route)) return;
+    setPendingRoute(route);
+    if (!loginOpen) {
+      setLoginMessage('请先登录后再使用该功能');
+      setLoginOpen(true);
+    }
+  }, [authCheck, authenticated, loginOpen, route]);
+
+  useEffect(() => {
     const handleExpired = () => {
       setAuthenticated(false);
       setLoginMessage('登录已过期，请重新登录');
-      setPendingView(view === 'square' ? null : view);
+      setPendingRoute(route && isProtectedRoute(route) ? route : null);
       setLoginOpen(true);
       clearWorkspaceState();
-      if (view !== 'square') setView('square');
     };
     window.addEventListener('artverse:auth-expired', handleExpired);
     return () => window.removeEventListener('artverse:auth-expired', handleExpired);
-  }, [view]);
+  }, [route]);
 
   const consumeWorkspaceCreateSignal = () => {
     setWorkspaceCreateSignal(null);
   };
 
-  const requireLogin = (target?: View) => {
+  const requireLogin = (target?: AppRoute) => {
     setLoginMessage('请先登录后再使用该功能');
-    setPendingView(target || null);
+    setPendingRoute(target || null);
     setLoginOpen(true);
+    if (target) pushAppRoute(target);
   };
 
   const loadEditor = (story: Story) => {
-    setActiveStoryId(story.id);
+    const previousStoryId = Number(localStorage.getItem(LS_STORY_ID));
+    if (previousStoryId !== story.id) {
+      localStorage.removeItem(LS_CHAPTER_ID);
+      localStorage.removeItem(LS_CHAPTER_IDX);
+    }
     localStorage.setItem(LS_STORY_ID, String(story.id));
-    setView('editor');
+    setNavigationMessage('');
+    pushAppRoute({ view: 'editor', storyId: story.id });
   };
 
   const leaveEditor = () => {
-    setActiveStoryId(null);
     clearWorkspaceState();
-    setView('workspace');
+    setNavigationMessage('');
+    pushAppRoute({ view: 'workspace' });
   };
 
   const openWorkspaceCreateStory = () => {
     if (!authenticated) {
       setPendingCreateStory(true);
-      requireLogin('workspace');
+      requireLogin({ view: 'workspace' });
       return;
     }
     setPendingCreateStory(false);
-    setActiveStoryId(null);
     clearWorkspaceState();
     setWorkspaceCreateSignal((prev) => (typeof prev === 'number' ? prev + 1 : 1));
-    setView('workspace');
+    setNavigationMessage('');
+    pushAppRoute({ view: 'workspace' });
   };
 
   const handleAuthSuccess = () => {
     setAuthenticated(true);
     setLoginOpen(false);
-    clearWorkspaceState();
     if (pendingCreateStory) {
+      clearWorkspaceState();
       setWorkspaceCreateSignal((prev) => (typeof prev === 'number' ? prev + 1 : 1));
       setPendingCreateStory(false);
     }
-    if (pendingView) {
-      setView(pendingView);
-      setPendingView(null);
+    if (pendingRoute) {
+      replaceAppRoute(pendingRoute);
+      setPendingRoute(null);
     }
+  };
+
+  const cancelLogin = () => {
+    setLoginOpen(false);
+    setPendingRoute(null);
+    setPendingCreateStory(false);
+    clearWorkspaceState();
+    replaceAppRoute({ view: 'square' });
   };
 
   const handleLogout = async () => {
     await logoutUser();
     setAuthenticated(false);
-    setPendingView(null);
+    setPendingRoute(null);
     setPendingCreateStory(false);
     setLoginOpen(false);
-    setActiveStoryId(null);
-    setView('home');
     clearWorkspaceState();
+    replaceAppRoute({ view: 'square' });
   };
 
-  const goView = (target: View) => {
+  const goView = (target: TopLevelView) => {
+    const targetRoute: AppRoute = { view: target };
     if (target !== 'square' && !authenticated) {
-      requireLogin(target);
+      requireLogin(targetRoute);
       return;
     }
-    if (view === 'editor' && target !== 'editor') {
-      setActiveStoryId(null);
+    if (view === 'editor') {
       clearWorkspaceState();
     }
-    setView(target);
+    setNavigationMessage('');
+    pushAppRoute(targetRoute);
   };
 
-  const navItem = (icon: ReactNode, label: string, target: View) => {
+  const handleEditorLoadError = useCallback((message: string) => {
+    if (!isAuthenticated()) return;
+    clearWorkspaceState();
+    setNavigationMessage(message || '故事不存在或当前账号无权访问，已返回故事工作区。');
+    replaceAppRoute({ view: 'workspace' });
+  }, []);
+
+  const navItem = (icon: ReactNode, label: string, target: TopLevelView) => {
     const active = view === target;
     return (
       <button
@@ -198,7 +254,7 @@ export default function App() {
     );
   };
 
-  const mobileNavItem = (icon: ReactNode, label: string, target: View) => {
+  const mobileNavItem = (icon: ReactNode, label: string, target: TopLevelView) => {
     const active = view === target;
     return (
       <button
@@ -316,6 +372,11 @@ export default function App() {
             </div>
           </header>
         )}
+        {navigationMessage && (
+          <div className="shrink-0 border-b border-warning/30 bg-warning/10 px-4 py-2 text-sm text-text-primary" role="status">
+            {navigationMessage}
+          </div>
+        )}
         {view === 'home' && <MangaAgentPage onCreateStory={openWorkspaceCreateStory} />}
         {view === 'square' && <SquarePage />}
         {view === 'workspace' && (
@@ -325,8 +386,8 @@ export default function App() {
             onCreateStorySignalConsumed={consumeWorkspaceCreateSignal}
           />
         )}
-        {view === 'editor' && activeStoryId !== null && (
-          <WorkspaceEditor storyId={activeStoryId} onBack={leaveEditor} />
+        {visibleRoute?.view === 'editor' && (
+          <WorkspaceEditor storyId={visibleRoute.storyId} onBack={leaveEditor} onLoadError={handleEditorLoadError} />
         )}
         {view === 'imagegen' && <ImageGenPage />}
         {view === 'myworks' && <MyWorksPage />}
@@ -346,13 +407,13 @@ export default function App() {
       {loginOpen && (
         <div
           className="fixed inset-0 z-50 flex items-center justify-center bg-bg-overlay p-4 backdrop-blur-sm"
-          onClick={() => setLoginOpen(false)}
+          onClick={cancelLogin}
         >
           <div className="w-full max-w-sm animate-fade-in" onClick={(event) => event.stopPropagation()}>
             <LoginPage
               variant="modal"
               message={loginMessage}
-              onCancel={() => setLoginOpen(false)}
+              onCancel={cancelLogin}
               onAuthSuccess={handleAuthSuccess}
             />
           </div>

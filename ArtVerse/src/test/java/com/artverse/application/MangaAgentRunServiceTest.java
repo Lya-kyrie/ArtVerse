@@ -6,6 +6,8 @@ import com.artverse.domain.MangaAgentRunEventRecord;
 import com.artverse.domain.MangaAgentRunStatus;
 import com.artverse.domain.Story;
 import com.artverse.domain.User;
+import com.artverse.application.workflow.MangaWorkflowRoute;
+import com.artverse.application.workflow.RoutingDecision;
 import com.artverse.persistence.MangaAgentRunEventRepository;
 import com.artverse.persistence.MangaAgentRunRepository;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -21,6 +23,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 class MangaAgentRunServiceTest {
@@ -91,7 +95,7 @@ class MangaAgentRunServiceTest {
         UUID requestId = UUID.randomUUID();
         MangaAgentRun run = run(fixture.user, fixture.chapter, requestId, "生成分镜");
 
-        when(fixture.runRepository.findByUserIdAndChapterIdAndRequestId(1L, 7L, requestId))
+        when(fixture.runRepository.findForUpdate(1L, 7L, requestId))
                 .thenReturn(Optional.of(run));
         when(fixture.runRepository.save(any(MangaAgentRun.class))).thenAnswer(invocation -> invocation.getArgument(0));
 
@@ -101,6 +105,25 @@ class MangaAgentRunServiceTest {
         assertThat(cancelled.getStatus()).isEqualTo(MangaAgentRunStatus.CANCELLED);
         assertThat(cancelled.getErrorMessage()).isEqualTo("用户停止");
         assertThat(cancelled.getFinalReply()).isNull();
+    }
+
+    @Test
+    void cachedReplyDoesNotOverrideCancelledRun() {
+        Fixture fixture = fixture();
+        UUID requestId = UUID.randomUUID();
+        MangaAgentRun cancelled = run(fixture.user, fixture.chapter, requestId, "generate storyboard");
+        cancelled.setStatus(MangaAgentRunStatus.CANCELLED);
+        com.artverse.domain.MangaAgentConversation conversation = new com.artverse.domain.MangaAgentConversation();
+        conversation.setId(12L);
+
+        when(fixture.runRepository.findForUpdate(12L, requestId)).thenReturn(Optional.of(cancelled));
+
+        Optional<MangaAgentRun> reconciled = fixture.service.reconcileCachedReply(
+                conversation, requestId, "late reply");
+
+        assertThat(reconciled).containsSame(cancelled);
+        assertThat(cancelled.getStatus()).isEqualTo(MangaAgentRunStatus.CANCELLED);
+        verify(fixture.runRepository, never()).save(cancelled);
     }
 
     @Test
@@ -130,6 +153,33 @@ class MangaAgentRunServiceTest {
         run.setUserInputRequestJson("{not valid json!@#}");
 
         AgentUserInputRequest result = fixture.service.waitingInput(run);
+
+        assertThat(result).isNull();
+    }
+
+    @Test
+    void routingDecisionRestoresPersistedDecision() throws Exception {
+        Fixture fixture = fixture();
+        MangaAgentRun run = run(fixture.user, fixture.chapter, UUID.randomUUID(), "generate storyboard");
+        RoutingDecision decision = new RoutingDecision(
+                MangaWorkflowRoute.DIRECTOR, 0.9, List.of("multi_step"), false, false, "test",
+                List.of(MangaWorkflowRoute.CREATIVE, MangaWorkflowRoute.REVIEW),
+                RoutingDecision.CURRENT_VERSION
+        );
+        run.setRoutingDecisionJson(fixture.objectMapper.writeValueAsString(decision));
+
+        RoutingDecision restored = fixture.service.routingDecision(run);
+
+        assertThat(restored).isEqualTo(decision);
+    }
+
+    @Test
+    void routingDecisionReturnsNullForCorruptedJsonInsteadOfThrowing() {
+        Fixture fixture = fixture();
+        MangaAgentRun run = run(fixture.user, fixture.chapter, UUID.randomUUID(), "generate storyboard");
+        run.setRoutingDecisionJson("{not valid json!@#}");
+
+        RoutingDecision result = fixture.service.routingDecision(run);
 
         assertThat(result).isNull();
     }

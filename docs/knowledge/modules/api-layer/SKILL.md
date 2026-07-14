@@ -13,7 +13,7 @@ REST controllers (18 controllers) and DTOs. All `/api/**` routes.
 |-------|---------|------|
 | `AuthController` | `api` | Login, register, logout, refresh, kickout, /me |
 | `ChapterController` | `api` | Chapter CRUD, content source management |
-| `StoryController` | `api` | Story CRUD, workspace management |
+| `StoryController` | `api` | Story CRUD, workspace management, typed publication requests |
 | `MangaAgentController` | `api` | Manga agent chat, SSE streams, resume, cancel |
 | `MangaGenerationController` | `api` | Manga image generation, SSE progress, stats |
 | `ImageGenController` | `api` | Standalone image generation |
@@ -31,6 +31,7 @@ REST controllers (18 controllers) and DTOs. All `/api/**` routes.
 | `GuardStatsController` | `api` | Internal guard metrics (admin) |
 | `MangaAgentDtos` | `api/dto` | Agent request/response DTOs |
 | `AuthDtos` | `api/dto` | Auth request/response DTOs |
+| `StoryDtos` | `api/dto` | Story publication request contract |
 | `ApiDtos` | `api/dto` | Shared DTOs |
 
 ## Key Patterns
@@ -39,6 +40,7 @@ REST controllers (18 controllers) and DTOs. All `/api/**` routes.
 - **Auth**: `SaTokenConfig` interceptor protects `/api/**` except `/api/auth/**`, `/api/square/**`, `/static/**`, `/actuator/health`.
 - **Provider secrets**: `GET /api/user/provider-configs/{configId}/api-key` is authenticated, checks profile ownership in `ApiKeyService`, and returns `Cache-Control: no-store`.
 - **Thin controllers**: Controllers resolve user, validate, then delegate to services. No business logic in controllers.
+- **Story publication contract**: `PUT /api/stories/{id}/publish` binds `is_published`, `format`, and `chapter_ids` through `StoryDtos.PublishRequest`; the DTO converts the external format to `PublicationFormat` before delegation.
 - **Standalone image generation**: `POST /api/image-gen/generate` creates a durable `RUNNING` record and returns it immediately; `GET /api/image-gen/history` is the recovery/status endpoint.
 - **Static media caching**: successful `/static/manga/**` responses use a private one-year immutable browser cache because stored media paths contain unique filenames; failed responses use `no-store` so transient storage failures are retryable.
 - **AG-UI protocol**: Manga agent streaming uses AG-UI event frames as default SSE protocol.
@@ -50,3 +52,4 @@ REST controllers (18 controllers) and DTOs. All `/api/**` routes.
 - `requestId` is the idempotency key across all streaming endpoints.
 - New endpoints must be added to `SaTokenConfig` interceptor exclude list if public.
 - Knowledge-base endpoints are protected under `/api/stories/{storyId}/knowledge`; controllers delegate ownership checks, structured-field validation, indexing, and recall to `KnowledgeService`.
+- Story publication defaults a missing `format` to `manga`; unsupported values return `400` with `Invalid publication format`.

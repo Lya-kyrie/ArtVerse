@@ -1,24 +1,51 @@
 package com.artverse.application.workflow;
 
+import java.util.LinkedHashMap;
 import java.util.Map;
 
 public record MangaWorkflowResult(
         String reply,
-        boolean degraded
+        String stepSummary,
+        String handoffContext,
+        boolean degraded,
+        Map<String, Object> attributes
 ) {
+    public MangaWorkflowResult {
+        reply = reply == null ? "" : reply;
+        stepSummary = stepSummary == null || stepSummary.isBlank() ? reply : stepSummary;
+        handoffContext = handoffContext == null || handoffContext.isBlank() ? stepSummary : handoffContext;
+        attributes = attributes == null ? Map.of() : Map.copyOf(attributes);
+    }
+
     public static MangaWorkflowResult success(String reply) {
-        return new MangaWorkflowResult(reply, false);
+        return success(reply, reply, reply);
+    }
+
+    public static MangaWorkflowResult success(String reply, String stepSummary, String handoffContext) {
+        return new MangaWorkflowResult(reply, stepSummary, handoffContext, false, Map.of());
     }
 
     public static MangaWorkflowResult degraded(String reply) {
-        return new MangaWorkflowResult(reply, true);
+        return degraded(reply, reply, reply);
+    }
+
+    public static MangaWorkflowResult degraded(String reply, String stepSummary, String handoffContext) {
+        return new MangaWorkflowResult(reply, stepSummary, handoffContext, true, Map.of());
+    }
+
+    public MangaWorkflowResult withAttributes(Map<String, Object> attributes) {
+        return new MangaWorkflowResult(reply, stepSummary, handoffContext, degraded, attributes);
+    }
+
+    public MangaWorkflowResult degradedWithAttributes(Map<String, Object> attributes) {
+        return new MangaWorkflowResult(reply, stepSummary, handoffContext, true, attributes);
     }
 
     public Map<String, Object> toPayload() {
-        return Map.of(
-                "reply", reply == null ? "" : reply,
-                "agent_final_response_degraded", degraded
-        );
+        Map<String, Object> payload = new LinkedHashMap<>(attributes);
+        payload.put("reply", reply);
+        payload.put("agent_final_response_degraded", degraded);
+        return Map.copyOf(payload);
     }
 
     public static MangaWorkflowResult fromPayload(Map<String, Object> payload) {
@@ -30,6 +57,6 @@ public record MangaWorkflowResult(
                 ? payload.get("agent_final_response_degraded")
                 : payload.get("degraded");
         boolean degraded = Boolean.TRUE.equals(degradedValue);
-        return degraded ? degraded(reply) : success(reply);
+        return new MangaWorkflowResult(reply, reply, reply, degraded, Map.of());
     }
 }

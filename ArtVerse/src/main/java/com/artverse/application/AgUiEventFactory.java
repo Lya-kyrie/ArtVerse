@@ -34,11 +34,7 @@ public class AgUiEventFactory {
         event.put("input", Map.of(
                 "threadId", threadId(run),
                 "runId", runId(requestId),
-                "state", Map.of(
-                        "status", "RUNNING",
-                        "message", message == null ? "" : message,
-                        "route", run == null || run.getRoute() == null ? "DIRECTOR" : run.getRoute().name()
-                ),
+                "state", runState(run, "RUNNING", message),
                 "messages", java.util.List.of(),
                 "tools", java.util.List.of(),
                 "context", java.util.List.of(),
@@ -49,14 +45,11 @@ public class AgUiEventFactory {
 
     public Map<String, Object> stateSnapshot(MangaAgentRun run, UUID requestId, String status, String message) {
         Map<String, Object> event = base(EVENT_STATE_SNAPSHOT);
-        event.put("snapshot", Map.of(
-                "threadId", threadId(run),
-                "runId", runId(requestId),
-                "requestId", runId(requestId),
-                "status", status,
-                "message", message == null ? "" : message,
-                "route", run == null || run.getRoute() == null ? "DIRECTOR" : run.getRoute().name()
-        ));
+        Map<String, Object> snapshot = new LinkedHashMap<>(runState(run, status, message));
+        snapshot.put("threadId", threadId(run));
+        snapshot.put("runId", runId(requestId));
+        snapshot.put("requestId", runId(requestId));
+        event.put("snapshot", Map.copyOf(snapshot));
         return event;
     }
 
@@ -110,6 +103,8 @@ public class AgUiEventFactory {
         metadata.put("question", nullToBlank(request.question()));
         metadata.put("options", request.options());
         metadata.put("allowFreeText", request.allowFreeText());
+        metadata.put("purpose", request.purpose());
+        metadata.put("reason", request.reason() == null ? "" : request.reason());
 
         Map<String, Object> interrupt = new LinkedHashMap<>();
         interrupt.put("id", runId(requestId));
@@ -149,6 +144,20 @@ public class AgUiEventFactory {
         event.put("timestamp", Instant.now().toEpochMilli());
         event.put("protocol", "ag-ui");
         return event;
+    }
+
+    private Map<String, Object> runState(MangaAgentRun run, String status, String message) {
+        Map<String, Object> state = new LinkedHashMap<>();
+        state.put("status", status == null ? "" : status);
+        state.put("message", message == null ? "" : message);
+        state.put("route", run == null || run.getRoute() == null ? "DIRECTOR" : run.getRoute().name());
+        if (run != null && run.getRouteSource() != null) {
+            state.put("routeSource", run.getRouteSource().name());
+        }
+        if (run != null && run.getRouteConfidence() != null) {
+            state.put("routeConfidence", run.getRouteConfidence());
+        }
+        return Map.copyOf(state);
     }
 
     private String threadId(MangaAgentRun run) {

@@ -35,6 +35,18 @@ agent integration
 
 ## Calls Into (outbound)
 
+### Story publication
+
+```text
+StoryController.publish
+  -> PublishRequest                  (snake_case HTTP contract)
+  -> PublicationFormat              (validated external format)
+  -> StoryService.publish           (ownership + transaction + save)
+    -> PublicationStrategyRegistry  (typed strategy lookup)
+      -> MangaPublicationStrategy   (manga publication fields)
+      -> NovelPublicationStrategy   (novel publication fields)
+```
+
 ```
 application services
   → domain.*              (JPA entities)

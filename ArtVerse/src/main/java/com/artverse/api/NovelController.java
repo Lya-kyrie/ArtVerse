@@ -22,8 +22,8 @@ public class NovelController {
     @PostMapping("/generate-novel")
     public Map<String, String> generateNovel(@PathVariable Long chapterId) {
         User user = currentUserService.requireCurrentUser();
-        String deepseekApiKey = apiKeyService.getDecryptedKey(user, "deepseek");
-        String content = novelService.generateNovel(chapterId, user.getId(), deepseekApiKey);
+        String llmApiKey = apiKeyService.getDecryptedKey(user, ApiKeyService.SLOT_LLM);
+        String content = novelService.generateNovel(chapterId, user.getId(), llmApiKey);
         return Map.of("novel_content", content);
     }
 

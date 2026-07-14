@@ -32,6 +32,7 @@ public class AgentRunToolStatus {
 
     private static final String KEY_PREFIX = "artverse:tool_status:";
     private static final String STATE_KEY_PREFIX = KEY_PREFIX + "state:";
+    private static final String MUTATION_AUTH_KEY_PREFIX = KEY_PREFIX + "mutation-authorized:";
     private static final Duration CACHE_TTL = Duration.ofMinutes(10);
 
     private final RedisTemplate<String, Object> redisTemplate;
@@ -122,6 +123,19 @@ public class AgentRunToolStatus {
         String inputKey = KEY_PREFIX + "input:" + userId + ":" + chapterId + ":" + requestId;
         redisTemplate.delete(inputKey);
         redisTemplate.delete(stateKey(userId, chapterId, requestId));
+    }
+
+    public void authorizeMutation(Long userId, Long chapterId, UUID requestId) {
+        redisTemplate.opsForValue().set(
+                MUTATION_AUTH_KEY_PREFIX + userId + ":" + chapterId + ":" + requestId,
+                Boolean.TRUE,
+                CACHE_TTL);
+    }
+
+    public boolean isMutationAuthorized(Long userId, Long chapterId, UUID requestId) {
+        Object value = redisTemplate.opsForValue().get(
+                MUTATION_AUTH_KEY_PREFIX + userId + ":" + chapterId + ":" + requestId);
+        return Boolean.TRUE.equals(value);
     }
 
     private void record(ToolEvent event, Long userId, Long chapterId) {

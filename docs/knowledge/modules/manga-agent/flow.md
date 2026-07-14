@@ -25,7 +25,7 @@ All endpoints are scoped to `/api/chapters/{chapterId}/manga-agent`.
 - `POST /runs/{requestId}/resume`: synchronous resume. Body: `{ answer }` plus provider/model fields.
 - `POST /ag-ui/runs/{requestId}/resume`: default AG-UI streaming resume. Body: `{ answer }` plus provider/model fields.
 
-Frontend types and stream parsing live in `frontend/src/api.ts`. The frontend depends on `@ag-ui/core` and `@ag-ui/client` for formal AG-UI event types. `ArtVerseMangaAgentHttpAgent` extends the official `HttpAgent` and adapts AG-UI `RunAgentInput` to the current ArtVerse body. The Manga Agent page no longer exposes a route selector; current execution always uses the `DIRECTOR` workflow. The left sidebar lists chapter conversations explicitly, and switching a conversation reloads messages plus open-run state.
+Frontend types and stream parsing live in `frontend/src/api.ts`. The frontend depends on `@ag-ui/core` and `@ag-ui/client` for formal AG-UI event types. `ArtVerseMangaAgentHttpAgent` extends the official `HttpAgent` and adapts AG-UI `RunAgentInput` to the current ArtVerse body. The Manga Agent page no longer exposes a route selector; the semantic router selects a specialist directly and uses `DIRECTOR` only for validated compound requests. The left sidebar lists chapter conversations explicitly, and switching a conversation reloads messages plus open-run state.
 
 `MangaAgentPage.tsx` renders the execution panel from AG-UI and persisted run events. Live progress should prefer `RUN_STARTED`, `STATE_SNAPSHOT`, `CUSTOM` run/tool audit events, `TEXT_MESSAGE_START`, `TEXT_MESSAGE_CONTENT`, `TEXT_MESSAGE_END`, `RUN_FINISHED`, and `RUN_ERROR`. The panel shows the active request id, latest run status, recent event timeline, tool activity, cancel action, and human-in-the-loop waiting state.
 
@@ -34,16 +34,16 @@ Frontend types and stream parsing live in `frontend/src/api.ts`. The frontend de
 1. `MangaAgentController` resolves the current user.
 2. `MangaAgentService` resolves the active conversation or supplied conversation id, creates an effective `requestId`, creates an `SseEmitter`, and submits work to `mangaGenerationExecutor` through `AgentConcurrencyGate`.
 3. `AgentRunToolStatus.start` opens per-run tool tracking and forwards tool events to `MangaAgentRunEventPublisher`.
-4. `MangaWorkflowOrchestrator.runStreamLeader` validates message text and starts or reuses a conversation-scoped `MangaAgentRun`.
-5. A `status` SSE event announces that the agent started processing the chapter.
+4. `MangaWorkflowOrchestrator.runStreamLeader` validates message text and checks for a persisted assistant reply before creating or reusing a run. A cache hit is replayed without creating a synthetic `RUNNING` record; an existing cancelled or interrupted run remains authoritative.
+5. On a cache miss, the orchestrator starts or reuses a conversation-scoped `MangaAgentRun`, then a `status` SSE event announces that the agent started processing the chapter.
 6. `GenerationGuardService.executeMangaAgentRun` protects the run with idempotency/rate-limit logic.
 7. `MangaWorkflowContextAssembler` builds story, chapter, image, character, and conversation metadata.
-8. `MangaWorkflowNodeRegistry.handlerFor(DIRECTOR)` selects `MangaDirectorAgentNode`; missing handlers fail fast instead of falling back.
-9. `MangaDirectorAgentSupport.prepareAgentMessages` saves the user message and builds history-limited agent messages from the selected conversation only.
+8. `MangaWorkflowNodeRegistry.handlerFor(route)` selects the routed specialist or `MangaDirectorAgentNode` for a validated compound plan; missing handlers fail fast instead of falling back.
+9. `MangaAgentExecutionSupport.prepareAgentMessages` saves the user message and builds history-limited agent messages from the selected conversation only.
 10. `AgentWorkspaceSyncService.syncMangaDirectorKnowledge` writes `KNOWLEDGE.md` for the user/story workspace.
-11. `MangaDirectorAgentSupport.buildRunRequest` creates an `AgentRunRequest` with user, story, chapter, conversation id, task type, model, user API key, and request id.
+11. `MangaAgentExecutionSupport.buildRunRequest` creates an `AgentRunRequest` with user, story, chapter, conversation id, task type, model, user API key, and request id.
 12. `AgentScopeHarnessAgentGateway.streamEvents` obtains the cached `HarnessAgent`, builds per-call runtime context, and sends messages to AgentScope.
-13. `MangaDirectorAgentSupport.mapAgentScopeEvent` maps AgentScope events into `AgentRunEvent`; `MangaDirectorAgentNode` accumulates text deltas into the final reply.
+13. `MangaAgentExecutionSupport.mapAgentScopeEvent` maps AgentScope events into `AgentRunEvent`. Director child-step events carry `planId`, `step`, `route`, and `agentName`; child text is retained as handoff context but suppressed from the primary reply stream.
 14. `MangaAgentRunEventPublisher` sends SSE events and persists non-text run events. It maps run lifecycle into formal AG-UI events.
 15. On success, `MangaWorkflowOrchestrator.completeRun` marks the run `SUCCEEDED` or `DEGRADED` and emits `done`.
 16. The frontend synchronizes final persisted messages after `RUN_FINISHED`.
@@ -60,6 +60,8 @@ Resume requires the same `conversationId` and `requestId`. `MangaAgentService` v
 
 `CANCELLED` means the user explicitly stopped the run through `POST /runs/{requestId}/cancel`. The frontend aborts the active AG-UI subscription after the backend confirms cancellation. Terminal writes from the background worker must not overwrite `CANCELLED`.
 
+The cancel endpoint marks the active in-memory tool/run state before removing its lookup entry, so an already-running worker observes cancellation and stops consuming model events. Terminal transitions lock the run row; cancellation, success, failure, and cache reconciliation therefore use first-terminal-transition-wins semantics instead of racing on a stale `RUNNING` entity.
+
 `INTERRUPTED` means the system repaired a stalled `RUNNING` run. The runtime has no total-duration timeout: a long task may continue while it produces real AgentScope or tool progress. The stream allows 90 seconds for the first event, then applies an idle timeout of 180 seconds for model work and 600 seconds for tool work. `last_progress_at` and `current_phase` are updated only by real model/tool events, not SSE keepalives. A scheduled watchdog and state reads interrupt runs whose last real progress exceeds the applicable idle budget.
 
 ## Persistence Rules
@@ -68,7 +70,7 @@ Resume requires the same `conversationId` and `requestId`. `MangaAgentService` v
 
 `manga_agent_messages` belongs to one conversation. Legacy chapter-level message endpoints resolve the current active conversation for compatibility.
 
-`manga_agent_runs` stores status, route, input message, final reply, error, user input request JSON, and timestamps. Runs belong to one conversation. New executions use `DIRECTOR`; older migrations may mention planned routes, but no non-director handler is registered in current code. Valid statuses are `RUNNING`, `WAITING_USER`, `SUCCEEDED`, `DEGRADED`, `FAILED`, `CANCELLED`, and `INTERRUPTED`.
+`manga_agent_runs` stores status, route, input message, final reply, error, user input request JSON, routing decision JSON, execution plan JSON, and timestamps. Runs belong to one conversation. New executions are routed by the `MangaWorkflowRouter` to one of five specialist handlers (`CONVERSATION`, `CREATIVE`, `STORYBOARD`, `REVIEW`, `DIRECTOR`) based on capability-based LLM classification. Valid statuses are `RUNNING`, `WAITING_USER`, `SUCCEEDED`, `DEGRADED`, `FAILED`, `CANCELLED`, and `INTERRUPTED`.
 
 `manga_agent_run_events` stores event name, type, phase, label, status, full JSON payload, and creation time. Persisted events allow the frontend to restore progress after refresh or reconnect. Do not persist `text_delta` events by default.
 

@@ -22,6 +22,11 @@ AgentScopeAgentFactory
   → AgentWorkspaceService           (workspace path)
   → MangaAgentPromptProvider        (system prompt)
   → AgentModelSpecFactory           (model spec)
+  → AgentToolConfigurationRegistry  (task-specific tool strategy)
+
+AgentToolConfigurationRegistry
+  → AgentToolConfigurationStrategy  (one exhaustive mapping per task type)
+    → AgentToolGroupSupport          (AgentScope tool-group registration)
 
   → AgentScope v2 SDK:
       HarnessAgent, RuntimeContext, Toolkit, OpenAIChatModel, CompactionConfig
@@ -32,6 +37,7 @@ AgentScopeAgentFactory
       ChapterAccessService, GenerationGuardService, AgentToolAuditService, AgentRunToolStatus
 
 AgentScopeHarnessAgentGateway
+  → AgentScopeMessageMapper
   → AgentScope v2 SDK: HarnessAgent, Msg, AgentEvent, TextBlockDeltaEvent
 
 AgentScopeRuntimeContextFactory
@@ -53,15 +59,15 @@ AgentModelSpecFactory
 
 ## SDK Dependency Surface
 
-All classes depend on `io.agentscope.*` (v2.0.0-RC3):
+All classes depend on `io.agentscope.*` (v2.0.0-RC4):
 
 | SDK Module | Used By |
 |------------|---------|
 | `core.agent.RuntimeContext` | `AgentScopeRuntimeContextFactory` |
 | `core.model.Model`, `OpenAIChatModel` | `AgentScopeAgentFactory`, `IntentClassificationModelProvider` |
-| `core.message.Msg`, `MsgRole` | `AgentScopeHarnessAgentGateway` |
+| `core.message.Msg`, `MsgRole` | `AgentScopeHarnessAgentGateway`, `AgentScopeMessageMapper` |
 | `core.event.*` | `MangaDirectorAgentNode` |
-| `core.tool.Toolkit`, `Tool` | `AgentScopeAgentFactory`, `MangaContextTools`, etc. |
+| `core.tool.Toolkit`, `Tool` | `agent/gateway/tools`, `MangaContextTools`, etc. |
 
 | `harness.agent.HarnessAgent` | `AgentScopeAgentFactory`, `AgentScopeHarnessAgentGateway` |
 | `harness.agent.memory.compaction.CompactionConfig` | `AgentScopeConfig` |

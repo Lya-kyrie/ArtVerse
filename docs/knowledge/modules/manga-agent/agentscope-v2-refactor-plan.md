@@ -16,7 +16,7 @@ The target architecture should align with AgentScope Java v2:
 
 - `AgentScopeHarnessAgentGateway` previously mixed model resolution, cache-key construction, workspace selection, prompt selection, tool registration, message conversion, and `RuntimeContext` construction. The current split keeps AgentScope execution in the gateway, agent construction/tool group setup in `AgentScopeAgentFactory`, prompt selection in `MangaAgentPromptProvider`, and runtime context creation in `AgentScopeRuntimeContextFactory`.
 - `MangaAgentService` is now the public application facade. It still coordinates conversations, run scope, resume/cancel/open-run APIs, and SSE sink setup, but workflow routing and execution live in `MangaWorkflowOrchestrator` and workflow nodes.
-- Route selection is explicit and persisted on `MangaAgentRun`; current runtime execution registers `DIRECTOR` only.
+- Route selection is automatic, capability-validated, and persisted on `MangaAgentRun`; specialist routes execute directly and `DIRECTOR` coordinates validated multi-step plans.
 - HITL currently uses `ask_user` plus `ToolSuspendException` and business-side state lookup. This is compatible with the existing frontend, but it is not yet modeled around v2 permission/external-execution events.
 - Visible Chinese strings in the Manga Agent path are correctness-sensitive. Treat mojibake as a defect and fix source strings when touched.
 

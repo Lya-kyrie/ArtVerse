@@ -1,6 +1,7 @@
 package com.artverse.application;
 
 import com.artverse.application.workflow.MangaWorkflowOrchestrator;
+import com.artverse.application.workflow.MangaRoutingMetrics;
 import com.artverse.common.BusinessException;
 import com.artverse.config.ArtVerseProperties;
 import com.artverse.domain.Chapter;
@@ -46,7 +47,7 @@ class MangaAgentServiceTest {
     void runDelegatesToWorkflowOrchestrator() {
         Fixture fixture = fixture();
         UUID requestId = UUID.randomUUID();
-        when(fixture.orchestrator.runWithToolState(any(), any(), any(), any(), any(), any()))
+        when(fixture.orchestrator.runWithToolState(any(), any(), any(), any(), any(), any(), any()))
                 .thenReturn(Map.of("reply", "ok"));
 
         MangaAgentService.RunResult result = fixture.service.run(7L, "continue", requestId, fixture.user, TEST_LLM_CONFIG);
@@ -58,12 +59,30 @@ class MangaAgentServiceTest {
     void runPropagatesWorkflowErrors() {
         Fixture fixture = fixture();
         UUID requestId = UUID.randomUUID();
-        when(fixture.orchestrator.runWithToolState(any(), any(), any(), any(), any(), any()))
+        when(fixture.orchestrator.runWithToolState(any(), any(), any(), any(), any(), any(), any()))
                 .thenThrow(new BusinessException(502, "Agent service failed: model down"));
 
         assertThatThrownBy(() -> fixture.service.run(7L, "continue", requestId, fixture.user, TEST_LLM_CONFIG))
                 .isInstanceOf(BusinessException.class)
                 .hasMessageContaining("Agent service failed");
+    }
+
+    @Test
+    void synchronousHitlPersistsWaitingRun() {
+        Fixture fixture = fixture();
+        UUID requestId = fixture.waitingRun.getRequestId();
+        AgentUserInputRequest request = new AgentUserInputRequest(
+                "Confirm", List.of(), true, "routing", "ROUTING");
+        when(fixture.orchestrator.runWithToolState(any(), any(), any(), any(), any(), any(), any()))
+                .thenThrow(new AgentUserInputRequiredException(request));
+        when(fixture.runService.findRun(fixture.conversation, requestId))
+                .thenReturn(java.util.Optional.of(fixture.waitingRun));
+
+        assertThatThrownBy(() -> fixture.service.run(
+                7L, "rewrite", requestId, fixture.user, TEST_LLM_CONFIG))
+                .isInstanceOf(AgentUserInputRequiredException.class);
+
+        verify(fixture.runService).markWaiting(fixture.conversation, requestId, request);
     }
 
     @Test
@@ -92,7 +111,7 @@ class MangaAgentServiceTest {
         Mockito.doAnswer(invocation -> {
             sneakyThrow(new IOException("disk full"));
             return null;
-        }).when(fixture.orchestrator).runWithToolState(any(), any(), any(), any(), any(), any());
+        }).when(fixture.orchestrator).runWithToolState(any(), any(), any(), any(), any(), any(), any());
 
         assertThatThrownBy(() -> fixture.service.resume(7L, requestId, "answer", fixture.user, TEST_LLM_CONFIG))
                 .isInstanceOf(RuntimeException.class)
@@ -134,7 +153,8 @@ class MangaAgentServiceTest {
 
         MangaAgentService service = new MangaAgentService(
                 conversationService, runService, eventPublisher, orchestrator,
-                toolStatus, accessService, props, gate, rejectingExecutor);
+                toolStatus, accessService, props, gate, rejectingExecutor,
+                mock(MangaRoutingMetrics.class));
 
         MangaAgentRunEventPublisher.RunEventSink sink = mock(MangaAgentRunEventPublisher.RunEventSink.class);
         when(eventPublisher.newSink(any())).thenReturn(sink);
@@ -182,7 +202,8 @@ class MangaAgentServiceTest {
                 accessService,
                 properties,
                 concurrencyGate,
-                Executors.newSingleThreadExecutor()
+                Executors.newSingleThreadExecutor(),
+                mock(MangaRoutingMetrics.class)
         );
         MangaAgentRun waitingRun = new MangaAgentRun();
         waitingRun.setConversation(conversation);

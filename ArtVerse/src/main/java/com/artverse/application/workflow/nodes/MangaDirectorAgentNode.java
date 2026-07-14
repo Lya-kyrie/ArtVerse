@@ -1,35 +1,64 @@
 package com.artverse.application.workflow.nodes;
 
-import com.artverse.agent.AgentMessage;
 import com.artverse.agent.AgentRunEvent;
-import com.artverse.agent.AgentRunRequest;
-import com.artverse.agent.gateway.AgentScopeHarnessAgentGateway;
 import com.artverse.application.AgentUserInputRequiredException;
+import com.artverse.application.MangaAgentRunService;
+import com.artverse.application.workflow.ExecutionPlan;
+import com.artverse.application.workflow.ExecutionStep;
+import com.artverse.application.workflow.ExecutionPlanValidator;
+import com.artverse.application.workflow.MangaWorkflowContextSnapshot;
 import com.artverse.application.workflow.MangaWorkflowExecutionContext;
 import com.artverse.application.workflow.MangaWorkflowNode;
 import com.artverse.application.workflow.MangaWorkflowNodeHandler;
+import com.artverse.application.workflow.MangaWorkflowNodeRegistry;
+import com.artverse.application.workflow.MangaWorkflowResult;
 import com.artverse.application.workflow.MangaWorkflowRoute;
 import com.artverse.application.workflow.MangaWorkflowStreamContext;
+import com.artverse.application.workflow.RoutingDecision;
 import com.artverse.common.BusinessException;
-import com.artverse.config.ArtVerseProperties;
-import lombok.RequiredArgsConstructor;
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.context.annotation.Lazy;
 import org.springframework.stereotype.Component;
-import reactor.core.publisher.Mono;
 
-import java.time.Duration;
+import java.time.OffsetDateTime;
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.UUID;
 
+/**
+ * Multi-step orchestration agent. Only invoked when the Router detects more
+ * than one suggested step (e.g. &quot;rewrite storyboard then review consistency&quot;).
+ *
+ * <p>The Director does NOT call an LLM itself — it reads the
+ * {@link RoutingDecision#suggestedSteps()}, validates the plan, then
+ * serially dispatches each step to the registered {@link MangaWorkflowNodeHandler}.
+ * A final summary is generated from step outputs.</p>
+ */
 @Slf4j
 @Component
-@RequiredArgsConstructor
 public class MangaDirectorAgentNode implements MangaWorkflowNodeHandler {
 
-    private final AgentScopeHarnessAgentGateway harnessAgentGateway;
-    private final ArtVerseProperties properties;
-    private final MangaDirectorAgentSupport support;
+    private final MangaWorkflowNodeRegistry nodeRegistry;
+    private final MangaAgentRunService runService;
+    private final ObjectMapper objectMapper;
+    private final MangaAgentExecutionSupport support;
+    private final ExecutionPlanValidator planValidator;
+
+    public MangaDirectorAgentNode(@Lazy MangaWorkflowNodeRegistry nodeRegistry,
+                                   MangaAgentRunService runService,
+                                   ObjectMapper objectMapper,
+                                   MangaAgentExecutionSupport support,
+                                   ExecutionPlanValidator planValidator) {
+        this.nodeRegistry = nodeRegistry;
+        this.runService = runService;
+        this.objectMapper = objectMapper;
+        this.support = support;
+        this.planValidator = planValidator;
+    }
 
     @Override
     public MangaWorkflowRoute route() {
@@ -37,118 +66,299 @@ public class MangaDirectorAgentNode implements MangaWorkflowNodeHandler {
     }
 
     @Override
-    public Map<String, Object> run(MangaWorkflowExecutionContext context) {
-        List<AgentMessage> messages = support.prepareAgentMessages(context);
-        support.syncWorkspace(context);
-        AgentRunRequest request = support.buildRunRequest(context, messages);
-        try {
-            String reply = harnessAgentGateway.generateText(request).block();
-            support.throwIfWaitingForUser(context);
-            if (reply == null || reply.isBlank()) {
-                throw new BusinessException(502, "Agent returned empty response");
-            }
-            support.saveReply(context, reply);
-            return Map.of("reply", reply);
-        } catch (AgentUserInputRequiredException e) {
-            throw e;
-        } catch (BusinessException e) {
-            if (context.toolState().hasSuccessfulMutatingTool()) {
-                return support.fallbackAfterToolSuccess(context, e.getMessage());
-            }
-            support.saveFailureMessage(context, e.getMessage());
-            throw e;
-        } catch (Exception e) {
-            String error = e.getMessage() == null ? "unknown error" : e.getMessage();
-            if (context.toolState().hasSuccessfulMutatingTool()) {
-                return support.fallbackAfterToolSuccess(context, error);
-            }
-            support.saveFailureMessage(context, error);
-            throw new BusinessException(502, "Agent service failed: " + error);
+    public MangaWorkflowResult run(MangaWorkflowExecutionContext context) {
+        support.saveUserMessage(context);
+        List<MangaWorkflowRoute> suggested = suggestedRoutes(context);
+        if (isSingleStep(suggested)) {
+            return saveFinalReply(context, delegateTo(suggested).run(internalContext(context, context.message())));
         }
+        ExecutionPlan plan = restoreOrBuildPlan(context, suggested, readRoutingDecision(context).requiredCapabilities());
+        persistPlan(context, plan);
+        return saveFinalReply(context, executePlan(context, plan));
     }
 
     @Override
-    public Map<String, Object> stream(MangaWorkflowExecutionContext context, MangaWorkflowStreamContext streamContext) {
-        List<AgentMessage> messages = support.prepareAgentMessages(context);
-        streamContext.sink().sendRunEvent(streamContext.run(), AgentRunEvent.step(
-                MangaWorkflowNode.GENERATING.name(),
-                "running",
-                "calling agent to generate content",
-                Map.of("provider", context.modelSpec().provider(), "model", context.modelSpec().model())
-        ));
-        support.syncWorkspace(context);
-        AgentRunRequest request = support.buildRunRequest(context, messages);
-        return executeStreamedRequest(context, streamContext, request);
+    public MangaWorkflowResult stream(MangaWorkflowExecutionContext context, MangaWorkflowStreamContext streamContext) {
+        support.saveUserMessage(context);
+        List<MangaWorkflowRoute> suggested = suggestedRoutes(context);
+        if (isSingleStep(suggested)) {
+            MangaWorkflowResult result = delegateTo(suggested).stream(
+                    internalContext(context, context.message()), streamContext);
+            return saveFinalReply(context, result);
+        }
+
+        ExecutionPlan plan = restoreOrBuildPlan(context, suggested, readRoutingDecision(context).requiredCapabilities());
+        persistPlan(context, plan);
+
+        int completedSteps = 0;
+        boolean childDegraded = false;
+        String previousOutput = context.message();
+
+        for (ExecutionStep step : plan.steps()) {
+            if ("COMPLETED".equals(step.status())) {
+                completedSteps++;
+                previousOutput = step.handoffContext() == null ? step.outputSummary() : step.handoffContext();
+                continue;
+            }
+            streamContext.sendRunEvent(AgentRunEvent.step(
+                    "workflow_step_started",
+                    "running",
+                    "Step " + (step.sequence() + 1) + "/" + plan.stepCount() + ": " + step.description(),
+                    Map.of("step", step.sequence(), "route", step.route().name(), "mutating", step.mutating())
+            ));
+
+            String stepInput = previousOutput;
+            step.markRunning(stepInput);
+            persistPlan(context, plan);
+            MangaWorkflowExecutionContext stepContext = contextForStep(context, step, stepInput);
+
+            try {
+                MangaWorkflowResult result = nodeRegistry.handlerFor(step.route()).stream(
+                        stepContext, streamContext.forStep(plan.planId(), step.sequence(), step.route()));
+                step.markCompleted(summarizeResult(result.stepSummary()), result.handoffContext());
+                persistPlan(context, plan);
+                completedSteps++;
+                childDegraded |= result.degraded();
+                previousOutput = result.handoffContext();
+            } catch (AgentUserInputRequiredException e) {
+                persistPlan(context, plan);
+                throw e;
+            } catch (Exception e) {
+                if (step.mutating()) {
+                    step.markFailed(e.getMessage());
+                    persistPlan(context, plan);
+                    throw planFailure(plan, completedSteps, step, e.getMessage());
+                }
+                step.markSkipped(e.getMessage());
+                persistPlan(context, plan);
+            }
+
+            streamContext.sendRunEvent(AgentRunEvent.step(
+                    "workflow_step_finished",
+                    "completed",
+                    "Step " + (step.sequence() + 1) + " " + step.status().toLowerCase(),
+                    Map.of("step", step.sequence(), "status", step.status(), "summary",
+                            step.outputSummary() == null ? "" : step.outputSummary())
+            ));
+        }
+
+        return saveFinalReply(context, summarizeResults(plan, completedSteps, childDegraded));
     }
 
-    private Map<String, Object> executeStreamedRequest(MangaWorkflowExecutionContext context,
-                                                       MangaWorkflowStreamContext streamContext,
-                                                       AgentRunRequest request) {
-        StringBuilder reply = new StringBuilder();
-        AtomicBoolean finished = new AtomicBoolean(false);
+    // ---- Plan construction & validation ----
+
+    private RoutingDecision readRoutingDecision(MangaWorkflowExecutionContext context) {
+        RoutingDecision decision = runService.findRun(
+                        context.user().getId(), context.chapter().getId(), context.requestId())
+                .map(runService::routingDecision)
+                .orElse(null);
+        if (decision != null) {
+            return decision;
+        }
+        log.warn("No routing decision found for requestId={}; using DIRECTOR default", context.requestId());
+        return RoutingDecision.fixed(MangaWorkflowRoute.DIRECTOR, "missing_decision");
+    }
+
+    private List<MangaWorkflowRoute> suggestedRoutes(MangaWorkflowExecutionContext context) {
+        RoutingDecision decision = readRoutingDecision(context);
+        return extractSuggestedSteps(decision);
+    }
+
+    private static boolean isSingleStep(List<MangaWorkflowRoute> suggested) {
+        return suggested.size() <= 1;
+    }
+
+    private MangaWorkflowRoute resolveSingleRoute(List<MangaWorkflowRoute> suggested) {
+        if (suggested.isEmpty() || suggested.get(0) == MangaWorkflowRoute.DIRECTOR) {
+            return MangaWorkflowRoute.CONVERSATION;
+        }
+        return suggested.get(0);
+    }
+
+    private MangaWorkflowNodeHandler delegateTo(List<MangaWorkflowRoute> suggested) {
+        return nodeRegistry.handlerFor(resolveSingleRoute(suggested));
+    }
+
+    private List<MangaWorkflowRoute> extractSuggestedSteps(RoutingDecision decision) {
+        List<MangaWorkflowRoute> steps = decision.suggestedSteps();
+        if (steps == null || steps.isEmpty()) {
+            return List.of(decision.route());
+        }
+        return steps;
+    }
+
+    private ExecutionPlan buildAndValidatePlan(List<MangaWorkflowRoute> suggested,
+                                               java.util.Set<com.artverse.application.workflow.MangaWorkflowCapability> requiredCapabilities) {
+        planValidator.requireValid(suggested, requiredCapabilities);
+
+        // Ensure all routes have handlers
+        for (MangaWorkflowRoute stepRoute : suggested) {
+            try {
+                nodeRegistry.handlerFor(stepRoute);
+            } catch (IllegalStateException e) {
+                throw new BusinessException(400, "Director plan contains unregistered route: " + stepRoute);
+            }
+        }
+
+        List<ExecutionStep> planSteps = new ArrayList<>();
+        for (int i = 0; i < suggested.size(); i++) {
+            MangaWorkflowRoute stepRoute = suggested.get(i);
+            planSteps.add(new ExecutionStep(i, stepRoute, stepRoute.name(), isMutatingRoute(stepRoute)));
+        }
+
+        return new ExecutionPlan(UUID.randomUUID().toString(), planSteps,
+                RoutingDecision.CURRENT_VERSION, OffsetDateTime.now());
+    }
+
+    private ExecutionPlan restoreOrBuildPlan(MangaWorkflowExecutionContext context,
+                                              List<MangaWorkflowRoute> suggested,
+                                              java.util.Set<com.artverse.application.workflow.MangaWorkflowCapability> requiredCapabilities) {
+        planValidator.requireValid(suggested, requiredCapabilities);
+        ExecutionPlan restored = runService.findRun(
+                        context.user().getId(), context.chapter().getId(), context.requestId())
+                .map(runService::executionPlan)
+                .orElse(null);
+        if (restored != null
+                && restored.steps().stream().map(ExecutionStep::route).toList().equals(suggested)) {
+            return restored;
+        }
+        return buildAndValidatePlan(suggested, requiredCapabilities);
+    }
+
+    private boolean isMutatingRoute(MangaWorkflowRoute route) {
+        return route.isMutating();
+    }
+
+    private void persistPlan(MangaWorkflowExecutionContext context, ExecutionPlan plan) {
         try {
-            harnessAgentGateway.streamEvents(request)
-                    .doOnNext(event -> {
-                        if (context.toolState().isCancelled()) {
-                            throw new AgentRunTerminatedException(context.requestId(), context.user().getId(), context.chapter().getId());
-                        }
-                        streamContext.sink().recordProgress(streamContext.run(), phaseFor(event));
-                        support.mapAgentScopeEvent(event).ifPresent(mapped -> {
-                        if ("text_delta".equals(mapped.type()) && mapped.text() != null) {
-                            reply.append(mapped.text());
-                        }
-                        streamContext.sink().sendRunEvent(streamContext.run(), mapped);
-                        });
-                    })
-                    .timeout(
-                            Mono.delay(Duration.ofSeconds(Math.max(1, properties.getAgent().getFirstEventTimeoutSeconds()))),
-                            mapped -> Mono.delay(agentIdleTimeout(mapped))
-                    )
-                    .blockLast();
-            finished.set(true);
-            support.throwIfWaitingForUser(context);
-        } catch (AgentRunTerminatedException e) {
-            log.debug("Agent run terminated by concurrent cancel: requestId={} userId={} chapterId={}",
-                    e.requestId(), e.userId(), e.chapterId());
-            return Map.of("reply", "");
-        } catch (AgentUserInputRequiredException e) {
-            throw e;
-        } catch (Exception e) {
-            if (context.toolState().isCancelled()) {
-                return Map.of("reply", "");
-            }
-            String error = e.getMessage() == null ? "unknown error" : e.getMessage();
-            if (context.toolState().hasSuccessfulMutatingTool()) {
-                return support.fallbackAfterToolSuccess(context, error);
-            }
-            support.saveFailureMessage(context, error);
-            throw new BusinessException(502, "Agent service failed: " + error);
+            String json = objectMapper.writeValueAsString(plan);
+            runService.updateExecutionPlan(
+                    context.user().getId(), context.chapter().getId(), context.requestId(), json);
+        } catch (JsonProcessingException e) {
+            throw new BusinessException(500, "Failed to persist Director execution plan");
         }
-
-        String finalReply = reply.toString().trim();
-        if (context.toolState().isCancelled()) {
-            return Map.of("reply", "");
-        }
-        if (!finished.get() || finalReply.isBlank()) {
-            if (context.toolState().hasSuccessfulMutatingTool()) {
-                return support.fallbackAfterToolSuccess(context, "Agent returned empty response");
-            }
-            throw new BusinessException(502, "Agent returned empty response");
-        }
-
-        support.saveReply(context, finalReply);
-        return Map.of("reply", finalReply);
     }
 
-    private Duration agentIdleTimeout(io.agentscope.core.event.AgentEvent event) {
-        return Duration.ofSeconds("TOOL".equals(phaseFor(event))
-                ? Math.max(1, properties.getAgent().getToolIdleTimeoutSeconds())
-                : Math.max(1, properties.getAgent().getModelIdleTimeoutSeconds()));
+    // ---- Plan execution ----
+
+    private MangaWorkflowResult executePlan(MangaWorkflowExecutionContext context, ExecutionPlan plan) {
+        int completedSteps = 0;
+        boolean childDegraded = false;
+        String previousOutput = context.message();
+
+        for (ExecutionStep step : plan.steps()) {
+            if ("COMPLETED".equals(step.status())) {
+                completedSteps++;
+                previousOutput = step.handoffContext() == null ? step.outputSummary() : step.handoffContext();
+                continue;
+            }
+            String stepInput = previousOutput;
+            step.markRunning(stepInput);
+            persistPlan(context, plan);
+            MangaWorkflowExecutionContext stepContext = contextForStep(context, step, stepInput);
+
+            try {
+                MangaWorkflowResult result = nodeRegistry.handlerFor(step.route()).run(stepContext);
+                step.markCompleted(summarizeResult(result.stepSummary()), result.handoffContext());
+                persistPlan(context, plan);
+                completedSteps++;
+                childDegraded |= result.degraded();
+                previousOutput = result.handoffContext();
+            } catch (AgentUserInputRequiredException e) {
+                persistPlan(context, plan);
+                throw e;
+            } catch (Exception e) {
+                if (step.mutating()) {
+                    step.markFailed(e.getMessage());
+                    persistPlan(context, plan);
+                    throw planFailure(plan, completedSteps, step, e.getMessage());
+                }
+                step.markSkipped(e.getMessage());
+                persistPlan(context, plan);
+                log.warn("Read-only step {} ({}) failed, skipping: {}", step.sequence(), step.route(), e.getMessage());
+            }
+        }
+
+        return summarizeResults(plan, completedSteps, childDegraded);
     }
 
-    private String phaseFor(io.agentscope.core.event.AgentEvent event) {
-        return support.mapAgentScopeEvent(event)
-                .filter(mapped -> "tool".equals(mapped.phase()))
-                .isPresent() ? "TOOL" : "MODEL";
+    private MangaWorkflowExecutionContext contextForStep(MangaWorkflowExecutionContext original,
+                                                          ExecutionStep step, String stepInput) {
+        String enrichedMessage = original.message();
+        if (stepInput != null && !stepInput.isBlank() && !stepInput.equals(original.message())) {
+            enrichedMessage = original.message() + "\n\n[上一步上下文]" + stepInput;
+        }
+        return internalContext(original, enrichedMessage);
+    }
+
+    private MangaWorkflowExecutionContext internalContext(MangaWorkflowExecutionContext original,
+                                                           String message) {
+        return new MangaWorkflowExecutionContext(
+                original.conversation(),
+                message,
+                original.requestId(),
+                original.llmApiKey(),
+                original.modelSpec(),
+                original.toolState(),
+                original.user(),
+                original.chapter(),
+                original.workflowContext(),
+                false
+        );
+    }
+
+    // ---- Result handling ----
+
+    private static final int MAX_SUMMARY_LENGTH = 500;
+
+    private String summarizeResult(String text) {
+        return text == null || text.isBlank() ? "No output" : truncateResult(text);
+    }
+
+    private static String truncateResult(String s) {
+        return s.length() > MAX_SUMMARY_LENGTH ? s.substring(0, MAX_SUMMARY_LENGTH - 3) + "..." : s;
+    }
+
+    private BusinessException planFailure(ExecutionPlan plan, int completedSteps,
+                                          ExecutionStep failedStep, String error) {
+        return new BusinessException(502, "Director plan failed at step " + (failedStep.sequence() + 1)
+                + " (" + failedStep.route() + ") after " + completedSteps + "/" + plan.stepCount()
+                + " completed steps: " + (error == null ? "unknown error" : error));
+    }
+
+    private MangaWorkflowResult summarizeResults(ExecutionPlan plan, int completedSteps,
+                                                  boolean childDegraded) {
+        StringBuilder summary = new StringBuilder("计划执行完成（共" + plan.stepCount() + "步）：\n");
+        long failedOrSkipped = plan.steps().stream()
+                .filter(s -> "FAILED".equals(s.status()) || "SKIPPED".equals(s.status()))
+                .count();
+
+        for (ExecutionStep step : plan.steps()) {
+            summary.append(step.sequence() + 1).append(". ")
+                    .append(step.description()).append(" — ").append(step.status());
+            if (step.outputSummary() != null && !step.outputSummary().isBlank()) {
+                summary.append("（").append(summarizeResult(step.outputSummary())).append("）");
+            }
+            summary.append("\n");
+        }
+
+        String reply = summary.toString().trim();
+        boolean degraded = childDegraded || failedOrSkipped > 0;
+        Map<String, Object> attributes = new LinkedHashMap<>();
+        attributes.put("director_plan_completed", true);
+        attributes.put("total_steps", plan.stepCount());
+        attributes.put("completed_steps", completedSteps);
+        attributes.put("degraded", degraded);
+        MangaWorkflowResult result = degraded
+                ? MangaWorkflowResult.degraded(reply)
+                : MangaWorkflowResult.success(reply);
+        return result.withAttributes(attributes);
+    }
+
+    private MangaWorkflowResult saveFinalReply(MangaWorkflowExecutionContext context, MangaWorkflowResult result) {
+        if (result.reply() != null && !result.reply().isBlank()) {
+            support.saveReply(context, result.reply());
+        }
+        return result;
     }
 }

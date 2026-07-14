@@ -133,8 +133,15 @@ function SelectUpward<T extends string>({
   );
 }
 
-function routeLabel(_route?: string): string {
-  return '导演';
+function routeLabel(route?: string): string {
+  switch (route) {
+    case 'CONVERSATION': return '对话';
+    case 'CREATIVE': return '创意顾问';
+    case 'STORYBOARD': return '分镜';
+    case 'REVIEW': return '审查';
+    case 'DIRECTOR': return '导演';
+    default: return '智能体';
+  }
 }
 
 function conversationStatusLabel(status?: string): string {
@@ -395,6 +402,8 @@ export default function MangaAgentPage({ onCreateStory }: { onCreateStory?: () =
   const [businessStatus, setBusinessStatus] = useState('');
   const [lastProgressAt, setLastProgressAt] = useState('');
   const [currentPhase, setCurrentPhase] = useState('');
+  const [activeRoute, setActiveRoute] = useState('');
+  const [routeConfidence, setRouteConfidence] = useState<number | null>(null);
   const [executionEvents, setExecutionEvents] = useState<ExecutionEventItem[]>([]);
   const [activeRequestId, setActiveRequestId] = useState<string | null>(null);
   const [pendingConversationId, setPendingConversationId] = useState<string | null>(null);
@@ -546,6 +555,8 @@ export default function MangaAgentPage({ onCreateStory }: { onCreateStory?: () =
         setBusinessStatus('');
         setLastProgressAt('');
         setCurrentPhase('');
+        setActiveRoute('');
+        setRouteConfidence(null);
         setActiveRequestId(null);
         setRunStatus('会话已就绪');
       }
@@ -563,6 +574,8 @@ export default function MangaAgentPage({ onCreateStory }: { onCreateStory?: () =
     setBusinessStatus('');
     setLastProgressAt('');
     setCurrentPhase('');
+    setActiveRoute('');
+    setRouteConfidence(null);
     setActiveRequestId(null);
     try {
       const [list, openRun] = await Promise.all([
@@ -594,6 +607,8 @@ export default function MangaAgentPage({ onCreateStory }: { onCreateStory?: () =
     setBusinessStatus(snapshot.status);
     setLastProgressAt(snapshot.lastProgressAt || '');
     setCurrentPhase(snapshot.currentPhase || '');
+    setActiveRoute(snapshot.route || '');
+    setRouteConfidence(typeof snapshot.routeConfidence === 'number' ? snapshot.routeConfidence : null);
     setDraftReply(snapshot.finalReply || '');
     setExecutionEvents((snapshot.events || []).map((event) => {
       const payload = asRecord(event.data);
@@ -617,12 +632,15 @@ export default function MangaAgentPage({ onCreateStory }: { onCreateStory?: () =
       if (status) setBusinessStatus(status);
       if (message) setRunStatus(message);
       else if (status) setRunStatus(`业务状态：${status}`);
+      if (snapshot.route) setActiveRoute(String(snapshot.route));
     }
 
     if (rawEvent.type === 'RUN_STARTED') {
       const message = String(rawEvent.input?.state?.message || rawEvent.input?.message || '智能体已启动');
       setRunStatus(message);
       setBusinessStatus('RUNNING');
+      const route = rawEvent.input?.state?.route || rawEvent.route;
+      if (route) setActiveRoute(String(route));
     }
 
     if (rawEvent.type === 'CUSTOM') {
@@ -631,6 +649,8 @@ export default function MangaAgentPage({ onCreateStory }: { onCreateStory?: () =
       const status = String(value.status || '');
       if (status) setBusinessStatus(status);
       if (value.message) setRunStatus(String(value.message));
+      if (data.route) setActiveRoute(String(data.route));
+      if (typeof data.confidence === 'number') setRouteConfidence(data.confidence);
     }
 
     if (rawEvent.type === 'TEXT_MESSAGE_CONTENT' || rawEvent.type === 'TEXT_MESSAGE_START') {
@@ -1093,6 +1113,7 @@ export default function MangaAgentPage({ onCreateStory }: { onCreateStory?: () =
                           {waitingForHuman ? '等待确认' : runStatus}
                         </span>
                         {businessStatus && <span className="rounded-full border border-border bg-bg-base px-2.5 py-0.5 text-[11px] text-text-secondary">状态 {businessStatus}</span>}
+                        {activeRoute && <span className="rounded-full border border-border bg-bg-base px-2.5 py-0.5 text-[11px] text-text-secondary">{routeLabel(activeRoute)}智能体{routeConfidence !== null ? ` ${Math.round(routeConfidence * 100)}%` : ''}</span>}
                         {currentPhase && <span className="rounded-full border border-border bg-bg-base px-2.5 py-0.5 text-[11px] text-text-secondary">阶段 {currentPhase === 'TOOL' ? '工具调用' : '模型推理'}</span>}
                         {activeRequestId && <span className="text-[10px] text-text-muted font-mono">{formatRequestId(activeRequestId)}</span>}
                         {activeRequestId && (sending || waitingForHuman) && (

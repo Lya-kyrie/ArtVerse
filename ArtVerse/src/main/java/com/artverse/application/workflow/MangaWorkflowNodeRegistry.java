@@ -15,7 +15,16 @@ public class MangaWorkflowNodeRegistry {
     public MangaWorkflowNodeRegistry(List<MangaWorkflowNodeHandler> handlers) {
         EnumMap<MangaWorkflowRoute, MangaWorkflowNodeHandler> mappedHandlers = new EnumMap<>(MangaWorkflowRoute.class);
         for (MangaWorkflowNodeHandler handler : handlers) {
-            mappedHandlers.put(handler.route(), handler);
+            MangaWorkflowNodeHandler duplicate = mappedHandlers.putIfAbsent(handler.route(), handler);
+            if (duplicate != null) {
+                throw new IllegalStateException("Duplicate Manga workflow node handlers for route: " + handler.route());
+            }
+        }
+        // Completeness check: every route must have exactly one handler
+        for (MangaWorkflowRoute route : MangaWorkflowRoute.values()) {
+            if (!mappedHandlers.containsKey(route)) {
+                throw new IllegalStateException("No Manga workflow node handler registered for route: " + route);
+            }
         }
         this.handlers = Map.copyOf(mappedHandlers);
     }

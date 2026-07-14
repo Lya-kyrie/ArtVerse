@@ -26,6 +26,16 @@ Frontend (React SPA)
 
 ## Calls Into (outbound)
 
+### Story publication request
+
+```text
+PUT /api/stories/{id}/publish
+  -> StoryDtos.PublishRequest
+     { is_published, format, chapter_ids }
+  -> PublicationFormat
+  -> StoryService.publish
+```
+
 ```
 api controllers
   → application.*         (business logic delegation)

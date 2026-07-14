@@ -1,6 +1,6 @@
 package com.artverse.agent.gateway;
 
-import com.artverse.agent.AgentMessage;
+import com.artverse.agent.AgentModelSpecFactory;
 import com.artverse.agent.AgentRunRequest;
 import com.artverse.common.BusinessException;
 import com.artverse.config.ArtVerseProperties;
@@ -8,7 +8,6 @@ import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.event.AgentEvent;
 import io.agentscope.core.event.TextBlockDeltaEvent;
 import io.agentscope.core.message.Msg;
-import io.agentscope.core.message.MsgRole;
 import io.agentscope.harness.agent.HarnessAgent;
 import io.github.resilience4j.circuitbreaker.CallNotPermittedException;
 import io.github.resilience4j.circuitbreaker.CircuitBreaker;
@@ -28,7 +27,6 @@ import reactor.core.publisher.Mono;
 
 import java.io.IOException;
 import java.time.Duration;
-import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
 import java.util.function.Predicate;
@@ -41,14 +39,15 @@ public class AgentScopeHarnessAgentGateway {
     private static final String CB_NAME = "manga-agent-llm";
     private static final String RETRY_NAME = "manga-agent-llm";
 
+    private final AgentScopeMessageMapper messageMapper = new AgentScopeMessageMapper();
     private final AgentScopeAgentFactory agentFactory;
     private final AgentScopeRuntimeContextFactory runtimeContextFactory;
     private final ArtVerseProperties properties;
     private final CircuitBreakerRegistry circuitBreakerRegistry;
     private final RetryRegistry retryRegistry;
 
-    private CircuitBreaker circuitBreaker;
-    private Retry retry;
+    private CircuitBreakerConfig circuitBreakerConfig;
+    private RetryConfig retryConfig;
 
     public AgentScopeHarnessAgentGateway(
             AgentScopeAgentFactory agentFactory,
@@ -85,7 +84,7 @@ public class AgentScopeHarnessAgentGateway {
                 .slowCallRateThreshold(50)
                 .recordException(isTransient)
                 .build();
-        this.circuitBreaker = circuitBreakerRegistry.circuitBreaker(CB_NAME, cbConfig);
+        this.circuitBreakerConfig = cbConfig;
 
         RetryConfig retryConfig = RetryConfig.<Throwable>custom()
                 .maxAttempts(agentProps.getMaxRetries() + 1) // +1 for the initial attempt
@@ -97,7 +96,7 @@ public class AgentScopeHarnessAgentGateway {
                 })
                 .retryOnException(isTransient)
                 .build();
-        this.retry = retryRegistry.retry(RETRY_NAME, retryConfig);
+        this.retryConfig = retryConfig;
 
         log.info("Agent gateway initialized: cb={} retry={} maxRetries={}",
                 CB_NAME, RETRY_NAME, agentProps.getMaxRetries());
@@ -113,24 +112,54 @@ public class AgentScopeHarnessAgentGateway {
     public Flux<AgentEvent> streamEvents(AgentRunRequest request) {
         HarnessAgent agent = agentFactory.getOrCreate(request);
         RuntimeContext ctx = runtimeContextFactory.create(request);
-        List<Msg> messages = convertMessages(prepareInputMessages(request));
+        List<Msg> messages = messageMapper.map(request.messages());
 
         return agent.streamEvents(messages, ctx)
-                .transformDeferred(RetryOperator.of(retry))
-                .transformDeferred(CircuitBreakerOperator.of(circuitBreaker))
+                .transformDeferred(CircuitBreakerOperator.of(circuitBreaker(request, "executor")))
                 .doOnError(e -> logGatewayError(e, "stream", request.requestId()));
     }
 
     public Mono<String> generateText(AgentRunRequest request) {
         HarnessAgent agent = agentFactory.getOrCreate(request);
         RuntimeContext ctx = runtimeContextFactory.create(request);
-        List<Msg> messages = convertMessages(prepareInputMessages(request));
+        List<Msg> messages = messageMapper.map(request.messages());
 
         return agent.call(messages, ctx)
                 .map(Msg::getTextContent)
-                .transformDeferred(RetryOperator.of(retry))
-                .transformDeferred(CircuitBreakerOperator.of(circuitBreaker))
+                .transformDeferred(CircuitBreakerOperator.of(circuitBreaker(request, "executor")))
                 .doOnError(e -> logGatewayError(e, "generate", request.requestId()));
+    }
+
+    public <T> Mono<T> generateStructured(AgentRunRequest request, Class<T> outputType) {
+        HarnessAgent agent = agentFactory.getOrCreate(request);
+        RuntimeContext ctx = runtimeContextFactory.create(request);
+        List<Msg> messages = messageMapper.map(request.messages());
+
+        return agent.call(messages, outputType, ctx)
+                .map(message -> {
+                    T result = message.getStructuredData(outputType);
+                    if (result == null) {
+                        throw new BusinessException(502, "Agent returned empty structured output");
+                    }
+                    return result;
+                })
+                .transformDeferred(RetryOperator.of(retry(request, "router")))
+                .transformDeferred(CircuitBreakerOperator.of(circuitBreaker(request, "router")))
+                .doOnError(e -> logGatewayError(e, "structured", request.requestId()));
+    }
+
+    private CircuitBreaker circuitBreaker(AgentRunRequest request, String role) {
+        return circuitBreakerRegistry.circuitBreaker(resilienceName(CB_NAME, request, role), circuitBreakerConfig);
+    }
+
+    private Retry retry(AgentRunRequest request, String role) {
+        return retryRegistry.retry(resilienceName(RETRY_NAME, request, role), retryConfig);
+    }
+
+    private String resilienceName(String prefix, AgentRunRequest request, String role) {
+        String provider = request.modelSpec() == null ? "default" : request.modelSpec().provider();
+        String baseUrl = request.modelSpec() == null ? "default" : request.modelSpec().baseUrl();
+        return prefix + "-" + role + "-" + provider + "-" + AgentModelSpecFactory.shortHash(baseUrl);
     }
 
     private void logGatewayError(Throwable e, String method, UUID requestId) {
@@ -141,48 +170,4 @@ public class AgentScopeHarnessAgentGateway {
         }
     }
 
-    static List<AgentMessage> prepareInputMessages(AgentRunRequest request) {
-        List<String> systemMessages = new ArrayList<>();
-        List<AgentMessage> inputMessages = new ArrayList<>();
-
-        for (AgentMessage message : request.messages()) {
-            if ("system".equalsIgnoreCase(message.role())) {
-                systemMessages.add(message.content());
-            } else {
-                inputMessages.add(message);
-            }
-        }
-
-        if (systemMessages.isEmpty()) {
-            return inputMessages;
-        }
-
-        String systemPrompt = String.join("\n\n", systemMessages);
-        if (inputMessages.isEmpty()) {
-            return List.of(new AgentMessage("user", systemPrompt));
-        }
-
-        AgentMessage first = inputMessages.get(0);
-        List<AgentMessage> prepared = new ArrayList<>(inputMessages);
-        prepared.set(0, new AgentMessage(first.role(), systemPrompt + "\n\n" + first.content()));
-        return prepared;
-    }
-
-    private List<Msg> convertMessages(List<AgentMessage> messages) {
-        return messages.stream()
-                .map(m -> Msg.builder()
-                        .role(convertRole(m.role()))
-                        .textContent(m.content())
-                        .build())
-                .toList();
-    }
-
-    private MsgRole convertRole(String role) {
-        return switch (role.toLowerCase()) {
-            case "user" -> MsgRole.USER;
-            case "assistant" -> MsgRole.ASSISTANT;
-            case "system" -> MsgRole.SYSTEM;
-            default -> MsgRole.USER;
-        };
-    }
 }

@@ -1,161 +1,253 @@
 package com.artverse.application.workflow.nodes;
 
-import com.artverse.agent.AgentMessage;
-import com.artverse.agent.AgentRunRequest;
-import com.artverse.agent.AgentWorkspaceSyncService;
-import com.artverse.agent.gateway.AgentScopeHarnessAgentGateway;
-import com.artverse.application.AgentRunToolStatus;
-import com.artverse.application.AgUiEventFactory;
-import com.artverse.application.ApiKeyService;
-import com.artverse.application.MangaAgentConversationService;
-import com.artverse.application.MangaAgentRunEventPublisher;
 import com.artverse.application.MangaAgentRunService;
-import com.artverse.application.workflow.MangaWorkflowContextSnapshot;
 import com.artverse.application.workflow.MangaWorkflowExecutionContext;
-import com.artverse.application.workflow.MangaWorkflowRoute;
+import com.artverse.application.workflow.ExecutionPlanValidator;
+import com.artverse.application.workflow.MangaWorkflowNodeHandler;
+import com.artverse.application.workflow.MangaWorkflowNodeRegistry;
+import com.artverse.application.workflow.MangaWorkflowResult;
 import com.artverse.application.workflow.MangaWorkflowStreamContext;
-import com.artverse.config.ArtVerseProperties;
-import com.artverse.domain.Chapter;
-import com.artverse.domain.ColorMode;
-import com.artverse.domain.MangaAgentConversation;
-import com.artverse.domain.MangaAgentConversationStatus;
+import com.artverse.application.MangaAgentRunEventPublisher;
+import com.artverse.application.workflow.MangaWorkflowRoute;
+import com.artverse.application.workflow.RoutingDecision;
+import com.artverse.common.BusinessException;
 import com.artverse.domain.MangaAgentRun;
 import com.artverse.domain.MangaAgentRunStatus;
-import com.artverse.domain.Story;
-import com.artverse.domain.User;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import io.agentscope.core.event.AgentStartEvent;
 import org.junit.jupiter.api.Test;
-import org.springframework.data.redis.core.RedisTemplate;
-import org.springframework.data.redis.core.ValueOperations;
-import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
-import reactor.core.publisher.Flux;
+import org.mockito.ArgumentCaptor;
 
-import java.time.Duration;
 import java.util.List;
-import java.util.Map;
+import java.util.Optional;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.ArgumentCaptor.forClass;
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.anyString;
-import static org.mockito.ArgumentMatchers.eq;
-import static org.mockito.Mockito.doNothing;
 import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.when;
 
 class MangaDirectorAgentNodeTest {
 
+    private final ObjectMapper objectMapper = new ObjectMapper().findAndRegisterModules();
+
     @Test
-    void streamReturnsEmptyReplyWhenRunIsCancelledViaToolState() {
-        Fixture fixture = fixture();
-        when(fixture.gateway.streamEvents(any(AgentRunRequest.class))).thenReturn(Flux.just(new AgentStartEvent("session-1", "reply-1", "agent")));
-        when(fixture.runService.toPayload(any())).thenReturn(Map.of("type", "workflow_step"));
+    void composesStepsThroughTypedResultContract() {
+        MangaWorkflowNodeRegistry registry = mock(MangaWorkflowNodeRegistry.class);
+        MangaAgentRunService runService = mock(MangaAgentRunService.class);
+        MangaWorkflowNodeHandler storyboard = mock(MangaWorkflowNodeHandler.class);
+        MangaWorkflowNodeHandler review = mock(MangaWorkflowNodeHandler.class);
+        MangaAgentExecutionSupport support = mock(MangaAgentExecutionSupport.class);
+        MangaDirectorAgentNode node = new MangaDirectorAgentNode(registry, runService, objectMapper, support,
+                new ExecutionPlanValidator());
 
-        Map<String, Object> result;
-        try (AgentRunToolStatus.RunScope scope = fixture.toolStatus.start(fixture.user.getId(), fixture.chapter.getId(), fixture.requestId)) {
-            fixture.toolStatus.markCancelled(fixture.user.getId(), fixture.chapter.getId(), fixture.requestId);
-            result = fixture.node.stream(fixture.context(scope.state()), fixture.streamContext);
-        }
+        RoutingDecision decision = new RoutingDecision(
+                MangaWorkflowRoute.DIRECTOR, 0.9, List.of("multi"),
+                true, false, "test",
+                List.of(MangaWorkflowRoute.STORYBOARD, MangaWorkflowRoute.REVIEW),
+                RoutingDecision.CURRENT_VERSION
+        );
+        MangaAgentRun run = new MangaAgentRun();
+        run.setRequestId(UUID.randomUUID());
+        run.setStatus(MangaAgentRunStatus.RUNNING);
+        run.setRoute(MangaWorkflowRoute.DIRECTOR);
 
-        assertThat(result).containsEntry("reply", "");
-        verify(fixture.conversationService).saveMessage(fixture.conversation, com.artverse.domain.MessageRole.USER, fixture.message, fixture.requestId);
-        verify(fixture.conversationService, never()).saveMessage(eq(fixture.conversation), eq(com.artverse.domain.MessageRole.ASSISTANT), anyString(), any());
+        when(runService.findRun(1L, 7L, run.getRequestId())).thenReturn(Optional.of(run));
+        when(runService.routingDecision(run)).thenReturn(decision);
+        when(registry.handlerFor(MangaWorkflowRoute.STORYBOARD)).thenReturn(storyboard);
+        when(registry.handlerFor(MangaWorkflowRoute.REVIEW)).thenReturn(review);
+        when(storyboard.run(any())).thenReturn(MangaWorkflowResult.degraded(
+                "Storyboard user reply", "Storyboard contract summary", "Storyboard handoff context"));
+        when(review.run(any())).thenReturn(MangaWorkflowResult.success(
+                "Review user reply", "Review contract summary", "Review handoff context"));
+
+        MangaWorkflowResult result = node.run(TestContexts.context(run.getRequestId(), run));
+
+        assertThat(result.reply())
+                .contains("Storyboard contract summary")
+                .contains("Review contract summary");
+        assertThat(result.degraded()).isTrue();
+        ArgumentCaptor<MangaWorkflowExecutionContext> contextCaptor = forClass(MangaWorkflowExecutionContext.class);
+        verify(review).run(contextCaptor.capture());
+        assertThat(contextCaptor.getValue().message()).contains("Storyboard handoff context");
+        verify(support).saveReply(any(), org.mockito.ArgumentMatchers.contains("Review contract summary"));
     }
 
-    private Fixture fixture() {
-        MangaAgentConversationService conversationService = mock(MangaAgentConversationService.class);
-        AgentScopeHarnessAgentGateway gateway = mock(AgentScopeHarnessAgentGateway.class);
-        AgentWorkspaceSyncService workspaceSyncService = mock(AgentWorkspaceSyncService.class);
-        ApiKeyService apiKeyService = mock(ApiKeyService.class);
+    @Test
+    void streamingDirectorUsesChildStreamsWithStepContext() {
+        MangaWorkflowNodeRegistry registry = mock(MangaWorkflowNodeRegistry.class);
         MangaAgentRunService runService = mock(MangaAgentRunService.class);
-        SseEmitter sseEmitter = mock(SseEmitter.class);
-        MangaAgentRunEventPublisher eventPublisher = new MangaAgentRunEventPublisher(runService, new ObjectMapper(), new AgUiEventFactory());
-        ArtVerseProperties properties = new ArtVerseProperties();
-        properties.getAgent().setFirstEventTimeoutSeconds(5);
-        properties.getAgent().setModelIdleTimeoutSeconds(5);
-        MangaDirectorAgentNode node = new MangaDirectorAgentNode(
-                gateway,
-                properties,
-                new MangaDirectorAgentSupport(conversationService, workspaceSyncService, apiKeyService)
-        );
-
-        User user = new User();
-        user.setId(1L);
-        Story story = new Story();
-        story.setId(3L);
-        story.setTitle("Story");
-        story.setUser(user);
-        Chapter chapter = new Chapter();
-        chapter.setId(7L);
-        chapter.setChapterNumber(1);
-        chapter.setStory(story);
-        chapter.setColorMode(ColorMode.BW);
-        MangaAgentConversation conversation = new MangaAgentConversation();
-        conversation.setId(99L);
-        conversation.setUser(user);
-        conversation.setChapter(chapter);
-        conversation.setStory(story);
-        conversation.setConversationUuid(UUID.fromString("11111111-1111-1111-1111-111111111111"));
-        conversation.setStatus(MangaAgentConversationStatus.ACTIVE);
-
-        UUID requestId = UUID.fromString("22222222-2222-2222-2222-222222222222");
-        AgentRunToolStatus toolStatus = new AgentRunToolStatus(redisTemplate());
+        MangaWorkflowNodeHandler storyboard = mock(MangaWorkflowNodeHandler.class);
+        MangaWorkflowNodeHandler review = mock(MangaWorkflowNodeHandler.class);
+        MangaAgentExecutionSupport support = mock(MangaAgentExecutionSupport.class);
+        MangaDirectorAgentNode node = new MangaDirectorAgentNode(registry, runService, objectMapper, support,
+                new ExecutionPlanValidator());
+        UUID requestId = UUID.randomUUID();
         MangaAgentRun run = new MangaAgentRun();
-        run.setChapter(chapter);
-        run.setUser(user);
-        run.setConversation(conversation);
         run.setRequestId(requestId);
         run.setStatus(MangaAgentRunStatus.RUNNING);
-        MangaAgentRunEventPublisher.RunEventSink sink = eventPublisher.newSink(sseEmitter);
-        MangaWorkflowStreamContext streamContext = new MangaWorkflowStreamContext(run, sink);
+        RoutingDecision decision = new RoutingDecision(
+                MangaWorkflowRoute.DIRECTOR, 0.95, List.of("write", "review"), true, false, "test",
+                List.of(MangaWorkflowRoute.STORYBOARD, MangaWorkflowRoute.REVIEW),
+                RoutingDecision.CURRENT_VERSION,
+                java.util.Set.of(com.artverse.application.workflow.MangaWorkflowCapability.STORYBOARD_WRITE,
+                        com.artverse.application.workflow.MangaWorkflowCapability.STORYBOARD_REVIEW));
+        when(runService.findRun(1L, 7L, requestId)).thenReturn(Optional.of(run));
+        when(runService.routingDecision(run)).thenReturn(decision);
+        when(registry.handlerFor(MangaWorkflowRoute.STORYBOARD)).thenReturn(storyboard);
+        when(registry.handlerFor(MangaWorkflowRoute.REVIEW)).thenReturn(review);
+        when(storyboard.stream(any(), any())).thenReturn(MangaWorkflowResult.success("storyboard"));
+        when(review.stream(any(), any())).thenReturn(MangaWorkflowResult.success("review"));
+        MangaAgentRunEventPublisher.RunEventSink sink = mock(MangaAgentRunEventPublisher.RunEventSink.class);
 
-        when(conversationService.listMessages(conversation)).thenReturn(List.of());
-        when(conversationService.buildMessages(any(), any(), any(List.class), anyString(), any())).thenReturn(List.of(new AgentMessage("user", "continue")));
-        when(apiKeyService.getDecryptedKey(user, "coze")).thenReturn(null);
-        doNothing().when(workspaceSyncService).syncMangaDirectorKnowledge(chapter.getId(), String.valueOf(user.getId()));
+        node.stream(TestContexts.context(requestId, run), new MangaWorkflowStreamContext(run, sink));
 
-        return new Fixture(node, conversationService, gateway, runService, toolStatus, streamContext, conversation, user, chapter, requestId, "continue");
+        ArgumentCaptor<MangaWorkflowStreamContext> streamCaptor = forClass(MangaWorkflowStreamContext.class);
+        verify(storyboard).stream(any(), streamCaptor.capture());
+        assertThat(streamCaptor.getValue().suppressTextDeltas()).isTrue();
+        assertThat(streamCaptor.getValue().eventContext())
+                .containsEntry("step", 0)
+                .containsEntry("route", "STORYBOARD")
+                .containsEntry("agentName", "storyboard-agent");
+        verify(storyboard, never()).run(any());
+        verify(review, never()).run(any());
     }
 
-    private RedisTemplate<String, Object> redisTemplate() {
-        @SuppressWarnings("unchecked")
-        RedisTemplate<String, Object> redisTemplate = mock(RedisTemplate.class);
-        @SuppressWarnings("unchecked")
-        ValueOperations<String, Object> valueOperations = mock(ValueOperations.class);
-        when(redisTemplate.opsForValue()).thenReturn(valueOperations);
-        doNothing().when(valueOperations).set(anyString(), any(), any(Duration.class));
-        when(valueOperations.get(anyString())).thenReturn(null);
-        return redisTemplate;
+    @Test
+    void executionPlanRoundTripsWithStepState() throws Exception {
+        com.artverse.application.workflow.ExecutionStep step =
+                new com.artverse.application.workflow.ExecutionStep(0, MangaWorkflowRoute.REVIEW, "review", false);
+        step.markRunning("input");
+        step.markCompleted("summary", "full handoff");
+        com.artverse.application.workflow.ExecutionPlan plan = new com.artverse.application.workflow.ExecutionPlan(
+                "plan-1", List.of(step), RoutingDecision.CURRENT_VERSION, java.time.OffsetDateTime.now());
+
+        String json = objectMapper.writeValueAsString(plan);
+        com.artverse.application.workflow.ExecutionPlan restored =
+                objectMapper.readValue(json, com.artverse.application.workflow.ExecutionPlan.class);
+
+        assertThat(restored.steps()).hasSize(1);
+        assertThat(restored.steps().getFirst().status()).isEqualTo("COMPLETED");
+        assertThat(restored.steps().getFirst().handoffContext()).isEqualTo("full handoff");
     }
 
-    private record Fixture(
-            MangaDirectorAgentNode node,
-            MangaAgentConversationService conversationService,
-            AgentScopeHarnessAgentGateway gateway,
-            MangaAgentRunService runService,
-            AgentRunToolStatus toolStatus,
-            MangaWorkflowStreamContext streamContext,
-            MangaAgentConversation conversation,
-            User user,
-            Chapter chapter,
-            UUID requestId,
-            String message
-    ) {
-        MangaWorkflowExecutionContext context(AgentRunToolStatus.RunState runState) {
-            return new MangaWorkflowExecutionContext(
-                    conversation,
-                    message,
-                    requestId,
-                    "deepseek-key",
-                    new com.artverse.agent.AgentModelSpec("deepseek", "", "model", "none"),
-                    runState,
-                    user,
-                    chapter,
-                    new MangaWorkflowContextSnapshot(3L, 7L, "Story", "Chapter", "style", 0, 0, "", "", "", MangaWorkflowRoute.DIRECTOR, List.of())
-            );
+    @Test
+    void mutatingStepFailureFailsDirectorRun() {
+        MangaWorkflowNodeRegistry registry = mock(MangaWorkflowNodeRegistry.class);
+        MangaAgentRunService runService = mock(MangaAgentRunService.class);
+        MangaWorkflowNodeHandler storyboard = mock(MangaWorkflowNodeHandler.class);
+        MangaAgentExecutionSupport support = mock(MangaAgentExecutionSupport.class);
+        MangaDirectorAgentNode node = new MangaDirectorAgentNode(registry, runService, objectMapper, support,
+                new ExecutionPlanValidator());
+        UUID requestId = UUID.randomUUID();
+        MangaAgentRun run = new MangaAgentRun();
+        run.setRequestId(requestId);
+        RoutingDecision decision = new RoutingDecision(
+                MangaWorkflowRoute.DIRECTOR, 0.95, List.of("write", "review"), true, false, "test",
+                List.of(MangaWorkflowRoute.STORYBOARD, MangaWorkflowRoute.REVIEW), RoutingDecision.CURRENT_VERSION);
+        when(runService.findRun(1L, 7L, requestId)).thenReturn(Optional.of(run));
+        when(runService.routingDecision(run)).thenReturn(decision);
+        when(registry.handlerFor(MangaWorkflowRoute.STORYBOARD)).thenReturn(storyboard);
+        when(registry.handlerFor(MangaWorkflowRoute.REVIEW)).thenReturn(mock(MangaWorkflowNodeHandler.class));
+        when(storyboard.run(any())).thenThrow(new BusinessException(502, "write failed"));
+
+        assertThatThrownBy(() -> node.run(TestContexts.context(requestId, run)))
+                .isInstanceOf(BusinessException.class)
+                .hasMessageContaining("Director plan failed");
+    }
+
+    @Test
+    void rejectsPlanWithDirectorStep() {
+        MangaWorkflowNodeRegistry registry = mock(MangaWorkflowNodeRegistry.class);
+        MangaAgentRunService runService = mock(MangaAgentRunService.class);
+        MangaDirectorAgentNode node = new MangaDirectorAgentNode(
+                registry, runService, objectMapper, mock(MangaAgentExecutionSupport.class),
+                new ExecutionPlanValidator());
+
+        // Build a RoutingDecision with DIRECTOR in suggestedSteps
+        RoutingDecision decision = new RoutingDecision(
+                MangaWorkflowRoute.DIRECTOR, 0.9, List.of("director"),
+                false, false, "test",
+                List.of(MangaWorkflowRoute.STORYBOARD, MangaWorkflowRoute.DIRECTOR),
+                RoutingDecision.CURRENT_VERSION
+        );
+        MangaAgentRun run = new MangaAgentRun();
+        run.setRequestId(UUID.randomUUID());
+        run.setStatus(MangaAgentRunStatus.RUNNING);
+        run.setRoute(MangaWorkflowRoute.DIRECTOR);
+        when(runService.findRun(1L, 7L, run.getRequestId())).thenReturn(Optional.of(run));
+        when(runService.routingDecision(run)).thenReturn(decision);
+
+        // The plan validation should reject DIRECTOR in steps
+        assertThatThrownBy(() -> node.run(TestContexts.context(run.getRequestId(), run)))
+                .isInstanceOf(BusinessException.class)
+                .hasMessageContaining("recursive_director");
+    }
+
+    @Test
+    void rejectsPlanWithTooManySteps() {
+        MangaWorkflowNodeRegistry registry = mock(MangaWorkflowNodeRegistry.class);
+        MangaAgentRunService runService = mock(MangaAgentRunService.class);
+        MangaDirectorAgentNode node = new MangaDirectorAgentNode(
+                registry, runService, objectMapper, mock(MangaAgentExecutionSupport.class),
+                new ExecutionPlanValidator());
+
+        RoutingDecision decision = new RoutingDecision(
+                MangaWorkflowRoute.DIRECTOR, 0.9, List.of("multi"),
+                false, false, "test",
+                List.of(MangaWorkflowRoute.CREATIVE, MangaWorkflowRoute.STORYBOARD,
+                        MangaWorkflowRoute.REVIEW, MangaWorkflowRoute.CONVERSATION),
+                RoutingDecision.CURRENT_VERSION
+        );
+        MangaAgentRun run = new MangaAgentRun();
+        run.setRequestId(UUID.randomUUID());
+        run.setStatus(MangaAgentRunStatus.RUNNING);
+        run.setRoute(MangaWorkflowRoute.DIRECTOR);
+        when(runService.findRun(1L, 7L, run.getRequestId())).thenReturn(Optional.of(run));
+        when(runService.routingDecision(run)).thenReturn(decision);
+
+        assertThatThrownBy(() -> node.run(TestContexts.context(run.getRequestId(), run)))
+                .isInstanceOf(BusinessException.class)
+                .hasMessageContaining("too_many_steps");
+    }
+
+    @Test
+    void rejectsPlanWithMultipleMutatingSteps() {
+        MangaWorkflowNodeRegistry registry = mock(MangaWorkflowNodeRegistry.class);
+        when(registry.handlerFor(MangaWorkflowRoute.STORYBOARD)).thenReturn(mock());
+        when(registry.handlerFor(MangaWorkflowRoute.CONVERSATION)).thenReturn(mock());
+        MangaAgentRunService runService = mock(MangaAgentRunService.class);
+        MangaDirectorAgentNode node = new MangaDirectorAgentNode(
+                registry, runService, objectMapper, mock(MangaAgentExecutionSupport.class),
+                new ExecutionPlanValidator());
+
+        RoutingDecision decision = new RoutingDecision(
+                MangaWorkflowRoute.DIRECTOR, 0.9, List.of("write"),
+                true, false, "test",
+                List.of(MangaWorkflowRoute.STORYBOARD, MangaWorkflowRoute.STORYBOARD),
+                RoutingDecision.CURRENT_VERSION
+        );
+        MangaAgentRun run = new MangaAgentRun();
+        run.setRequestId(UUID.randomUUID());
+        run.setStatus(MangaAgentRunStatus.RUNNING);
+        run.setRoute(MangaWorkflowRoute.DIRECTOR);
+        when(runService.findRun(1L, 7L, run.getRequestId())).thenReturn(Optional.of(run));
+        when(runService.routingDecision(run)).thenReturn(decision);
+
+        assertThatThrownBy(() -> node.run(TestContexts.context(run.getRequestId(), run)))
+                .isInstanceOf(BusinessException.class)
+                .hasMessageContaining("duplicate_mutating_step");
+    }
+
+    private String toJson(RoutingDecision decision) {
+        try {
+            return objectMapper.writeValueAsString(decision);
+        } catch (Exception error) {
+            throw new AssertionError("Failed to serialize routing decision fixture", error);
         }
     }
+
 }

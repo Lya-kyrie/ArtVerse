@@ -136,6 +136,14 @@ public class ArtVerseProperties {
         private long runWatchdogIntervalMs = 30_000;
         private int maxConcurrentRuns = 8;
 
+        // Automatic multi-agent routing
+        private boolean autoRoutingEnabled = true;
+        private boolean routingShadowMode = false;
+        private double routingDirectThreshold = 0.80;
+        private double routingReadOnlyThreshold = 0.55;
+        private int agentCacheMaxSize = 256;
+        private int agentCacheExpireAfterMinutes = 30;
+
         // Retry
         private int maxRetries = 2;
         private long retryMinBackoffMs = 1_000;
@@ -147,5 +155,17 @@ public class ArtVerseProperties {
         private int circuitBreakerWaitSeconds = 30;
         private int circuitBreakerSlidingWindowSize = 20;
         private int circuitBreakerSlowCallThresholdMs = 120_000;
+
+        // Default LLM provider — used as the system fallback when no user config is present.
+        // Operator can set provider to "openai", "openroute", etc. to switch the system default.
+        private DefaultLlm defaultLlm = new DefaultLlm();
+    }
+
+    @Data
+    public static class DefaultLlm {
+        private String provider = "deepseek";
+        private String baseUrl = "https://api.deepseek.com";
+        private String model = "deepseek-v4-flash";
+        private String apiKey = "";
     }
 }
