@@ -4,7 +4,7 @@ import com.artverse.application.SquareService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.*;
 
-import java.util.Map;
+import com.artverse.api.dto.SquareDtos;
 
 @RestController
 @RequestMapping("/api/square")
@@ -14,15 +14,16 @@ public class SquareController {
     private final SquareService squareService;
 
     @GetMapping("/stories")
-    public Map<String, Object> listStories(
+    public SquareDtos.StoryListResponse listStories(
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "12") int size,
-            @RequestParam(required = false) String search) {
-        return squareService.listPublishedStories(page, size, search);
+            @RequestParam(required = false) String search,
+            @RequestParam(required = false) String format) {
+        return squareService.listPublishedStories(page, size, search, format);
     }
 
     @GetMapping("/stories/{id}")
-    public Map<String, Object> getStory(@PathVariable Long id) {
-        return squareService.getPublishedStoryDetail(id);
+    public SquareDtos.StoryDetail getStory(@PathVariable Long id, @RequestParam(required = false) String format) {
+        return squareService.getPublishedStoryDetail(id, format);
     }
 }

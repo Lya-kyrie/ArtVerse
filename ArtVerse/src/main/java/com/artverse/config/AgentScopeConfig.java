@@ -1,7 +1,7 @@
 package com.artverse.config;
 
 import io.agentscope.core.model.Model;
-import io.agentscope.core.model.OpenAIChatModel;
+import io.agentscope.extensions.model.openai.OpenAIChatModel;
 import io.agentscope.harness.agent.memory.compaction.CompactionConfig;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.context.annotation.Bean;
@@ -49,6 +49,8 @@ public class AgentScopeConfig {
                 .modelName(properties.getDeepseek().getModel())
                 .baseUrl(properties.getDeepseek().getBaseUrl())
                 .stream(true)
+                .nativeStructuredOutput(true)
+                .nativeStructuredOutputWithTools(true)
                 .build();
     }
 }

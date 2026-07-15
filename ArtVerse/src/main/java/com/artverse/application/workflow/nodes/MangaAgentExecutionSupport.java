@@ -1,6 +1,7 @@
 package com.artverse.application.workflow.nodes;
 
 import com.artverse.agent.AgentMessage;
+import com.artverse.agent.AgentDataBlock;
 import com.artverse.agent.AgentRunEvent;
 import com.artverse.agent.AgentRunRequest;
 import com.artverse.agent.AgentTaskType;
@@ -54,6 +55,7 @@ import java.util.Map;
 import java.util.LinkedHashMap;
 import java.util.Optional;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicReference;
 
 /**
  * Shared execution support for all manga workflow agent nodes.
@@ -156,11 +158,11 @@ public class MangaAgentExecutionSupport {
                 && "user".equalsIgnoreCase(enriched.get(enriched.size() - 1).role())
                 ? enriched.size() - 1
                 : enriched.size();
-        enriched.add(insertionPoint, new AgentMessage("system", workflowSnapshotDataBlock(context.workflowContext())));
+        enriched.add(insertionPoint, new AgentMessage("user", workflowSnapshotDataBlock(context.workflowContext())));
         return List.copyOf(enriched);
     }
 
-    private String workflowSnapshotDataBlock(com.artverse.application.workflow.MangaWorkflowContextSnapshot snapshot) {
+    private AgentDataBlock workflowSnapshotDataBlock(com.artverse.application.workflow.MangaWorkflowContextSnapshot snapshot) {
         Map<String, Object> data = new LinkedHashMap<>();
         data.put("story_id", snapshot.storyId());
         data.put("chapter_id", snapshot.chapterId());
@@ -173,7 +175,7 @@ public class MangaAgentExecutionSupport {
         data.put("storyboard_excerpt", blankIfNull(snapshot.storyboardExcerpt()));
         data.put("character_summary", blankIfNull(snapshot.characterSummary()));
         data.put("conversation_summary", blankIfNull(snapshot.conversationSummary()));
-        return serverDataBlock("chapter_snapshot", Map.of(
+        return new AgentDataBlock("chapter_snapshot", "chapter-" + snapshot.chapterId(), Map.of(
                 "context_hash", blankIfNull(snapshot.contextHash()),
                 "required_fields", snapshot.requiredFields(),
                 "warnings", snapshot.warnings(),
@@ -202,13 +204,13 @@ public class MangaAgentExecutionSupport {
                             && "user".equalsIgnoreCase(enriched.get(enriched.size() - 1).role())
                             ? enriched.size() - 1
                             : enriched.size();
-                    enriched.add(insertionPoint, new AgentMessage("system", knowledgeDataBlock(preview)));
+                    enriched.add(insertionPoint, new AgentMessage("user", knowledgeDataBlock(preview)));
                     return List.copyOf(enriched);
                 })
                 .orElse(messages);
     }
 
-    private String knowledgeDataBlock(KnowledgeService.RecallPreview preview) {
+    private AgentDataBlock knowledgeDataBlock(KnowledgeService.RecallPreview preview) {
         Map<String, Object> data = new LinkedHashMap<>();
         data.put("embedding_space_id", preview.embeddingSpaceId());
         data.put("snapshot_id", preview.snapshotId());
@@ -220,7 +222,7 @@ public class MangaAgentExecutionSupport {
                 "content", item.content(),
                 "score", String.format(java.util.Locale.ROOT, "%.4f", item.score())
         )).toList());
-        return serverDataBlock("knowledge_recall", Map.of(
+        return new AgentDataBlock("knowledge_recall", "knowledge-" + preview.snapshotId(), Map.of(
                 "context_hash", preview.contextHash(),
                 "required_fields", List.of("knowledge_unit_id", "version", "type", "title", "content", "score"),
                 "warnings", List.of(),
@@ -299,7 +301,9 @@ public class MangaAgentExecutionSupport {
                 context.requestId(),
                 context.toolState(),
                 error,
-                context.persistConversationMessages()
+                // The fallback is only a candidate. ResultFinalizer persists it
+                // after it proves the committed artifact from database facts.
+                false
         );
         return MangaWorkflowResult.fromPayload(payload);
     }
@@ -342,6 +346,7 @@ public class MangaAgentExecutionSupport {
     private MangaWorkflowResult executeObservedReviewRequest(MangaWorkflowExecutionContext context,
                                                               AgentRunRequest request) {
         StringBuilder reply = new StringBuilder();
+        AtomicReference<String> finalReply = new AtomicReference<>();
         MangaReviewSubagentTracker tracker = new MangaReviewSubagentTracker();
         try {
             harnessAgentGateway.streamEvents(request)
@@ -350,6 +355,9 @@ public class MangaAgentExecutionSupport {
                         if (event instanceof TextBlockDeltaEvent text && !tracker.isSubagentEvent(event)
                                 && text.getDelta() != null) {
                             reply.append(text.getDelta());
+                        }
+                        if (event instanceof AgentResultEvent result && !tracker.isSubagentEvent(event)) {
+                            finalReply.set(result.getResult().getTextContent());
                         }
                     })
                     .timeout(
@@ -368,7 +376,8 @@ public class MangaAgentExecutionSupport {
             return handleExecutionFailure(context, error, false,
                     new BusinessException(502, "Agent service failed: " + error));
         }
-        MangaWorkflowResult result = completeRequest(context, reply.toString().trim(), false);
+        MangaWorkflowResult result = completeRequest(context,
+                firstNonBlank(finalReply.get(), reply.toString()), false);
         return applyReviewAudit(result, tracker.finish(reviewMetrics), null);
     }
 
@@ -468,22 +477,6 @@ public class MangaAgentExecutionSupport {
         return value == null ? "" : value;
     }
 
-    private String serverDataBlock(String name, Map<String, Object> payload) {
-        return """
-                <artverse_server_data_block name="%s">
-                %s
-                </artverse_server_data_block>
-                """.formatted(name, toJson(payload));
-    }
-
-    private String toJson(Map<String, Object> payload) {
-        try {
-            return objectMapper.writerWithDefaultPrettyPrinter().writeValueAsString(payload);
-        } catch (JsonProcessingException error) {
-            throw new IllegalStateException("Failed to serialize server data block", error);
-        }
-    }
-
     private String labelForTool(String toolName, String prefix) {
         return prefix + ": " + switch (toolName == null ? "" : toolName) {
             case "get_chapter_context" -> "read chapter context";
@@ -508,6 +501,7 @@ public class MangaAgentExecutionSupport {
                                                        AgentRunRequest request,
                                                        boolean supportsDegradedFallback) {
         StringBuilder reply = new StringBuilder();
+        AtomicReference<String> resultReply = new AtomicReference<>();
         AtomicBoolean finished = new AtomicBoolean(false);
         MangaReviewSubagentTracker reviewTracker = request.taskType() == AgentTaskType.MANGA_REVIEW
                 ? new MangaReviewSubagentTracker()
@@ -521,6 +515,10 @@ public class MangaAgentExecutionSupport {
                         if (context.toolState().isCancelled()) {
                             throw new AgentRunTerminatedException(context.requestId(),
                                     context.user().getId(), context.chapter().getId());
+                        }
+                        if (event instanceof AgentResultEvent result
+                                && (reviewTracker == null || !reviewTracker.isSubagentEvent(event))) {
+                            resultReply.set(result.getResult().getTextContent());
                         }
                         streamContext.sink().recordProgress(streamContext.run(), phaseFor(event));
                         mapAgentScopeEvent(event).ifPresent(mapped -> {
@@ -563,7 +561,7 @@ public class MangaAgentExecutionSupport {
             );
         }
 
-        String finalReply = reply.toString().trim();
+        String finalReply = firstNonBlank(resultReply.get(), reply.toString());
         if (context.toolState().isCancelled()) {
             return MangaWorkflowResult.success("");
         }
@@ -622,8 +620,13 @@ public class MangaAgentExecutionSupport {
                     new BusinessException(502, "Agent returned empty response")
             );
         }
-        saveReply(context, finalReply);
         return MangaWorkflowResult.success(finalReply);
+    }
+
+    private String firstNonBlank(String preferred, String fallback) {
+        return preferred != null && !preferred.isBlank()
+                ? preferred.trim()
+                : fallback == null ? "" : fallback.trim();
     }
 
     private MangaWorkflowResult handleExecutionFailure(MangaWorkflowExecutionContext context,

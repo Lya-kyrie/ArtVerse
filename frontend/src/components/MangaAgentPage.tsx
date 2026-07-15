@@ -10,6 +10,7 @@ import {
   MessageCircleQuestion,
   MessageSquareText,
   Plus,
+  Pencil,
   Send,
   Sparkles,
   Square,
@@ -30,6 +31,7 @@ import {
   listMangaAgentConversations,
   listStories,
   replayMangaAgentRunEvents,
+  renameAiConversation,
   resumeMangaAgentAgUiStream,
   runMangaAgentAgUiStream,
   type AgentUserInputRequest,
@@ -1087,6 +1089,22 @@ export default function MangaAgentPage({ onCreateStory }: { onCreateStory?: () =
                       </div>
                     </div>
                     <ChevronRight size={12} className="mt-1 shrink-0 text-text-muted" />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={async () => {
+                      const title = window.prompt('会话名称', conversation.title || '新会话');
+                      if (!title?.trim()) return;
+                      try {
+                        const updated = await renameAiConversation(conversation.conversationId, title);
+                        setConversations((items) => items.map((item) => item.conversationId === conversation.conversationId ? { ...item, title: updated.title } : item));
+                      } catch (error: any) { setRunStatus(error?.message || '重命名失败'); }
+                    }}
+                    className="mt-0.5 inline-flex h-8 w-8 items-center justify-center rounded text-text-muted transition hover:bg-bg-surface hover:text-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+                    aria-label="重命名会话"
+                    title="重命名"
+                  >
+                    <Pencil size={12} />
                   </button>
                   <button
                     type="button"

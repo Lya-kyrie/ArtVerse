@@ -74,7 +74,7 @@ class MangaDirectorAgentNodeTest {
         ArgumentCaptor<MangaWorkflowExecutionContext> contextCaptor = forClass(MangaWorkflowExecutionContext.class);
         verify(review).run(contextCaptor.capture());
         assertThat(contextCaptor.getValue().message()).contains("Storyboard handoff context");
-        verify(support).saveReply(any(), org.mockito.ArgumentMatchers.contains("Review contract summary"));
+        verify(support, never()).saveReply(any(), org.mockito.ArgumentMatchers.contains("Review contract summary"));
     }
 
     @Test

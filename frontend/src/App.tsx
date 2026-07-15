@@ -95,6 +95,10 @@ export default function App() {
 
   const visibleRoute = route && (!authenticated && isProtectedRoute(route)) ? { view: 'square' as const } : route;
   const view: View = visibleRoute?.view ?? 'square';
+  // A public work is a destination in its own right. Keep it outside the
+  // creator-console chrome so a shared URL opens as an uninterrupted reading
+  // page, rather than as a panel inside the application shell.
+  const isSquareStoryRoute = visibleRoute?.view === 'square' && 'storyId' in visibleRoute;
 
   useEffect(() => {
     setAuthenticated(isAuthenticated());
@@ -284,7 +288,7 @@ export default function App() {
 
   return (
     <div className="relative flex h-dvh w-screen overflow-hidden bg-bg-base text-text-primary">
-      {!isMobile && (
+      {!isMobile && !isSquareStoryRoute && (
         <aside
           className={
             'flex shrink-0 flex-col border-r border-border glass-panel transition-[width] duration-300 '
@@ -352,8 +356,8 @@ export default function App() {
         </aside>
       )}
 
-      <div className={'flex min-h-0 min-w-0 flex-1 flex-col ' + (isMobile && view !== 'editor' ? 'pb-[calc(64px+env(safe-area-inset-bottom))]' : '')}>
-        {isMobile && view !== 'editor' && (
+      <div className={'flex min-h-0 min-w-0 flex-1 flex-col ' + (isMobile && view !== 'editor' && !isSquareStoryRoute ? 'pb-[calc(64px+env(safe-area-inset-bottom))]' : '')}>
+        {isMobile && view !== 'editor' && !isSquareStoryRoute && (
           <header className="flex h-14 shrink-0 items-center justify-between border-b border-border glass-panel px-4">
             <button type="button" onClick={() => goView('home')} className="flex items-center gap-2" aria-label="返回创作助手">
               <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-accent text-white shadow-glow"><Sparkles size={16} /></span>
@@ -394,7 +398,7 @@ export default function App() {
         {view === 'settings' && <ApiSettingsPage />}
       </div>
 
-      {isMobile && view !== 'editor' && (
+      {isMobile && view !== 'editor' && !isSquareStoryRoute && (
         <nav className="fixed inset-x-0 bottom-0 z-40 flex h-[calc(64px+env(safe-area-inset-bottom))] border-t border-border glass-panel pb-[env(safe-area-inset-bottom)]" aria-label="主导航">
           {mobileNavItem(<Sparkles size={19} />, '创作', 'home')}
           {mobileNavItem(<BookOpenText size={19} />, '故事', 'workspace')}

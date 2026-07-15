@@ -1719,19 +1719,21 @@ export async function updateChapterOrder(storyId: number, orders: { chapter_id: 
 }
 
 // ---- Square ----
-export interface SquareStory { id: number; title: string; description: string; cover_url: string; manga_style: string; published_at: string; }
-export interface SquareStoryDetail { id: number; title: string; description: string; cover_url: string; manga_style: string; published_at: string; chapters: { id: number; chapter_number: number; display_title: string; images: { id: number; image_number: number; image_url: string }[] }[]; }
+export type SquareFormat = 'all' | 'novel' | 'manga';
+export interface SquareStory { id: number; format: Exclude<SquareFormat, 'all'>; title: string; description: string; cover_url: string; manga_style: string; published_at: string | null; chapter_count: number; content_count: number; }
+export interface SquareStoryDetail { id: number; format: Exclude<SquareFormat, 'all'>; title: string; description: string; cover_url: string; manga_style: string; published_at: string | null; available_formats: Exclude<SquareFormat, 'all'>[]; chapters: { id: number; chapter_number: number; display_title: string; content: string | null; content_count: number; images: { id: number; image_number: number; image_url: string }[] }[]; }
 
-export async function listSquareStories(page = 0, size = 12, search?: string): Promise<{ content: SquareStory[]; total_pages: number; total_elements: number }> {
+export async function listSquareStories(page = 0, size = 12, search?: string, format: SquareFormat = 'manga'): Promise<{ content: SquareStory[]; total_pages: number; total_elements: number; facets: Record<SquareFormat, number> }> {
   const params = new URLSearchParams({ page: String(page), size: String(size) });
   if (search) params.set('search', search);
+  params.set('format', format);
   const res = await fetch(BASE+'/api/square/stories?'+params);
   if (!res.ok) throw new Error(parseApiError(await res.text()));
   return res.json();
 }
 
-export async function getSquareStoryDetail(id: number): Promise<SquareStoryDetail> {
-  const res = await fetch(BASE+'/api/square/stories/'+id);
+export async function getSquareStoryDetail(id: number, format: Exclude<SquareFormat, 'all'> = 'manga'): Promise<SquareStoryDetail> {
+  const res = await fetch(BASE+'/api/square/stories/'+id+'?format='+format);
   if (!res.ok) throw new Error(parseApiError(await res.text()));
   return res.json();
 }
@@ -1774,6 +1776,7 @@ export async function listMyWorks(): Promise<MyWork[]> {
 // ---- Image Gen ----
 export interface ImageGenRecord {
   id: number;
+  conversation_id?: string;
   prompt: string;
   image_url: string | null;
   model: string;
@@ -1839,6 +1842,44 @@ export interface KnowledgeRecallPreview {
   contextHash: string;
   embeddingSpaceId: number;
   snapshotId?: number | null;
+}
+
+export interface AiConversationSummary {
+  conversationId: string;
+  type: 'MANGA_AGENT' | 'STORY_CHAT' | 'IMAGE_GEN';
+  title: string;
+  titleSource: 'DEFAULT' | 'AI' | 'FALLBACK' | 'USER';
+  titleState: 'WAITING' | 'GENERATING' | 'FINALIZED';
+  status: 'ACTIVE' | 'ARCHIVED';
+  chapterId: number | null;
+  lastActivityAt: string;
+}
+
+export async function listAiConversations(type: AiConversationSummary['type'], chapterId?: number): Promise<AiConversationSummary[]> {
+  const params = new URLSearchParams({ type });
+  if (chapterId != null) params.set('chapterId', String(chapterId));
+  const res = await authFetch(`${BASE}/api/ai/conversations?${params}`);
+  if (!res.ok) throw new Error(parseApiError(await res.text()));
+  return res.json();
+}
+
+export async function renameAiConversation(conversationId: string, title: string): Promise<AiConversationSummary> {
+  const res = await authFetch(`${BASE}/api/ai/conversations/${conversationId}/title`, {
+    method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ title }),
+  });
+  if (!res.ok) throw new Error(parseApiError(await res.text()));
+  return res.json();
+}
+
+export async function createAiConversation(type: AiConversationSummary['type'], title?: string): Promise<AiConversationSummary> {
+  const res = await authFetch(`${BASE}/api/ai/conversations`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ type, title }) });
+  if (!res.ok) throw new Error(parseApiError(await res.text()));
+  return res.json();
+}
+
+export async function archiveAiConversation(conversationId: string): Promise<void> {
+  const res = await authFetch(`${BASE}/api/ai/conversations/${conversationId}/archive`, { method: 'POST' });
+  if (!res.ok) throw new Error(parseApiError(await res.text()));
 }
 
 export type KnowledgeCandidateStatus = 'PENDING' | 'APPROVED' | 'REJECTED' | 'SUPERSEDED';
@@ -2033,18 +2074,18 @@ export async function previewKnowledge(storyId: number, chapterNumber: number, q
   return res.json();
 }
 
-export async function generateImage(prompt: string, referenceImages?: string[], size?: string, model?: string, signal?: AbortSignal): Promise<ImageGenRecord> {
+export async function generateImage(prompt: string, referenceImages?: string[], size?: string, model?: string, signal?: AbortSignal, conversationId?: string): Promise<ImageGenRecord> {
   const res = await authFetch(BASE+'/api/image-gen/generate', {
     method: 'POST', headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ prompt, reference_images: referenceImages || [], ...(size ? { size } : {}), ...getProviderRequestPayload('image', model) }),
+    body: JSON.stringify({ prompt, reference_images: referenceImages || [], ...(size ? { size } : {}), ...(conversationId ? { conversation_id: conversationId } : {}), ...getProviderRequestPayload('image', model) }),
     signal,
   });
   if (!res.ok) throw new Error(parseApiError(await res.text()));
   return res.json();
 }
 
-export async function listImageGenHistory(page = 0, size = 12): Promise<{ content: ImageGenRecord[]; total_pages: number; total_elements: number }> {
-  const res = await authFetch(BASE+'/api/image-gen/history?page='+page+'&size='+size);
+export async function listImageGenHistory(page = 0, size = 12, conversationId?: string): Promise<{ content: ImageGenRecord[]; total_pages: number; total_elements: number }> {
+  const res = await authFetch(BASE+'/api/image-gen/history?page='+page+'&size='+size+(conversationId ? '&conversation_id='+encodeURIComponent(conversationId) : ''));
   if (!res.ok) throw new Error(parseApiError(await res.text()));
   return res.json();
 }

@@ -16,6 +16,10 @@ public interface ImageGenRecordRepository extends JpaRepository<ImageGenRecord, 
     @Query("SELECT r FROM ImageGenRecord r WHERE r.user.id = :userId AND r.isDeleted = false ORDER BY r.createdAt DESC")
     Page<ImageGenRecord> findByUserId(Long userId, Pageable pageable);
 
+    @Query("SELECT r FROM ImageGenRecord r WHERE r.user.id = :userId AND r.conversation.conversationUuid = :conversationId " +
+            "AND r.isDeleted = false ORDER BY r.createdAt DESC")
+    Page<ImageGenRecord> findByUserIdAndConversationUuid(Long userId, java.util.UUID conversationId, Pageable pageable);
+
     @Modifying
     @Query("UPDATE ImageGenRecord r SET r.status = com.artverse.domain.ImageGenStatus.FAILED, r.failureReason = :reason, r.completedAt = :now " +
             "WHERE r.user.id = :userId AND r.status = com.artverse.domain.ImageGenStatus.RUNNING AND r.createdAt < :cutoff")

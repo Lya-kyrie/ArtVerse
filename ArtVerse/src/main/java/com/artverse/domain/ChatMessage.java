@@ -22,6 +22,11 @@ public class ChatMessage {
     @JsonIgnore
     private Chapter chapter;
 
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "conversation_id")
+    @JsonIgnore
+    private MangaAgentConversation conversation;
+
     @Enumerated(EnumType.STRING)
     @Column(nullable = false, length = 20)
     private MessageRole role;

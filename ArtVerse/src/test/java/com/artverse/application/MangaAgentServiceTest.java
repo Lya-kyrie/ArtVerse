@@ -2,6 +2,7 @@ package com.artverse.application;
 
 import com.artverse.application.workflow.MangaWorkflowOrchestrator;
 import com.artverse.application.workflow.MangaRoutingMetrics;
+import com.artverse.agent.gateway.AgentScopeHarnessAgentGateway;
 import com.artverse.common.BusinessException;
 import com.artverse.config.ArtVerseProperties;
 import com.artverse.domain.Chapter;
@@ -141,19 +142,18 @@ class MangaAgentServiceTest {
         Chapter chapter = chapter(user);
         MangaAgentConversation conversation = conversation(user, chapter);
         when(accessService.requireVisible(7L, 1L)).thenReturn(chapter);
-        when(conversationRepository.findFirstByUserIdAndChapterIdAndStatusOrderByUpdatedAtDesc(
-                user.getId(), 7L, MangaAgentConversationStatus.ACTIVE))
-                .thenReturn(java.util.Optional.of(conversation));
+        MangaAgentConversationWriteService conversationWriteService = mock(MangaAgentConversationWriteService.class);
+        when(conversationWriteService.activeOrCreate(7L, user)).thenReturn(conversation);
 
         MangaAgentConversationService conversationService =
-                new MangaAgentConversationService(conversationRepository, messageRepository, accessService);
+                new MangaAgentConversationService(conversationRepository, messageRepository, accessService, conversationWriteService);
 
         ExecutorService rejectingExecutor = Executors.newSingleThreadExecutor();
         rejectingExecutor.shutdown(); // now rejects new tasks
 
         MangaAgentService service = new MangaAgentService(
                 conversationService, runService, eventPublisher, orchestrator,
-                toolStatus, accessService, props, gate, rejectingExecutor,
+                toolStatus, accessService, props, gate, mock(AgentScopeHarnessAgentGateway.class), rejectingExecutor,
                 mock(MangaRoutingMetrics.class));
 
         MangaAgentRunEventPublisher.RunEventSink sink = mock(MangaAgentRunEventPublisher.RunEventSink.class);
@@ -186,12 +186,11 @@ class MangaAgentServiceTest {
         Chapter chapter = chapter(user);
         MangaAgentConversation conversation = conversation(user, chapter);
         when(accessService.requireVisible(7L, 1L)).thenReturn(chapter);
-        when(conversationRepository.findFirstByUserIdAndChapterIdAndStatusOrderByUpdatedAtDesc(
-                user.getId(), 7L, MangaAgentConversationStatus.ACTIVE))
-                .thenReturn(java.util.Optional.of(conversation));
+        MangaAgentConversationWriteService conversationWriteService = mock(MangaAgentConversationWriteService.class);
+        when(conversationWriteService.activeOrCreate(7L, user)).thenReturn(conversation);
 
         MangaAgentConversationService conversationService =
-                new MangaAgentConversationService(conversationRepository, messageRepository, accessService);
+                new MangaAgentConversationService(conversationRepository, messageRepository, accessService, conversationWriteService);
         AgentConcurrencyGate concurrencyGate = mock(AgentConcurrencyGate.class);
         MangaAgentService service = new MangaAgentService(
                 conversationService,
@@ -202,6 +201,7 @@ class MangaAgentServiceTest {
                 accessService,
                 properties,
                 concurrencyGate,
+                mock(AgentScopeHarnessAgentGateway.class),
                 Executors.newSingleThreadExecutor(),
                 mock(MangaRoutingMetrics.class)
         );

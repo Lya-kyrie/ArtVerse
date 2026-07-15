@@ -121,6 +121,15 @@ public class MangaAgentRun {
     @Column(name = "user_input_request_json", columnDefinition = "TEXT")
     private String userInputRequestJson;
 
+    @Column(name = "result_schema", length = 128)
+    private String resultSchema;
+
+    @Column(name = "verified_result_json", columnDefinition = "jsonb")
+    private String verifiedResultJson;
+
+    @Column(name = "verified_at")
+    private OffsetDateTime verifiedAt;
+
     @Column(name = "created_at", nullable = false, updatable = false)
     private OffsetDateTime createdAt;
 

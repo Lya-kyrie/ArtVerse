@@ -368,9 +368,8 @@ public class MangaDirectorAgentNode implements MangaWorkflowNodeHandler {
     }
 
     private MangaWorkflowResult saveFinalReply(MangaWorkflowExecutionContext context, MangaWorkflowResult result) {
-        if (result.reply() != null && !result.reply().isBlank()) {
-            support.saveReply(context, result.reply());
-        }
+        // The outer ResultFinalizer atomically persists the final assistant
+        // reply and terminal run status after all step facts are verified.
         return result;
     }
 }

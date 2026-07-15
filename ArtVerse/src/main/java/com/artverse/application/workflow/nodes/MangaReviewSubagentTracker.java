@@ -75,11 +75,22 @@ final class MangaReviewSubagentTracker {
     }
 
     private String reviewerName(AgentEvent event) {
-        if (event instanceof AgentStartEvent start && expected.contains(start.getName())) {
-            return start.getName();
+        if (event instanceof AgentStartEvent start) {
+            String fromName = terminalSourceSegment(start.getName());
+            if (expected.contains(fromName)) {
+                return fromName;
+            }
         }
-        String source = event.getSource();
-        return source != null && expected.contains(source) ? source : null;
+        String reviewer = terminalSourceSegment(event.getSource());
+        return reviewer != null && expected.contains(reviewer) ? reviewer : null;
+    }
+
+    private String terminalSourceSegment(String source) {
+        if (source == null || source.isBlank()) {
+            return null;
+        }
+        int separator = source.lastIndexOf('/');
+        return separator < 0 ? source : source.substring(separator + 1);
     }
 
     record Audit(Set<String> expected, Set<String> started, Set<String> completed,
@@ -96,7 +107,7 @@ final class MangaReviewSubagentTracker {
 
         boolean complete() {
             return missing.isEmpty() && timedOut.isEmpty() && completed.containsAll(expected)
-                    && failedSpawnCalls == 0 && maxConcurrency >= expected.size();
+                    && failedSpawnCalls == 0;
         }
 
         Map<String, Object> attributes() {

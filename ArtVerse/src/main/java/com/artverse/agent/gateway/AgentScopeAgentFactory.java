@@ -15,7 +15,7 @@ import com.artverse.config.ArtVerseProperties;
 import com.github.benmanes.caffeine.cache.Cache;
 import com.github.benmanes.caffeine.cache.Caffeine;
 import io.agentscope.core.model.Model;
-import io.agentscope.core.model.OpenAIChatModel;
+import io.agentscope.extensions.model.openai.OpenAIChatModel;
 import io.agentscope.core.state.AgentStateStore;
 import io.agentscope.harness.agent.HarnessAgent;
 import io.agentscope.harness.agent.filesystem.remote.RemoteFilesystem;
@@ -45,6 +45,7 @@ public class AgentScopeAgentFactory {
     private final ArtVerseSkillRepository skillRepository;
     private final MangaAgentRunService runService;
     private final PostgresAgentWorkspaceStore workspaceStore;
+    private final AgentScopeSystemPromptMiddleware systemPromptMiddleware = new AgentScopeSystemPromptMiddleware();
     private Cache<String, HarnessAgent> agents;
 
     @PostConstruct
@@ -87,7 +88,9 @@ public class AgentScopeAgentFactory {
                 : fallbackSpec;
         Model effectiveModel = resolveModel(request.llmApiKey(), modelSpec);
         HarnessAgent.Builder builder = HarnessAgent.builder()
-                .name("artverse-story-" + request.storyId() + "-ch" + request.chapterId())
+                // AgentScope 2.0 keeps per-session state in RuntimeContext. The agent
+                // itself is intentionally shared and must not encode tenant identity.
+                .name("artverse-" + request.taskType().sessionSuffix())
                 .sysPrompt(promptProvider.promptFor(request.taskType()))
                 .model(effectiveModel)
                 .workspace(requestWorkspace)
@@ -98,6 +101,7 @@ public class AgentScopeAgentFactory {
                 .maxIters(maxIters(request.taskType()))
                 .maxContextTokens(properties.getAgent().getMaxInputTokens())
                 .enablePendingToolRecovery(true)
+                .middleware(systemPromptMiddleware)
                 .disableShellTool()
                 .disableFilesystemTools();
         if (skill != null) {
@@ -136,6 +140,8 @@ public class AgentScopeAgentFactory {
                 .modelName(modelSpec.model())
                 .baseUrl(modelSpec.baseUrl())
                 .stream(true)
+                .nativeStructuredOutput(true)
+                .nativeStructuredOutputWithTools(true)
                 .build();
     }
 
@@ -169,10 +175,6 @@ public class AgentScopeAgentFactory {
                                      String promptVersion, String skillVersion) {
         AgentModelSpec spec = request.modelSpec() != null ? request.modelSpec() : fallbackSpec;
         return String.join(":",
-                "user", nullToKey(request.userId()),
-                "story", String.valueOf(request.storyId()),
-                "chapter", String.valueOf(request.chapterId()),
-                "conversation", nullToKey(request.conversationId() == null ? null : request.conversationId().toString()),
                 "task", request.taskType().name(),
                 "provider", nullToKey(spec.provider()),
                 "model", nullToKey(spec.model()),
@@ -180,6 +182,8 @@ public class AgentScopeAgentFactory {
                 "key", nullToKey(spec.apiKeyHash()),
                 "prompt", nullToKey(promptVersion),
                 "skill", nullToKey(skillVersion),
+                // The workspace is a stable logical root. User, story and conversation
+                // isolation is supplied by RuntimeContext/RemoteFilesystem at call time.
                 "workspace", workspace == null ? "none" : AgentModelSpecFactory.shortHash(workspace.toAbsolutePath().normalize().toString())
         );
     }

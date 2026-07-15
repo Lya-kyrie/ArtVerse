@@ -2,7 +2,7 @@ package com.artverse.agent.gateway.tools;
 
 import com.artverse.application.tools.MangaContextTools;
 import com.artverse.application.tools.MangaHitlTools;
-import com.artverse.application.tools.MangaStoryboardTools;
+import com.artverse.application.tools.StoryboardAgentTools;
 import io.agentscope.core.tool.Toolkit;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -20,7 +20,7 @@ import static org.mockito.Mockito.when;
 class AgentToolGroupSupportTest {
 
     private MangaContextTools contextTools;
-    private MangaStoryboardTools storyboardTools;
+    private StoryboardAgentTools storyboardTools;
     private MangaHitlTools hitlTools;
     private Toolkit toolkit;
     private AgentToolGroupSupport support;
@@ -28,7 +28,7 @@ class AgentToolGroupSupportTest {
     @BeforeEach
     void setUp() {
         contextTools = mock(MangaContextTools.class);
-        storyboardTools = mock(MangaStoryboardTools.class);
+        storyboardTools = mock(StoryboardAgentTools.class);
         hitlTools = mock(MangaHitlTools.class);
         toolkit = mock(Toolkit.class);
         Toolkit.ToolRegistration registration = mock(Toolkit.ToolRegistration.class);
@@ -55,6 +55,7 @@ class AgentToolGroupSupportTest {
         verifyGroupCreated(AgentToolGroupSupport.CONTEXT_TOOLS);
         verifyGroupCreated(AgentToolGroupSupport.STORYBOARD_TOOLS);
         verifyGroupCreated(AgentToolGroupSupport.HITL_TOOLS);
+        verify(toolkit.registration()).tool(storyboardTools);
         verify(toolkit).setActiveGroups(List.of(
                 AgentToolGroupSupport.CONTEXT_TOOLS,
                 AgentToolGroupSupport.STORYBOARD_TOOLS,

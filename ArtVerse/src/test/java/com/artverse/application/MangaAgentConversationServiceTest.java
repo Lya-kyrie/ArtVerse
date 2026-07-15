@@ -114,34 +114,50 @@ class MangaAgentConversationServiceTest {
     void activeOrCreateRetriesFindWhenSaveHitsUniqueConstraint() {
         Fixture fixture = fixture();
         MangaAgentConversation raceWinner = fixture.conversation;
-        MangaAgentConversation another = conversation(fixture.user, fixture.chapter);
-        another.setId(100L);
 
-        when(fixture.conversationRepository.findFirstByUserIdAndChapterIdAndStatusOrderByUpdatedAtDesc(
-                1L, 7L, MangaAgentConversationStatus.ACTIVE))
-                .thenReturn(Optional.empty())
-                .thenReturn(Optional.of(raceWinner));
-        when(fixture.conversationRepository.save(any(MangaAgentConversation.class)))
+        when(fixture.conversationWriteService.activeOrCreate(7L, fixture.user))
                 .thenThrow(new DataIntegrityViolationException("duplicate key"));
+        when(fixture.conversationWriteService.requireActiveConversation(7L, fixture.user))
+                .thenReturn(Optional.of(raceWinner));
 
         MangaAgentConversation result = fixture.service.activeOrCreate(7L, fixture.user);
 
         assertThat(result).isEqualTo(raceWinner);
-        verify(fixture.conversationRepository).save(any(MangaAgentConversation.class));
+        verify(fixture.conversationWriteService).requireActiveConversation(7L, fixture.user);
+    }
+
+    @Test
+    void createConversationUsesWinnerAfterConcurrentCreation() {
+        Fixture fixture = fixture();
+        MangaAgentConversation replacement = conversation(fixture.user, fixture.chapter);
+        replacement.setId(100L);
+        replacement.setConversationUuid(UUID.fromString("22222222-2222-2222-2222-222222222222"));
+
+        when(fixture.conversationWriteService.createConversation(7L, fixture.user))
+                .thenThrow(new DataIntegrityViolationException("duplicate key"));
+        when(fixture.conversationWriteService.requireActiveConversation(7L, fixture.user))
+                .thenReturn(Optional.of(replacement));
+
+        MangaAgentConversation result = fixture.service.createConversation(7L, fixture.user);
+
+        assertThat(result).isEqualTo(replacement);
+        verify(fixture.conversationWriteService).requireActiveConversation(7L, fixture.user);
     }
 
     private Fixture fixture() {
         MangaAgentConversationRepository conversationRepository = mock(MangaAgentConversationRepository.class);
         MangaAgentMessageRepository messageRepository = mock(MangaAgentMessageRepository.class);
         ChapterAccessService accessService = mock(ChapterAccessService.class);
+        MangaAgentConversationWriteService conversationWriteService = mock(MangaAgentConversationWriteService.class);
         MangaAgentConversationService service = new MangaAgentConversationService(
-                conversationRepository, messageRepository, accessService);
+                conversationRepository, messageRepository, accessService, conversationWriteService);
         User user = user(1L);
         Chapter chapter = chapter(user);
         MangaAgentConversation conversation = conversation(user, chapter);
         List<MangaAgentMessage> saved = new ArrayList<>();
         when(accessService.requireVisible(7L, 1L)).thenReturn(chapter);
-        when(conversationRepository.findByUserIdAndChapterIdAndConversationUuid(1L, 7L, conversation.getConversationUuid()))
+        when(conversationRepository.findByUserIdAndChapterIdAndConversationUuidAndConversationType(
+                1L, 7L, conversation.getConversationUuid(), com.artverse.domain.AiConversationType.MANGA_AGENT))
                 .thenReturn(Optional.of(conversation));
         when(messageRepository.findByConversationIdAndRequestIdAndRole(any(), any(UUID.class), any(MessageRole.class)))
                 .thenReturn(Optional.empty());
@@ -150,7 +166,7 @@ class MangaAgentConversationServiceTest {
             saved.add(savedMessage);
             return savedMessage;
         });
-        return new Fixture(service, conversationRepository, messageRepository, user, chapter, conversation, saved);
+        return new Fixture(service, conversationRepository, messageRepository, conversationWriteService, user, chapter, conversation, saved);
     }
 
     private RedisTemplate<String, Object> redisTemplate() {
@@ -209,6 +225,7 @@ class MangaAgentConversationServiceTest {
             MangaAgentConversationService service,
             MangaAgentConversationRepository conversationRepository,
             MangaAgentMessageRepository messageRepository,
+            MangaAgentConversationWriteService conversationWriteService,
             User user,
             Chapter chapter,
             MangaAgentConversation conversation,

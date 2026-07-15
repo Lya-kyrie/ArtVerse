@@ -41,6 +41,7 @@ public class MangaWorkflowOrchestrator {
     private final MangaWorkflowNodeRegistry nodeRegistry;
     private final MangaWorkflowRouter workflowRouter;
     private final MangaRoutingMetrics routingMetrics;
+    private final ResultFinalizer resultFinalizer;
 
     public Map<String, Object> runWithToolState(MangaAgentConversation conversation, String message, UUID effectiveRequestId,
                                                 AgentRunToolStatus.RunState toolState) {
@@ -101,8 +102,7 @@ public class MangaWorkflowOrchestrator {
                 () -> runWorkflowLeader(conversation, message, effectiveRequestId, llmConfig.apiKey(), modelSpec,
                         decision, toolState, workflowRun)
         );
-        completeSyncRun(conversation, effectiveRequestId, effectiveRoute, result);
-        return result;
+        return completeSyncRun(conversation, effectiveRequestId, effectiveRoute, result);
     }
 
     private Map<String, Object> runWorkflowLeader(MangaAgentConversation conversation, String message,
@@ -262,9 +262,10 @@ public class MangaWorkflowOrchestrator {
             sink.complete();
             return;
         }
-        String reply = replyFrom(result);
-        markRunComplete(run.getConversation(), requestId, run.getRoute(), reply, result);
-        sink.sendDone(run, reply, requestId);
+        MangaWorkflowResult finalized = resultFinalizer.finalizeResult(
+                run.getConversation(), requestId, run.getRoute(), MangaWorkflowResult.fromPayload(result));
+        routingMetrics.recordRunOutcome(run.getRoute(), finalized.degraded() ? "DEGRADED" : "SUCCEEDED");
+        sink.sendDone(run, finalized.reply(), requestId);
     }
 
     public UserProviderConfig requireLlmConfig(User user) {
@@ -316,28 +317,12 @@ public class MangaWorkflowOrchestrator {
         return requestedSource == null ? MangaRouteSource.AUTO : requestedSource;
     }
 
-    private void completeSyncRun(MangaAgentConversation conversation, UUID requestId,
-                                 MangaWorkflowRoute route, Map<String, Object> result) {
-        String reply = replyFrom(result);
-        markRunComplete(conversation, requestId, route, reply, result);
-    }
-
-    private String replyFrom(Map<String, Object> result) {
-        return String.valueOf(result.getOrDefault("reply", ""));
-    }
-
-    private void markRunComplete(MangaAgentConversation conversation, UUID requestId, MangaWorkflowRoute route,
-                                 String reply,
-                                  Map<String, Object> result) {
-        persistRunAttributes(conversation, requestId, result);
-        if (Boolean.TRUE.equals(result.get("agent_final_response_degraded"))) {
-            mangaAgentRunService.markDegraded(conversation, requestId, reply,
-                    "Agent final response degraded after tool success");
-            routingMetrics.recordRunOutcome(route, "DEGRADED");
-        } else {
-            mangaAgentRunService.markSucceeded(conversation, requestId, reply);
-            routingMetrics.recordRunOutcome(route, "SUCCEEDED");
-        }
+    private Map<String, Object> completeSyncRun(MangaAgentConversation conversation, UUID requestId,
+                                                MangaWorkflowRoute route, Map<String, Object> result) {
+        MangaWorkflowResult finalized = resultFinalizer.finalizeResult(
+                conversation, requestId, route, MangaWorkflowResult.fromPayload(result));
+        routingMetrics.recordRunOutcome(route, finalized.degraded() ? "DEGRADED" : "SUCCEEDED");
+        return finalized.toPayload();
     }
 
     private void persistRunAttributes(MangaAgentConversation conversation, UUID requestId, Map<String, Object> result) {
@@ -371,8 +356,6 @@ public class MangaWorkflowOrchestrator {
                                                         UUID requestId, String reply) {
         mangaAgentConversationService.saveMessage(conversation,
                 com.artverse.domain.MessageRole.USER, message, requestId);
-        mangaAgentConversationService.saveMessage(conversation,
-                com.artverse.domain.MessageRole.ASSISTANT, reply, requestId);
         return Map.of("reply", reply, "agent_final_response_degraded", false);
     }
 }

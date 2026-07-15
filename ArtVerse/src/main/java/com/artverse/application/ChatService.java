@@ -31,16 +31,21 @@ public class ChatService {
     private final AgentModelSpecFactory agentModelSpecFactory;
     private final ObjectMapper objectMapper;
     private final KnowledgeService knowledgeService;
+    private final AiConversationService aiConversationService;
 
     @Transactional
-    public void saveUserMessage(Long chapterId, String content) {
+    public void saveUserMessage(Long chapterId, String content, User user) {
         Chapter chapter = chapterRepository.findById(chapterId)
                 .orElseThrow(() -> new BusinessException(404, "Chapter not found"));
         ChatMessage msg = new ChatMessage();
         msg.setChapter(chapter);
+        MangaAgentConversation conversation = aiConversationService.storyConversation(user, chapterId);
+        msg.setConversation(conversation);
         msg.setRole(MessageRole.USER);
         msg.setContent(content);
         chatMessageRepository.save(msg);
+        aiConversationService.autoTitle(conversation, content);
+        aiConversationService.touch(conversation);
 
         chapter.setContentSource(ContentSource.CHAT);
         chapterRepository.save(chapter);
@@ -62,9 +67,11 @@ public class ChatService {
         return chatMessageRepository.findByChapterIdOrderByCreatedAtAsc(chapterId);
     }
 
-    public SseEmitter streamChat(Long chapterId, Long userId, UserProviderConfig llmConfig) {
+    public SseEmitter streamChat(Long chapterId, User user, UserProviderConfig llmConfig) {
+        Long userId = user.getId();
         StreamContext ctx = loadStreamContext(chapterId);
         Chapter chapter = ctx.chapter();
+        MangaAgentConversation conversation = aiConversationService.storyConversation(user, chapterId);
         List<AgentMessage> contextMessages = new ArrayList<>(ctx.contextMessages());
         String recallQuery = contextMessages.stream().map(AgentMessage::content).reduce("", (left, right) -> left + "\n" + right);
         knowledgeService.recallForGeneration(chapter.getStory().getId(), userId, chapter.getChapterNumber(), recallQuery, chapterId)
@@ -119,13 +126,15 @@ public class ChatService {
                                 String content = accumulated.toString();
                                 ChatMessage assistantMsg = new ChatMessage();
                                 assistantMsg.setChapter(chapter);
+                                assistantMsg.setConversation(conversation);
                                 assistantMsg.setRole(MessageRole.ASSISTANT);
                                 assistantMsg.setContent(content);
                                 chatMessageRepository.save(assistantMsg);
+                                aiConversationService.touch(conversation);
 
                                 emitter.send(SseEmitter.event()
                                         .name("done")
-                                        .data(objectMapper.writeValueAsString(Map.of("content", content))));
+                                        .data(objectMapper.writeValueAsString(Map.of("content", content, "conversation", conversationSummary(conversation)))));
                                 emitter.complete();
                             } catch (Exception e) {
                                 log.warn("Failed to send done SSE: {}", e.getMessage());
@@ -149,6 +158,7 @@ public class ChatService {
                 try {
                     ChatMessage assistantMsg = new ChatMessage();
                     assistantMsg.setChapter(chapter);
+                    assistantMsg.setConversation(conversation);
                     assistantMsg.setRole(MessageRole.ASSISTANT);
                     assistantMsg.setContent(content + "\n\n[已中止]");
                     chatMessageRepository.save(assistantMsg);
@@ -167,6 +177,7 @@ public class ChatService {
                 try {
                     ChatMessage assistantMsg = new ChatMessage();
                     assistantMsg.setChapter(chapter);
+                    assistantMsg.setConversation(conversation);
                     assistantMsg.setRole(MessageRole.ASSISTANT);
                     assistantMsg.setContent(content + "\n\n[已中止]");
                     chatMessageRepository.save(assistantMsg);
@@ -177,6 +188,11 @@ public class ChatService {
         });
 
         return emitter;
+    }
+
+    private Map<String, Object> conversationSummary(MangaAgentConversation conversation) {
+        return Map.of("conversationId", conversation.getConversationUuid().toString(), "title", conversation.getTitle(),
+                "titleSource", conversation.getTitleSource().name(), "titleState", conversation.getTitleState().name());
     }
 
     @Transactional(readOnly = true)

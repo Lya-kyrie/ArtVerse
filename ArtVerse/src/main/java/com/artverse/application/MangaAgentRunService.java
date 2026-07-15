@@ -448,6 +448,51 @@ public class MangaAgentRunService {
     }
 
     /**
+     * Acquires the terminal-transition row lock before an assistant reply is
+     * persisted. A cancellation that acquired the lock first remains
+     * authoritative and prevents a late success reply from being stored.
+     */
+    @Transactional
+    public MangaAgentRun requireFinalizable(MangaAgentConversation conversation, UUID requestId) {
+        MangaAgentRun run = runRepository.findForUpdate(conversation.getId(), requestId)
+                .orElseThrow(() -> new BusinessException(404, "Agent run not found"));
+        if (isTerminal(run.getStatus())) {
+            throw new BusinessException(409, "Agent run is already terminal: " + run.getStatus());
+        }
+        return run;
+    }
+
+    /**
+     * Persists verified business facts and terminal status in the transaction
+     * opened by ResultFinalizer together with the assistant message.
+     */
+    @Transactional
+    public MangaAgentRun completeVerified(MangaAgentConversation conversation, UUID requestId,
+                                          String reply, boolean degraded, String resultSchema,
+                                          Map<String, Object> verifiedFacts) {
+        MangaAgentRun run = runRepository.findForUpdate(conversation.getId(), requestId)
+                .orElseThrow(() -> new BusinessException(404, "Agent run not found"));
+        if (isTerminal(run.getStatus())) {
+            throw new BusinessException(409, "Agent run is already terminal: " + run.getStatus());
+        }
+        OffsetDateTime now = OffsetDateTime.now();
+        run.setResultSchema(resultSchema);
+        run.setVerifiedResultJson(toJson(verifiedFacts == null ? Map.of() : verifiedFacts));
+        run.setVerifiedAt(now);
+        MangaAgentRunStatus status = degraded ? MangaAgentRunStatus.DEGRADED : MangaAgentRunStatus.SUCCEEDED;
+        MangaAgentRun completed = applyTerminal(run, status, reply,
+                degraded ? "Agent final response degraded after a verified mutation" : null);
+        appendEvent(completed, "result_verified", Map.of(
+                "type", "result_verified",
+                "phase", "result",
+                "status", status.name(),
+                "resultSchema", resultSchema == null ? "" : resultSchema,
+                "facts", verifiedFacts == null ? Map.of() : verifiedFacts
+        ));
+        return completed;
+    }
+
+    /**
      * Closes the short window where the assistant reply is stored before the run becomes terminal.
      * The row lock makes a concurrent cancellation authoritative when it wins the transition first.
      */

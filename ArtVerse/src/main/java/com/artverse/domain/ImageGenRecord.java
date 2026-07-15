@@ -22,6 +22,11 @@ public class ImageGenRecord {
     @JsonIgnore
     private User user;
 
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "conversation_id")
+    @JsonIgnore
+    private MangaAgentConversation conversation;
+
     @Column(nullable = false, columnDefinition = "TEXT")
     private String prompt;
 

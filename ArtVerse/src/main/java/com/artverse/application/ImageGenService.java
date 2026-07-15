@@ -8,6 +8,8 @@ import com.artverse.common.BusinessException;
 import com.artverse.config.ArtVerseProperties;
 import com.artverse.domain.ImageGenRecord;
 import com.artverse.domain.ImageGenStatus;
+import com.artverse.domain.MangaAgentConversation;
+import com.artverse.domain.AiConversationType;
 import com.artverse.domain.User;
 import com.artverse.media.MediaStorageService;
 import com.artverse.persistence.ImageGenRecordRepository;
@@ -30,6 +32,7 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.UUID;
 import java.util.concurrent.ExecutorService;
 
 @Slf4j
@@ -47,12 +50,13 @@ public class ImageGenService {
     private final ObjectStorageService objectStorageService;
     private final ArtVerseProperties properties;
     private final TransactionTemplate transactionTemplate;
+    private final AiConversationService aiConversationService;
 
     @Qualifier("mangaGenerationExecutor")
     private final ExecutorService executor;
 
     @Transactional
-    public Map<String, Object> submit(String prompt, List<String> referenceImagesBase64, UserProviderConfig imageConfig, String sizeOverride) {
+    public Map<String, Object> submit(String prompt, List<String> referenceImagesBase64, UserProviderConfig imageConfig, String sizeOverride, UUID conversationId) {
         Long userId = StpUtil.getLoginIdAsLong();
         User user = userRepository.findById(userId)
                 .orElseThrow(() -> new BusinessException(401, "User not found"));
@@ -62,11 +66,18 @@ public class ImageGenService {
 
         ImageGenRecord record = new ImageGenRecord();
         record.setUser(user);
+        MangaAgentConversation conversation = conversationId == null
+                ? aiConversationService.activeImageConversation(user)
+                : aiConversationService.require(user, conversationId);
+        if (conversation.getConversationType() != AiConversationType.IMAGE_GEN) throw new BusinessException(400, "Conversation is not an image generation conversation");
+        record.setConversation(conversation);
         record.setPrompt(prompt);
         record.setModel(imageConfig.primaryModel().isBlank() ? properties.getImage().getModel() : imageConfig.primaryModel());
         record.setSize(sizeOverride == null || sizeOverride.isBlank() ? properties.getImage().getSize() : sizeOverride);
         record.setStatus(ImageGenStatus.RUNNING);
         record = recordRepository.save(record);
+        aiConversationService.autoTitle(conversation, prompt);
+        aiConversationService.touch(conversation);
 
         Long recordId = record.getId();
         List<String> references = referenceImagesBase64 == null ? List.of() : List.copyOf(referenceImagesBase64);
@@ -121,12 +132,14 @@ public class ImageGenService {
     }
 
     @Transactional
-    public Map<String, Object> listHistory(int page, int size) {
+    public Map<String, Object> listHistory(int page, int size, UUID conversationId) {
         Long userId = StpUtil.getLoginIdAsLong();
         OffsetDateTime now = OffsetDateTime.now();
         recordRepository.markExpiredRunningAsFailed(userId, now.minus(MAX_RUNNING_DURATION), now,
                 "Image generation was interrupted before completion. Please try again.");
-        Page<ImageGenRecord> result = recordRepository.findByUserId(userId, PageRequest.of(page, size));
+        Page<ImageGenRecord> result = conversationId == null
+                ? recordRepository.findByUserId(userId, PageRequest.of(page, size))
+                : recordRepository.findByUserIdAndConversationUuid(userId, conversationId, PageRequest.of(page, size));
         Map<String, Object> response = new LinkedHashMap<>();
         response.put("content", result.getContent().stream().map(this::recordToMap).toList());
         response.put("total_pages", result.getTotalPages());
@@ -147,6 +160,7 @@ public class ImageGenService {
     private Map<String, Object> recordToMap(ImageGenRecord record) {
         Map<String, Object> result = new LinkedHashMap<>();
         result.put("id", record.getId());
+        result.put("conversation_id", record.getConversation().getConversationUuid().toString());
         result.put("prompt", record.getPrompt());
         result.put("image_url", record.getImagePath());
         result.put("model", record.getModel());

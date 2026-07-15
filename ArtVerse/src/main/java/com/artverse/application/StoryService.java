@@ -112,8 +112,30 @@ public class StoryService {
         Set<Long> selectedChapterIds = chapterIds == null || chapterIds.isEmpty()
                 ? Set.of()
                 : new HashSet<>(chapterIds);
+        validatePublication(story, format, Boolean.TRUE.equals(isPublished), selectedChapterIds);
         publicationStrategies.apply(format, story, Boolean.TRUE.equals(isPublished), selectedChapterIds);
         return storyRepository.save(story);
+    }
+
+    private void validatePublication(Story story, PublicationFormat format, boolean published, Set<Long> selectedChapterIds) {
+        if (!published) return;
+        Set<Long> storyChapterIds = story.getChapters().stream().map(Chapter::getId).collect(java.util.stream.Collectors.toSet());
+        if (!storyChapterIds.containsAll(selectedChapterIds)) {
+            throw new BusinessException(400, "Selected chapters must belong to the story");
+        }
+        List<Chapter> chapters = selectedChapterIds.isEmpty()
+                ? story.getChapters()
+                : story.getChapters().stream().filter(chapter -> selectedChapterIds.contains(chapter.getId())).toList();
+        if (chapters.isEmpty()) {
+            throw new BusinessException(400, "At least one readable chapter is required before publishing");
+        }
+        boolean hasInvalidContent = format == PublicationFormat.NOVEL
+                ? chapters.stream().anyMatch(chapter -> chapter.getNovelContent() == null || chapter.getNovelContent().isBlank())
+                : chapters.stream().anyMatch(chapter -> chapter.getImages() == null || chapter.getImages().isEmpty());
+        if (hasInvalidContent) {
+            String contentType = format == PublicationFormat.NOVEL ? "non-empty novel content" : "at least one manga image";
+            throw new BusinessException(400, "Every published chapter must contain " + contentType);
+        }
     }
 
     @Transactional

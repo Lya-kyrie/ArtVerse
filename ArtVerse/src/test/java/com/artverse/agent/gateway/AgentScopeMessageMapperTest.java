@@ -1,6 +1,8 @@
 package com.artverse.agent.gateway;
 
 import com.artverse.agent.AgentMessage;
+import com.artverse.agent.AgentDataBlock;
+import io.agentscope.core.message.DataBlock;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import org.junit.jupiter.api.Test;
@@ -9,6 +11,7 @@ import java.util.ArrayList;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 
 class AgentScopeMessageMapperTest {
 
@@ -16,46 +19,58 @@ class AgentScopeMessageMapperTest {
 
     @Test
     void mapsMessagesWithoutSystemPrompt() {
-        List<Msg> result = mapper.map(List.of(
+        AgentScopeCallMessages result = mapper.map(List.of(
                 new AgentMessage("user", "question"),
                 new AgentMessage("assistant", "answer")));
 
-        assertMessage(result.get(0), MsgRole.USER, "question");
-        assertMessage(result.get(1), MsgRole.ASSISTANT, "answer");
+        assertEquals("", result.systemContent());
+        assertMessage(result.inputMessages().get(0), MsgRole.USER, "question");
+        assertMessage(result.inputMessages().get(1), MsgRole.ASSISTANT, "answer");
     }
 
     @Test
-    void prependsAllSystemMessagesToFirstInputMessage() {
-        List<Msg> result = mapper.map(List.of(
+    void routesSystemMessagesThroughTheSystemPromptChannel() {
+        AgentScopeCallMessages result = mapper.map(List.of(
                 new AgentMessage("system", "policy"),
                 new AgentMessage("user", "question"),
                 new AgentMessage("system", "context"),
                 new AgentMessage("assistant", "answer")));
 
-        assertEquals(2, result.size());
-        assertMessage(result.get(0), MsgRole.USER, "policy\n\ncontext\n\nquestion");
-        assertMessage(result.get(1), MsgRole.ASSISTANT, "answer");
+        assertEquals("policy\n\ncontext", result.systemContent());
+        assertEquals(2, result.inputMessages().size());
+        assertMessage(result.inputMessages().get(0), MsgRole.USER, "question");
+        assertMessage(result.inputMessages().get(1), MsgRole.ASSISTANT, "answer");
+        assertEquals(false, result.inputMessages().stream().anyMatch(message -> message.getRole() == MsgRole.SYSTEM));
     }
 
     @Test
-    void convertsSystemOnlyInputToUserMessage() {
-        List<Msg> result = mapper.map(List.of(
+    void routesSystemOnlyInputWithoutCreatingAPretendUserMessage() {
+        AgentScopeCallMessages result = mapper.map(List.of(
                 new AgentMessage("system", "policy"),
                 new AgentMessage("SYSTEM", "context")));
 
-        assertEquals(1, result.size());
-        assertMessage(result.get(0), MsgRole.USER, "policy\n\ncontext");
+        assertEquals("policy\n\ncontext", result.systemContent());
+        assertEquals(List.of(), result.inputMessages());
     }
 
     @Test
-    void defaultsUnknownRoleToUserWithoutChangingInput() {
+    void rejectsUnknownRoleWithoutChangingInput() {
         List<AgentMessage> input = new ArrayList<>(List.of(
                 new AgentMessage("tool", "result")));
 
-        List<Msg> result = mapper.map(input);
-
-        assertMessage(result.get(0), MsgRole.USER, "result");
+        assertThrows(IllegalArgumentException.class, () -> mapper.map(input));
         assertEquals(List.of(new AgentMessage("tool", "result")), input);
+    }
+
+    @Test
+    void mapsServerDataAsNativeDataBlock() {
+        AgentScopeCallMessages result = mapper.map(List.of(new AgentMessage("user",
+                new AgentDataBlock("chapter_snapshot", "chapter-7", java.util.Map.of("chapter", 7)))));
+
+        Msg message = result.inputMessages().getFirst();
+        assertEquals(MsgRole.USER, message.getRole());
+        assertEquals(1, message.getContentBlocks(DataBlock.class).size());
+        assertEquals("chapter_snapshot", message.getFirstContentBlock(DataBlock.class).getName());
     }
 
     private void assertMessage(Msg message, MsgRole role, String content) {

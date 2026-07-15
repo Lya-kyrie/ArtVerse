@@ -14,7 +14,11 @@ import java.util.Map;
 @Component
 public class ArtVerseSkillRepository implements AgentSkillRepository {
 
-    private static final String SOURCE = "artverse://platform-agent-skills";
+    /**
+     * Repository source identifier used as a filesystem namespace by the AgentScope {@code MarketplaceStager}.
+     * Must be a valid filesystem path component on all target platforms (no {@code : * ? " < > |}).
+     */
+    private static final String SOURCE = "artverse-platform-agent-skills";
     private final ArtVerseSkillRegistry registry;
 
     public ArtVerseSkillRepository(ArtVerseSkillRegistry registry) {

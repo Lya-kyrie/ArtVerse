@@ -7,6 +7,7 @@ import com.artverse.common.BusinessException;
 import com.artverse.config.ArtVerseProperties;
 import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.event.AgentEvent;
+import io.agentscope.core.event.ModelCallStartEvent;
 import io.agentscope.core.event.TextBlockDeltaEvent;
 import io.agentscope.core.message.Msg;
 import io.agentscope.harness.agent.HarnessAgent;
@@ -31,6 +32,8 @@ import java.io.IOException;
 import java.time.Duration;
 import java.util.List;
 import java.util.UUID;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ConcurrentMap;
 import java.util.function.Predicate;
 import java.util.concurrent.atomic.AtomicLong;
 
@@ -53,6 +56,9 @@ public class AgentScopeHarnessAgentGateway {
 
     private CircuitBreakerConfig circuitBreakerConfig;
     private RetryConfig retryConfig;
+    /** Active invocations keyed by ArtVerse request id so cancellation can target
+     * the exact AgentScope agent instead of relying only on local hot state. */
+    private final ConcurrentMap<UUID, HarnessAgent> activeAgents = new ConcurrentHashMap<>();
 
     @Autowired
     public AgentScopeHarnessAgentGateway(
@@ -132,14 +138,21 @@ public class AgentScopeHarnessAgentGateway {
         return Flux.defer(() -> {
                     List<com.artverse.agent.AgentMessage> effectiveMessages = messagesFor(request);
                     validateInputBudget(request, effectiveMessages);
-                    consumeModelBudget(request);
                     HarnessAgent agent = agentFactory.getOrCreate(request);
-                    RuntimeContext ctx = runtimeContextFactory.create(request);
-                    List<Msg> messages = messageMapper.map(effectiveMessages);
+                    AgentScopeCallMessages callMessages = messageMapper.map(effectiveMessages);
+                    RuntimeContext ctx = runtimeContextFactory.create(request, callMessages.systemContent());
+                    List<Msg> messages = callMessages.inputMessages();
                     AtomicLong outputTokens = new AtomicLong();
                     AtomicLong outputBytes = new AtomicLong();
+                    registerActive(request, agent);
                     return agent.streamEvents(messages, ctx)
                             .doOnNext(event -> {
+                                // A stream includes parent and Harness subagent model calls.
+                                // Counting the typed events keeps the distributed budget
+                                // authoritative even when subagents bypass this gateway API.
+                                if (event instanceof ModelCallStartEvent) {
+                                    consumeModelBudget(request);
+                                }
                                 if (event instanceof TextBlockDeltaEvent deltaEvent
                                         && deltaEvent.getDelta() != null) {
                                     AgentBudgetService.OutputUsage delta =
@@ -155,9 +168,11 @@ public class AgentScopeHarnessAgentGateway {
                                     }
                                 }
                             })
-                            .doFinally(signal -> recordOutputBudget(request,
-                                    new AgentBudgetService.OutputUsage(
-                                            outputTokens.get(), outputBytes.get())));
+                            .doFinally(signal -> {
+                                unregisterActive(request, agent);
+                                recordOutputBudget(request, new AgentBudgetService.OutputUsage(
+                                        outputTokens.get(), outputBytes.get()));
+                            });
                 })
                 .transformDeferred(CircuitBreakerOperator.of(circuitBreaker(request, "executor")))
                 .doOnError(e -> logGatewayError(e, "stream", request.requestId()));
@@ -169,10 +184,13 @@ public class AgentScopeHarnessAgentGateway {
                     validateInputBudget(request, effectiveMessages);
                     consumeModelBudget(request);
                     HarnessAgent agent = agentFactory.getOrCreate(request);
-                    RuntimeContext ctx = runtimeContextFactory.create(request);
-                    List<Msg> messages = messageMapper.map(effectiveMessages);
-                    return agent.call(messages, ctx).map(message -> enforceAndRecordOutput(
-                            request, message.getTextContent()));
+                    AgentScopeCallMessages callMessages = messageMapper.map(effectiveMessages);
+                    RuntimeContext ctx = runtimeContextFactory.create(request, callMessages.systemContent());
+                    List<Msg> messages = callMessages.inputMessages();
+                    registerActive(request, agent);
+                    return agent.call(messages, ctx)
+                            .map(message -> enforceAndRecordOutput(request, message.getTextContent()))
+                            .doFinally(signal -> unregisterActive(request, agent));
                 })
                 .transformDeferred(CircuitBreakerOperator.of(circuitBreaker(request, "executor")))
                 .doOnError(e -> logGatewayError(e, "generate", request.requestId()));
@@ -184,8 +202,10 @@ public class AgentScopeHarnessAgentGateway {
                     validateInputBudget(request, effectiveMessages);
                     consumeModelBudget(request);
                     HarnessAgent agent = agentFactory.getOrCreate(request);
-                    RuntimeContext ctx = runtimeContextFactory.create(request);
-                    List<Msg> messages = messageMapper.map(effectiveMessages);
+                    AgentScopeCallMessages callMessages = messageMapper.map(effectiveMessages);
+                    RuntimeContext ctx = runtimeContextFactory.create(request, callMessages.systemContent());
+                    List<Msg> messages = callMessages.inputMessages();
+                    registerActive(request, agent);
                     return agent.call(messages, outputType, ctx).map(message -> {
                         enforceAndRecordOutput(request, message.getTextContent());
                         T result = message.getStructuredData(outputType);
@@ -193,7 +213,7 @@ public class AgentScopeHarnessAgentGateway {
                             throw new BusinessException(502, "Agent returned empty structured output");
                         }
                         return result;
-                    });
+                    }).doFinally(signal -> unregisterActive(request, agent));
                 })
                 .transformDeferred(RetryOperator.of(retry(request, "router")))
                 .transformDeferred(CircuitBreakerOperator.of(circuitBreaker(request, "router")))
@@ -203,6 +223,35 @@ public class AgentScopeHarnessAgentGateway {
     private void consumeModelBudget(AgentRunRequest request) {
         if (budgetService != null) {
             budgetService.consumeModelCall(request);
+        }
+    }
+
+    /**
+     * Stops the currently executing AgentScope run, including its framework
+     * managed subagents. The database terminal transition remains owned by
+     * ArtVerse and is performed by the caller before invoking this method.
+     */
+    public boolean interrupt(UUID requestId) {
+        if (requestId == null) {
+            return false;
+        }
+        HarnessAgent agent = activeAgents.get(requestId);
+        if (agent == null) {
+            return false;
+        }
+        agent.interrupt();
+        return true;
+    }
+
+    private void registerActive(AgentRunRequest request, HarnessAgent agent) {
+        if (request.requestId() != null) {
+            activeAgents.put(request.requestId(), agent);
+        }
+    }
+
+    private void unregisterActive(AgentRunRequest request, HarnessAgent agent) {
+        if (request.requestId() != null) {
+            activeAgents.remove(request.requestId(), agent);
         }
     }
 

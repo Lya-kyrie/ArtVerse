@@ -65,7 +65,7 @@ class TailwindRenderer extends Renderer {
 
   code({ text }: { text: string }): string {
     const escaped = text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-    return `<pre class="block bg-bg-surface rounded-lg p-4 overflow-x-auto my-3 border border-border"><code class="text-xs font-mono text-text-primary leading-relaxed">${escaped}</code></pre>`;
+    return `<div class="relative group"><pre class="block bg-bg-surface rounded-lg p-4 overflow-x-auto my-3 border border-border"><code class="text-xs font-mono text-text-primary leading-relaxed">${escaped}</code></pre><button onclick="navigator.clipboard.writeText(this.closest('.group').querySelector('code').textContent)" class="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity px-2 py-1 text-xs rounded bg-bg-raised border border-border text-text-secondary hover:text-text-primary cursor-pointer" aria-label="复制代码">复制</button></div>`;
   }
 
   link({ href, title, tokens }: { href: string; title?: string | null; tokens: any[] }): string {
@@ -226,21 +226,51 @@ function normalizeMarkdown(src: string): string {
   // 0. Convert space-aligned pseudo-tables to GFM first
   let result = convertSpaceAlignedTables(src);
 
-  // 1. Ensure space after heading markers: ##text → ## text
+  // 1. Split heading markers concatenated with preceding Chinese text
+  //    e.g. "报告。#分镜审查" → "报告。\n# 分镜审查"
+  //    Only match when preceded by CJK characters or CJK punctuation
+  result = result.replace(/([\p{Script=Han}。！？），：；】》])(#{1,6})\s?(?=[^\s#\n])/gu, '$1\n$2 ');
+
+  // 2. Ensure space after heading markers at line start: ##text → ## text
   result = result.replace(/^(#{1,6})([^\s#])/gm, '$1 $2');
 
-  // 2. Split heading + table on same line: ## heading|col| → ## heading\n|col|
+  // 2.5a Split paragraph appended after heading title (word-level patterns)
+  //      e.g. "# 分镜审查报告我已通读" → "# 分镜审查报告\n我已通读"
+  //      Optional bold markers (**) between heading and paragraph preserved
+  result = result.replace(
+    /^(#{1,6}\s+)(.+?)((?:报告|审查|分析|总结|建议|结论|评分|结果|缺失|问题|优点|重点|牺牲|弊端))\s*(\*{0,2})\s*(我|当前|本文|本段|本篇|这里|以下|首先|现在|最后|而这|这是|然而|但前|对此|在此)(.+)$/gmu,
+    '$1$2$3\n\n$4$5$6'
+  );
+
+  // 2.5b Split paragraph appended after heading ending with number or CJK punctuation
+  //      e.g. "## 📊总评分：6.5 /10**节奏曲线**" → "## 📊总评分：6.5 /10\n**节奏曲线**"
+  result = result.replace(
+    /^(#{1,6}\s+)(.+?[\d。！？）】》])\s*(\*{0,2})\s*([\p{Script=Han}])(.+)$/gmu,
+    '$1$2\n$3$4$5'
+  );
+
+  // 2.5c Catch-all: any heading line > 55 chars likely has paragraph appended
+  //      Split at first CJK character after position ~30 in the heading content
+  result = result.replace(/^(#{1,6}\s+)([\s\S]{25,50}?)([\p{Script=Han}][\s\S]{10,})$/gmu, '$1$2\n$3');
+
+  // 3. Split heading + table on same line: ## heading|col| → ## heading\n|col|
   result = result.replace(/^(#{1,6}\s+.+?)(\|[^|\n]+\|[^|\n]+\|)/gm, '$1\n$2');
 
-  // 3. Insert newline before numbered list items following Chinese text
+  // 4. Insert newline before numbered list items following Chinese text
   result = result.replace(/([\p{Script=Han}。！？）])(\d+)\. /gu, '$1\n$2. ');
 
-  // 4. Insert newline before unordered list items following Chinese text
+  // 5. Insert newline before unordered list items following Chinese text
   result = result.replace(/([\p{Script=Han}。！？）])(- [^-])/gu, '$1\n$2');
 
-  // 5. Ensure horizontal rules on their own line
+  // 6. Ensure horizontal rules on their own line
   result = result.replace(/([^\n])---$/gm, '$1\n---');
   result = result.replace(/^---([^\n])/gm, '---\n$1');
+
+  // 7. Ensure code fence closer is on its own line (content```  → content\n```)
+  result = result.replace(/^(.+[^\n])```\s*$/gm, '$1\n```');
+
+  // 8. Ensure code fence closer has newline after (```text → ```\ntext)
+  result = result.replace(/^```(\S)/gm, '```\n$1');
 
   return result;
 }
@@ -269,10 +299,18 @@ export default function MarkdownRenderer({ content }: MarkdownRendererProps) {
   const html = useMemo(() => {
     try {
       const normalized = normalizeMarkdown(content);
-      return md.parse(normalized) as string;
+      let parsed = md.parse(normalized) as string;
+      // Post-process: wrap bare <table> in overflow container with proper styling
+      // (marked v16 may not call custom renderer for tables)
+      parsed = parsed.replace(
+        /<table>/g,
+        '<div class="overflow-x-auto rounded-lg border border-border my-4"><table class="w-full border-collapse">'
+      );
+      parsed = parsed.replace(/<\/table>/g, '</table></div>');
+      return parsed;
     } catch {
       // Fallback: if parsing fails, show raw text safely escaped
-      return content.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+      return content.replace(/&/g, '&').replace(/</g, '<').replace(/>/g, '>');
     }
   }, [content]);
 

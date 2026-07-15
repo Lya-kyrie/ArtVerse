@@ -33,8 +33,8 @@ public class ChatController {
                 configId(body),
                 "Please configure an LLM provider API key in Settings before using story chat."
         );
-        chatService.saveUserMessage(chapterId, content);
-        return chatService.streamChat(chapterId, user.getId(), llmConfig);
+        chatService.saveUserMessage(chapterId, content, user);
+        return chatService.streamChat(chapterId, user, llmConfig);
     }
 
     @GetMapping("/messages")

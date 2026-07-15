@@ -4,6 +4,7 @@ import com.artverse.application.workflow.MangaWorkflowOrchestrator;
 import com.artverse.application.workflow.MangaWorkflowRoute;
 import com.artverse.application.workflow.MangaRouteSource;
 import com.artverse.application.workflow.MangaRoutingMetrics;
+import com.artverse.agent.gateway.AgentScopeHarnessAgentGateway;
 import com.artverse.common.BusinessException;
 import com.artverse.config.ArtVerseProperties;
 import com.artverse.domain.MangaAgentConversation;
@@ -37,6 +38,7 @@ public class MangaAgentService {
     private final ChapterAccessService chapterAccessService;
     private final ArtVerseProperties properties;
     private final AgentConcurrencyGate agentConcurrencyGate;
+    private final AgentScopeHarnessAgentGateway agentScopeGateway;
 
     @Qualifier("mangaGenerationExecutor")
     private final ExecutorService executor;
@@ -94,6 +96,8 @@ public class MangaAgentService {
                                   MangaWorkflowRoute route, MangaRouteSource routeSource,
                                   UserProviderConfig llmConfig) {
         UUID effectiveRequestId = requestId == null ? UUID.randomUUID() : requestId;
+        conversationService.autoTitle(conversation, message);
+        conversationService.touch(conversation);
         AgentConcurrencyGate.Permit permit = agentConcurrencyGate.acquireOrReject(
                 conversation.getUser().getId(), effectiveRequestId);
         try {
@@ -151,6 +155,8 @@ public class MangaAgentService {
     private SseEmitter runStreamInternal(MangaAgentConversation conversation, String message, UUID requestId,
                                          MangaWorkflowRoute route, UserProviderConfig llmConfig) {
         UUID effectiveRequestId = requestId == null ? UUID.randomUUID() : requestId;
+        conversationService.autoTitle(conversation, message);
+        conversationService.touch(conversation);
         SseEmitter emitter = new SseEmitter(0L);
         MangaAgentRunEventPublisher.RunEventSink sink = mangaAgentRunEventPublisher.newSink(emitter);
         AtomicReference<MangaAgentRun> runRef = new AtomicReference<>();
@@ -398,6 +404,7 @@ public class MangaAgentService {
         routingMetrics.recordRunOutcome(run.getRoute(), "CANCELLED");
         agentRunToolStatus.markCancelled(user.getId(), chapterId, requestId);
         agentRunToolStatus.clearWaitingInput(user.getId(), chapterId, requestId);
+        agentScopeGateway.interrupt(requestId);
         return mangaAgentRunService.snapshot(run);
     }
 
@@ -410,6 +417,7 @@ public class MangaAgentService {
         routingMetrics.recordRunOutcome(run.getRoute(), "CANCELLED");
         agentRunToolStatus.markCancelled(user.getId(), chapterId, requestId);
         agentRunToolStatus.clearWaitingInput(user.getId(), chapterId, requestId);
+        agentScopeGateway.interrupt(requestId);
         return mangaAgentRunService.snapshot(run);
     }
 

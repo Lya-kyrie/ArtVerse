@@ -216,9 +216,15 @@ public class MangaWorkflowRouter {
                                                List<MangaWorkflowRoute> suggestedSteps,
                                                Set<MangaWorkflowCapability> requiredCapabilities) {
         boolean writeRoute = suggestedSteps.stream().anyMatch(MangaWorkflowRoute::isMutating);
+        // The model classifies intent and capabilities only. Execution policy,
+        // context requirements, and the result schema are compiled by the
+        // application, so a forged model contract can never widen authority.
         return new RoutingDecision(route, confidence, raw.intents(), writeRoute, false, raw.reasonCode(),
                 suggestedSteps, RoutingDecision.CURRENT_VERSION, requiredCapabilities,
-                raw.expectedToolPolicy(), raw.requiredContextFields(), raw.outputContract(), raw.fallbackReason());
+                RoutingDecision.ExpectedToolPolicy.forRoutes(suggestedSteps),
+                RoutingDecision.contextFieldsFor(suggestedSteps),
+                RoutingDecision.RouteOutputContract.forRoute(route),
+                null);
     }
 
     private RoutingDecision.RouteFallbackReason fallbackReason(String reason) {
@@ -249,9 +255,8 @@ public class MangaWorkflowRouter {
                                           AgentModelSpec modelSpec, String llmApiKey) {
         String input = "Available capability catalog: " + MangaWorkflowCapability.routingCatalog()
                 + "\nReturn every capability required by the request in requiredCapabilities. "
-                + "Also return the executable route contract fields: expectedToolPolicy, "
-                + "requiredContextFields, outputContract, and fallbackReason when you deliberately fall back. "
-                + "Execution plans are application-owned; suggestedSteps is only a routing hint. "
+                + "The application owns execution policy, context requirements, result contracts, and fallbacks; "
+                + "suggestedSteps is only a routing hint. "
                 + "Use CONVERSATION when any required capability is UNAVAILABLE."
                 + "\nClassify this user request for the current ArtVerse chapter:\n" + message;
         return new AgentRunRequest(

@@ -2,7 +2,7 @@ package com.artverse.agent.gateway.tools;
 
 import com.artverse.application.tools.MangaContextTools;
 import com.artverse.application.tools.MangaHitlTools;
-import com.artverse.application.tools.MangaStoryboardTools;
+import com.artverse.application.tools.StoryboardAgentTools;
 import io.agentscope.core.tool.Toolkit;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
@@ -17,7 +17,7 @@ class AgentToolGroupSupport {
     static final String HITL_TOOLS = "hitl-tools";
 
     private final MangaContextTools mangaContextTools;
-    private final MangaStoryboardTools mangaStoryboardTools;
+    private final StoryboardAgentTools storyboardAgentTools;
     private final MangaHitlTools mangaHitlTools;
 
     void configureContext(Toolkit toolkit) {
@@ -28,7 +28,7 @@ class AgentToolGroupSupport {
     void configureStoryboard(Toolkit toolkit) {
         registerContext(toolkit);
         createGroup(toolkit, STORYBOARD_TOOLS,
-                "Storyboard generation and storyboard persistence tools.", mangaStoryboardTools);
+                "Validated storyboard draft and commit tools.", storyboardAgentTools);
         createGroup(toolkit, HITL_TOOLS,
                 "Human-in-the-loop tools for asking the user to choose or confirm.", mangaHitlTools);
         toolkit.setActiveGroups(List.of(CONTEXT_TOOLS, STORYBOARD_TOOLS, HITL_TOOLS));

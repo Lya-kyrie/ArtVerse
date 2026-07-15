@@ -8,6 +8,9 @@ import com.artverse.domain.MangaAgentConversationStatus;
 import com.artverse.domain.MangaAgentMessage;
 import com.artverse.domain.MessageRole;
 import com.artverse.domain.User;
+import com.artverse.domain.AiConversationType;
+import com.artverse.domain.AiConversationTitleSource;
+import com.artverse.domain.AiConversationTitleState;
 import com.artverse.persistence.MangaAgentConversationRepository;
 import com.artverse.persistence.MangaAgentMessageRepository;
 import lombok.RequiredArgsConstructor;
@@ -34,48 +37,40 @@ public class MangaAgentConversationService {
     private final MangaAgentConversationRepository conversationRepository;
     private final MangaAgentMessageRepository mangaAgentMessageRepository;
     private final ChapterAccessService chapterAccessService;
+    private final MangaAgentConversationWriteService conversationWriteService;
 
     // 閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓 conversation management 閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓
 
     @Transactional(readOnly = true)
     public List<MangaAgentConversation> listConversations(Long chapterId, User user) {
         chapterAccessService.requireVisible(chapterId, user.getId());
-        return conversationRepository.findByUserIdAndChapterIdOrderByUpdatedAtDesc(user.getId(), chapterId);
+        return conversationRepository.findByUserIdAndChapterIdAndConversationTypeOrderByLastActivityAtDesc(
+                user.getId(), chapterId, AiConversationType.MANGA_AGENT);
     }
 
-    @Transactional
     public MangaAgentConversation activeOrCreate(Long chapterId, User user) {
-        Chapter chapter = chapterAccessService.requireVisible(chapterId, user.getId());
-        return findActiveConversation(user.getId(), chapterId)
-                .orElseGet(() -> saveNewConversation(user, chapter));
-    }
-
-    @Transactional
-    public MangaAgentConversation createConversation(Long chapterId, User user) {
-        Chapter chapter = chapterAccessService.requireVisible(chapterId, user.getId());
-        conversationRepository.findFirstByUserIdAndChapterIdAndStatusOrderByUpdatedAtDesc(
-                user.getId(),
-                chapterId,
-                MangaAgentConversationStatus.ACTIVE
-        ).ifPresent(this::archiveConversation);
-        return saveNewConversation(user, chapter);
-    }
-
-    private Optional<MangaAgentConversation> findActiveConversation(Long userId, Long chapterId) {
-        return conversationRepository.findFirstByUserIdAndChapterIdAndStatusOrderByUpdatedAtDesc(
-                userId, chapterId, MangaAgentConversationStatus.ACTIVE);
-    }
-
-    private MangaAgentConversation saveNewConversation(User user, Chapter chapter) {
         try {
-            return conversationRepository.save(newConversation(user, chapter));
+            return conversationWriteService.activeOrCreate(chapterId, user);
         } catch (DataIntegrityViolationException e) {
-            log.warn("Race creating active conversation for user {} chapter {}; falling back to existing",
-                    user.getId(), chapter.getId(), e);
-            return findActiveConversation(user.getId(), chapter.getId())
-                    .orElseThrow(() -> new BusinessException(409,
-                            "Another active conversation was just created for this chapter; please retry"));
+            return activeConversationAfterConcurrentCreate(chapterId, user, e);
         }
+    }
+
+    public MangaAgentConversation createConversation(Long chapterId, User user) {
+        try {
+            return conversationWriteService.createConversation(chapterId, user);
+        } catch (DataIntegrityViolationException e) {
+            return activeConversationAfterConcurrentCreate(chapterId, user, e);
+        }
+    }
+
+    private MangaAgentConversation activeConversationAfterConcurrentCreate(Long chapterId, User user,
+                                                                            DataIntegrityViolationException e) {
+        log.warn("Concurrent active Manga Agent conversation creation for user {} chapter {}; using the winner",
+                user.getId(), chapterId);
+        return conversationWriteService.requireActiveConversation(chapterId, user)
+                .orElseThrow(() -> new BusinessException(409,
+                        "Another active conversation was just created for this chapter; please retry"));
     }
 
     @Transactional(readOnly = true)
@@ -84,7 +79,8 @@ public class MangaAgentConversationService {
             throw new BusinessException(400, "conversationId is required");
         }
         chapterAccessService.requireVisible(chapterId, user.getId());
-        return conversationRepository.findByUserIdAndChapterIdAndConversationUuid(user.getId(), chapterId, conversationId)
+        return conversationRepository.findByUserIdAndChapterIdAndConversationUuidAndConversationType(
+                        user.getId(), chapterId, conversationId, AiConversationType.MANGA_AGENT)
                 .orElseThrow(() -> new BusinessException(404, "Agent conversation not found"));
     }
 
@@ -198,6 +194,22 @@ public class MangaAgentConversationService {
         return fallbackAfterToolSuccess(conversation, requestId, toolState, error, true);
     }
 
+    @Transactional
+    public void autoTitle(MangaAgentConversation conversation, String input) {
+        if (conversation.getTitleSource() != AiConversationTitleSource.DEFAULT || input == null || input.strip().length() <= 2) return;
+        conversation.setTitle(AiConversationService.fallbackTitle(input));
+        conversation.setTitleSource(AiConversationTitleSource.FALLBACK);
+        conversation.setTitleState(AiConversationTitleState.FINALIZED);
+        conversation.setTitleGenerationStartedAt(null);
+        conversationRepository.save(conversation);
+    }
+
+    @Transactional
+    public void touch(MangaAgentConversation conversation) {
+        conversation.setLastActivityAt(OffsetDateTime.now());
+        conversationRepository.save(conversation);
+    }
+
     public Map<String, Object> fallbackAfterToolSuccess(MangaAgentConversation conversation, UUID requestId,
                                                         AgentRunToolStatus.RunState toolState, String error,
                                                         boolean persistMessages) {
@@ -214,16 +226,6 @@ public class MangaAgentConversationService {
     }
 
     // 閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓 private helpers 閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓
-
-    private MangaAgentConversation newConversation(User user, Chapter chapter) {
-        MangaAgentConversation conversation = new MangaAgentConversation();
-        conversation.setUser(user);
-        conversation.setStory(chapter.getStory());
-        conversation.setChapter(chapter);
-        conversation.setTitle("New chat");
-        conversation.setStatus(MangaAgentConversationStatus.ACTIVE);
-        return conversation;
-    }
 
     private void archiveConversation(MangaAgentConversation conversation) {
         if (conversation.getStatus() == MangaAgentConversationStatus.ARCHIVED) {

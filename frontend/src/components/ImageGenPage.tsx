@@ -26,6 +26,9 @@ import {
   imageGenUrl,
   listImageGenHistory,
   type ImageGenRecord,
+  createAiConversation,
+  renameAiConversation,
+  archiveAiConversation,
 } from '../api';
 import {
   cacheImage,
@@ -47,6 +50,7 @@ interface Message {
 
 interface GenTheme {
   id: string;
+  conversationId?: string;
   name: string;
   createdAt: string;
   messages: Message[];
@@ -886,11 +890,14 @@ export default function ImageGenPage() {
     [isGenerating, prompt, refFiles.length],
   );
 
-  const handleCreateTheme = () => {
+  const handleCreateTheme = async () => {
     const now = new Date().toISOString();
     const count = themes.length + 1;
+    let conversationId: string | undefined;
+    try { conversationId = (await createAiConversation('IMAGE_GEN', `新主题 ${count}`)).conversationId; } catch {}
     const newTheme: GenTheme = {
       id: generateId(),
+      conversationId,
       name: `新主题 ${count}`,
       createdAt: now,
       messages: [],
@@ -903,6 +910,7 @@ export default function ImageGenPage() {
 
   const handleDeleteTheme = (id: string) => {
     const deletedTheme = themes.find((theme) => theme.id === id);
+    if (deletedTheme?.conversationId) void archiveAiConversation(deletedTheme.conversationId).catch(() => {});
     deletedTheme?.messages.forEach((message) => {
       message.refImageKeys?.forEach((key) => { void deleteCachedImage(key); });
     });
@@ -924,6 +932,8 @@ export default function ImageGenPage() {
   };
 
   const handleRenameTheme = (id: string, name: string) => {
+    const conversationId = themes.find((theme) => theme.id === id)?.conversationId;
+    if (conversationId) void renameAiConversation(conversationId, name).catch(() => {});
     setThemes((prev) =>
       prev.map((t) => (t.id === id ? { ...t, name } : t)),
     );
@@ -1032,6 +1042,7 @@ export default function ImageGenPage() {
         currentConfig.resolution,
         selectedImageModel,
         controller.signal,
+        activeTheme?.conversationId,
       );
       // Clear abort ref if this request completed
       if (abortRef.current === controller) abortRef.current = null;

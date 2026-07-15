@@ -6,6 +6,7 @@ import com.artverse.application.publication.NovelPublicationStrategy;
 import com.artverse.application.publication.PublicationStrategyRegistry;
 import com.artverse.common.BusinessException;
 import com.artverse.domain.Chapter;
+import com.artverse.domain.MangaImage;
 import com.artverse.domain.Story;
 import com.artverse.persistence.ChapterRepository;
 import com.artverse.persistence.StoryRepository;
@@ -114,12 +115,25 @@ class StoryServicePublishFormatTest {
         first.setId(11L);
         first.setStory(story);
         first.setChapterNumber(1);
+        first.setNovelContent("第一章正文");
+        first.getImages().add(image(first, 1));
         Chapter second = new Chapter();
         second.setId(12L);
         second.setStory(story);
         second.setChapterNumber(2);
+        second.setNovelContent("第二章正文");
+        second.getImages().add(image(second, 1));
         story.getChapters().add(first);
         story.getChapters().add(second);
         return story;
+    }
+
+    private MangaImage image(Chapter chapter, int number) {
+        MangaImage image = new MangaImage();
+        image.setId((long) (100 + chapter.getChapterNumber()));
+        image.setChapter(chapter);
+        image.setImageNumber(number);
+        image.setImagePath("stories/7/" + chapter.getChapterNumber() + ".png");
+        return image;
     }
 }

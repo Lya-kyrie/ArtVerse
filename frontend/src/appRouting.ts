@@ -2,7 +2,8 @@ export type AppView = 'home' | 'square' | 'workspace' | 'editor' | 'imagegen' | 
 
 export type AppRoute =
   | { view: Exclude<AppView, 'editor'> }
-  | { view: 'editor'; storyId: number };
+  | { view: 'editor'; storyId: number }
+  | { view: 'square'; format: 'novel' | 'manga'; storyId: number; chapterId?: number };
 
 const SIMPLE_VIEWS = new Set<Exclude<AppView, 'editor'>>([
   'home',
@@ -15,13 +16,16 @@ const SIMPLE_VIEWS = new Set<Exclude<AppView, 'editor'>>([
 
 export function parseAppHash(hash: string): AppRoute | null {
   const path = hash.replace(/^#/, '').replace(/^\/+|\/+$/g, '');
+  const [pathname] = path.split('?');
   if (!path) return null;
 
-  if (SIMPLE_VIEWS.has(path as Exclude<AppView, 'editor'>)) {
-    return { view: path as Exclude<AppView, 'editor'> };
+  if (SIMPLE_VIEWS.has(pathname as Exclude<AppView, 'editor'>)) {
+    return { view: pathname as Exclude<AppView, 'editor'> };
   }
 
   const editorMatch = /^editor\/(\d+)$/.exec(path);
+  const squareMatch = /^square\/(novel|manga)\/(\d+)(?:\/chapter\/(\d+))?$/.exec(pathname);
+  if (squareMatch) return { view: 'square', format: squareMatch[1] as 'novel' | 'manga', storyId: Number(squareMatch[2]), ...(squareMatch[3] ? { chapterId: Number(squareMatch[3]) } : {}) };
   if (!editorMatch) return null;
 
   const storyId = Number(editorMatch[1]);
@@ -29,7 +33,9 @@ export function parseAppHash(hash: string): AppRoute | null {
 }
 
 export function appRouteHash(route: AppRoute): string {
-  return route.view === 'editor' ? `#/editor/${route.storyId}` : `#/${route.view}`;
+  if (route.view === 'editor') return `#/editor/${route.storyId}`;
+  if (route.view === 'square' && 'storyId' in route) return `#/square/${route.format}/${route.storyId}${route.chapterId ? `/chapter/${route.chapterId}` : ''}`;
+  return `#/${route.view}`;
 }
 
 function updateHash(route: AppRoute, replace: boolean): void {

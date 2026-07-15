@@ -1,8 +1,9 @@
 import { useEffect, useRef, useState } from 'react';
 import { Send, Image, Square, MessageSquare, FileText, Save } from 'lucide-react';
-import { API_KEY_CHANGE_EVENT, chatStream, getPrimaryProviderModel, getProviderModelOptions, importNovel, type Chapter } from '../api';
+import { API_KEY_CHANGE_EVENT, chatStream, getPrimaryProviderModel, getProviderModelOptions, importNovel, listAiConversations, renameAiConversation, type AiConversationSummary, type Chapter } from '../api';
 import MarkdownRenderer from './MarkdownRenderer';
 import ModelSwitcher from './ModelSwitcher';
+import InlineConversationTitle from './InlineConversationTitle';
 
 type Mode = 'chat' | 'import';
 const MAX_IMPORT_CHARS = 50000;
@@ -24,6 +25,7 @@ export default function ChatPanel({ chapter, onMessageSent, onChapterRefresh, on
   const [importText, setImportText] = useState('');
   const [importing, setImporting] = useState(false);
   const [importError, setImportError] = useState('');
+  const [conversation, setConversation] = useState<AiConversationSummary | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -62,6 +64,11 @@ export default function ChatPanel({ chapter, onMessageSent, onChapterRefresh, on
     setImportError('');
     setStreamContent('');
     setStreaming(false);
+  }, [chapter?.id]);
+
+  useEffect(() => {
+    if (!chapter) { setConversation(null); return; }
+    void listAiConversations('STORY_CHAT', chapter.id).then(items => setConversation(items[0] ?? null)).catch(() => setConversation(null));
   }, [chapter?.id]);
 
   // Auto-scroll only if user hasn't scrolled up.
@@ -193,9 +200,12 @@ export default function ChatPanel({ chapter, onMessageSent, onChapterRefresh, on
     <div className="flex flex-col h-full bg-bg-base">
       {/* Header with mode tabs */}
       <div className="px-4 py-2.5 border-b border-border flex items-center justify-between gap-3">
-        <h2 className="text-sm font-semibold text-text-secondary tracking-wide shrink-0">
-          第 {chapter?.chapter_number ?? '–'} 话
-        </h2>
+        <div className="min-w-0 shrink">
+          {conversation ? <InlineConversationTitle title={conversation.title} onSave={async (title) => {
+            const updated = await renameAiConversation(conversation.conversationId, title);
+            setConversation(updated);
+          }} /> : <h2 className="text-sm font-semibold text-text-secondary tracking-wide">会话</h2>}
+        </div>
         <div className="flex items-center gap-0.5">
           <button
             onClick={() => setMode('chat')}
@@ -278,12 +288,12 @@ export default function ChatPanel({ chapter, onMessageSent, onChapterRefresh, on
               </div>
             )}
             {messages.map((msg, i) => (
-              <div key={i} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
+              <div key={i} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start w-full'}`}>
                 <div
-                  className={`max-w-[80%] px-4 py-2.5 rounded-xl text-sm leading-relaxed ${
+                  className={`px-4 py-3 rounded-xl text-sm leading-relaxed ${
                     msg.role === 'user'
-                      ? 'bg-accent-muted/40 text-text-primary rounded-br-sm'
-                      : 'bg-bg-raised border border-border text-text-primary rounded-bl-sm shadow-sm'
+                      ? 'max-w-[80%] bg-accent-muted/40 text-text-primary rounded-br-sm'
+                      : 'w-full bg-bg-raised border border-border text-text-primary rounded-bl-sm shadow-sm'
                   }`}
                 >
                   <MarkdownRenderer content={msg.content} />
@@ -303,7 +313,7 @@ export default function ChatPanel({ chapter, onMessageSent, onChapterRefresh, on
             )}
             {streaming && streamContent && (
               <div className="flex justify-start">
-                <div className="max-w-[80%] px-4 py-2.5 rounded-xl rounded-bl-sm bg-bg-raised border border-border text-text-primary text-sm leading-relaxed shadow-sm relative">
+                <div className="w-full px-4 py-3 rounded-xl rounded-bl-sm bg-bg-raised border border-border text-text-primary text-sm leading-relaxed shadow-sm relative">
                   <MarkdownRenderer content={streamContent} />
                   <span className="inline-block w-1.5 h-4 ml-0.5 bg-accent rounded-sm" style={{ animation: 'cursor-blink 1s step-end infinite' }} />
                 </div>

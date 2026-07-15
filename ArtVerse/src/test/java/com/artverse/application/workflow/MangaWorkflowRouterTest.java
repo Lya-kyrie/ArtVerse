@@ -135,7 +135,7 @@ class MangaWorkflowRouterTest {
     }
 
     @Test
-    void invalidToolPolicyContractFallsBackBeforeDispatch() {
+    void ignoresModelToolPolicyAndCompilesApplicationOwnedContract() {
         RoutingDecision classified = new RoutingDecision(
                 MangaWorkflowRoute.STORYBOARD,
                 0.95,
@@ -155,14 +155,14 @@ class MangaWorkflowRouterTest {
 
         RoutingDecision result = route("rewrite storyboard");
 
-        assertThat(result.route()).isEqualTo(MangaWorkflowRoute.CONVERSATION);
-        assertThat(result.reasonCode()).isEqualTo("invalid_contract:tool_policy_mismatch");
-        assertThat(result.fallbackReason().category()).isEqualTo("invalid_contract");
-        assertThat(result.fallbackReason().code()).isEqualTo("tool_policy_mismatch");
+        assertThat(result.route()).isEqualTo(MangaWorkflowRoute.STORYBOARD);
+        assertThat(result.expectedToolPolicy()).isEqualTo(RoutingDecision.ExpectedToolPolicy.WRITE_WITH_HITL);
+        assertThat(result.outputContract().schemaName()).isEqualTo("storyboard.mutation_result");
+        assertThat(result.fallbackReason()).isNull();
     }
 
     @Test
-    void incompleteContextContractFallsBackBeforeDispatch() {
+    void ignoresModelContextContractAndCompilesApplicationOwnedContext() {
         RoutingDecision classified = new RoutingDecision(
                 MangaWorkflowRoute.REVIEW,
                 0.95,
@@ -182,9 +182,9 @@ class MangaWorkflowRouterTest {
 
         RoutingDecision result = route("review storyboard continuity");
 
-        assertThat(result.route()).isEqualTo(MangaWorkflowRoute.CONVERSATION);
-        assertThat(result.reasonCode()).isEqualTo("invalid_contract:context_fields_incomplete");
-        assertThat(result.fallbackReason().code()).isEqualTo("context_fields_incomplete");
+        assertThat(result.route()).isEqualTo(MangaWorkflowRoute.REVIEW);
+        assertThat(result.requiredContextFields()).containsExactlyInAnyOrder(
+                "conversation_summary", "character_summary", "storyboard_excerpt");
     }
 
     @Test

@@ -57,7 +57,11 @@ public record MangaWorkflowResult(
                 ? payload.get("agent_final_response_degraded")
                 : payload.get("degraded");
         boolean degraded = Boolean.TRUE.equals(degradedValue);
-        return new MangaWorkflowResult(reply, reply, reply, degraded, Map.of());
+        Map<String, Object> attributes = new LinkedHashMap<>(payload);
+        attributes.remove("reply");
+        attributes.remove("agent_final_response_degraded");
+        attributes.remove("degraded");
+        return new MangaWorkflowResult(reply, reply, reply, degraded, attributes);
     }
 
     private Map<String, Object> mergeAttributes(Map<String, Object> incoming) {

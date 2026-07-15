@@ -25,7 +25,10 @@ import reactor.core.publisher.Flux;
 import io.agentscope.core.event.AgentEvent;
 import io.agentscope.core.event.AgentStartEvent;
 import io.agentscope.core.event.AgentEndEvent;
+import io.agentscope.core.event.AgentResultEvent;
 import io.agentscope.core.event.TextBlockDeltaEvent;
+import io.agentscope.core.message.Msg;
+import io.agentscope.core.message.MsgRole;
 
 import java.util.Map;
 import java.util.UUID;
@@ -35,6 +38,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 class MangaAgentExecutionSupportTest {
@@ -78,15 +82,14 @@ class MangaAgentExecutionSupportTest {
     }
 
     @Test
-    void executeRequestPersistsSuccessfulReply() {
+    void executeRequestReturnsCandidateWithoutPersistingReply() {
         when(gateway.generateText(request)).thenReturn(Mono.just("finished"));
 
         MangaWorkflowResult result = support.executeRequest(context, request, false);
 
         assertThat(result.reply()).isEqualTo("finished");
         assertThat(result.degraded()).isFalse();
-        verify(conversationService).saveMessage(
-                conversation, MessageRole.ASSISTANT, "finished", requestId);
+        verifyNoInteractions(conversationService);
     }
 
     @Test
@@ -126,14 +129,14 @@ class MangaAgentExecutionSupportTest {
         List<AgentMessage> messages = support.prepareAgentMessages(context);
 
         assertThat(messages).hasSize(3);
-        assertThat(messages.get(1).role()).isEqualTo("system");
-        assertThat(messages.get(1).content()).contains("artverse_server_data_block")
-                .contains("\"context_hash\" : \"hash-123\"")
-                .contains("\"required_fields\"")
-                .contains("\"scene_count\" : 6")
-                .contains("\"image_count\" : 2")
-                .contains("source exists")
-                .contains("storyboard exists");
+        assertThat(messages.get(1).role()).isEqualTo("user");
+        assertThat(messages.get(1).content()).isEmpty();
+        assertThat(messages.get(1).dataBlock()).isNotNull();
+        assertThat(messages.get(1).dataBlock().name()).isEqualTo("chapter_snapshot");
+        assertThat(messages.get(1).dataBlock().payload())
+                .containsEntry("context_hash", "hash-123")
+                .containsKey("required_fields")
+                .containsKey("data");
         assertThat(messages.get(2).role()).isEqualTo("user");
     }
 
@@ -163,7 +166,7 @@ class MangaAgentExecutionSupportTest {
         when(gateway.generateText(request)).thenReturn(Mono.error(new IllegalStateException("model failed")));
         when(toolState.hasSuccessfulMutatingTool()).thenReturn(true);
         when(conversationService.fallbackAfterToolSuccess(
-                conversation, requestId, toolState, "model failed", true))
+                conversation, requestId, toolState, "model failed", false))
                 .thenReturn(Map.of(
                         "reply", "Storyboard was saved",
                         "agent_final_response_degraded", true
@@ -182,10 +185,11 @@ class MangaAgentExecutionSupportTest {
 
         MangaWorkflowResult result = support.executeRequest(context, request, false);
 
-        assertThat(result.reply()).isEqualTo("review complete");
+        assertThat(result.reply()).isEqualTo("authoritative final review");
         assertThat(result.degraded()).isFalse();
         assertThat(result.attributes()).containsEntry("review_subagents_started", 4)
-                .containsEntry("review_subagents_completed", 4);
+                .containsEntry("review_subagents_completed", 4)
+                .containsEntry("review_subagents_max_concurrency", 1);
         verify(reviewMetrics).recordStarted(4);
         verify(reviewMetrics).recordCompleted(4);
     }
@@ -211,12 +215,12 @@ class MangaAgentExecutionSupportTest {
         if (includeContinuity) reviewers.add("continuity-reviewer");
         java.util.List<AgentEvent> events = new java.util.ArrayList<>();
         for (String reviewer : reviewers) {
-            events.add(new AgentStartEvent("event", reviewer, "session", "reply", reviewer, "assistant"));
-        }
-        for (String reviewer : reviewers) {
-            events.add(new AgentEndEvent("reply").withSource(reviewer));
+            events.add(new AgentStartEvent("event", "main/" + reviewer, "session", "reply", reviewer, "assistant"));
+            events.add(new AgentEndEvent("reply").withSource("main/" + reviewer));
         }
         events.add(new TextBlockDeltaEvent("event", "manga-review", "reply", "block", "review complete"));
+        events.add(new AgentResultEvent(Msg.builder().role(MsgRole.ASSISTANT)
+                .textContent("authoritative final review").build()).withSource("manga-review"));
         return events;
     }
 }

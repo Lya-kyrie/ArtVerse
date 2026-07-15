@@ -10,6 +10,7 @@ import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
 import java.util.Map;
+import java.util.UUID;
 
 @RestController
 @RequestMapping("/api/image-gen")
@@ -33,13 +34,14 @@ public class ImageGenController {
                 configId(body),
                 "Please configure an image provider API key in Settings before using image generation."
         );
-        return imageGenService.submit(prompt, referenceImages, imageConfig, size);
+        return imageGenService.submit(prompt, referenceImages, imageConfig, size, uuidValue(body.get("conversation_id")));
     }
 
     @GetMapping("/history")
     public Map<String, Object> history(@RequestParam(defaultValue = "0") int page,
-                                        @RequestParam(defaultValue = "50") int size) {
-        return imageGenService.listHistory(page, size);
+                                        @RequestParam(defaultValue = "50") int size,
+                                        @RequestParam(required = false, name = "conversation_id") UUID conversationId) {
+        return imageGenService.listHistory(page, size, conversationId);
     }
 
     @DeleteMapping("/{id}")
@@ -77,5 +79,11 @@ public class ImageGenController {
         Object value = body.get("config_id");
         if (value == null || value.toString().isBlank()) return null;
         return Long.valueOf(value.toString());
+    }
+
+    private UUID uuidValue(Object value) {
+        if (value == null || value.toString().isBlank()) return null;
+        try { return UUID.fromString(value.toString()); }
+        catch (IllegalArgumentException e) { throw new com.artverse.common.BusinessException(400, "Invalid conversation_id"); }
     }
 }

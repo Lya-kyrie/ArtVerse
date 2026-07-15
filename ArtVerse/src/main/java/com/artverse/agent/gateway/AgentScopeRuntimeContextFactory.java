@@ -16,9 +16,17 @@ public class AgentScopeRuntimeContextFactory {
 
 
     public RuntimeContext create(AgentRunRequest request) {
+        return create(request, "");
+    }
+
+    public RuntimeContext create(AgentRunRequest request, String systemContent) {
         RuntimeContext.Builder builder = RuntimeContext.builder()
                 .sessionId(createSessionId(request))
                 .userId(request.userId());
+        if (systemContent != null && !systemContent.isBlank()) {
+            builder.put(AgentScopeSystemPromptContext.class,
+                    new AgentScopeSystemPromptContext(systemContent));
+        }
         if (request.taskType() != null && request.taskType().isMangaExecutionTask()) {
             builder.put(MangaAgentRuntimeContext.class, new MangaAgentRuntimeContext(
                     parseUserIdForTool(request.userId()),

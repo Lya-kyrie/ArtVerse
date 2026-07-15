@@ -93,7 +93,7 @@ class MangaWorkflowOrchestratorTest {
         MangaWorkflowRouter router = mock(MangaWorkflowRouter.class);
         MangaWorkflowOrchestrator orchestrator = new MangaWorkflowOrchestrator(
                 conversations, modelSpecs, keys, guard, runs, assembler, mock(MangaWorkflowContextPolicy.class), registry, router,
-                mock(MangaRoutingMetrics.class));
+                mock(MangaRoutingMetrics.class), resultFinalizer());
 
         User user = new User();
         user.setId(1L);
@@ -145,7 +145,7 @@ class MangaWorkflowOrchestratorTest {
         MangaWorkflowRouter router = mock(MangaWorkflowRouter.class);
         MangaWorkflowOrchestrator orchestrator = new MangaWorkflowOrchestrator(
                 conversations, modelSpecs, keys, guard, runs, assembler, contextPolicy, registry, router,
-                mock(MangaRoutingMetrics.class));
+                mock(MangaRoutingMetrics.class), resultFinalizer());
 
         User user = new User();
         user.setId(1L);
@@ -217,7 +217,7 @@ class MangaWorkflowOrchestratorTest {
         MangaWorkflowRouter router = mock(MangaWorkflowRouter.class);
         MangaWorkflowOrchestrator orchestrator = new MangaWorkflowOrchestrator(
                 conversations, modelSpecs, keys, guard, runs, assembler, contextPolicy, registry, router,
-                mock(MangaRoutingMetrics.class));
+                mock(MangaRoutingMetrics.class), resultFinalizer());
 
         User user = new User();
         user.setId(1L);
@@ -271,7 +271,6 @@ class MangaWorkflowOrchestratorTest {
 
         assertThat(result).containsEntry("reply", "缺少分镜，先不评审。");
         verify(conversations).saveMessage(conversation, com.artverse.domain.MessageRole.USER, "review", requestId);
-        verify(conversations).saveMessage(conversation, com.artverse.domain.MessageRole.ASSISTANT, "缺少分镜，先不评审。", requestId);
         verify(registry, never()).handlerFor(any());
     }
 
@@ -288,7 +287,8 @@ class MangaWorkflowOrchestratorTest {
                 mock(MangaWorkflowContextPolicy.class),
                 mock(MangaWorkflowNodeRegistry.class),
                 mock(MangaWorkflowRouter.class),
-                mock(MangaRoutingMetrics.class));
+                mock(MangaRoutingMetrics.class),
+                resultFinalizer());
         User user = new User();
         user.setId(1L);
         Story story = new Story();
@@ -314,5 +314,12 @@ class MangaWorkflowOrchestratorTest {
                                MangaAgentConversation conversation,
                                MangaAgentRunEventPublisher.RunEventSink sink,
                                UserProviderConfig config) {
+    }
+
+    private ResultFinalizer resultFinalizer() {
+        ResultFinalizer finalizer = mock(ResultFinalizer.class);
+        when(finalizer.finalizeResult(any(), any(), any(), any()))
+                .thenAnswer(invocation -> invocation.getArgument(3));
+        return finalizer;
     }
 }

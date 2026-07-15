@@ -1,288 +1,952 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ArrowLeft,
   ArrowRight,
   BookOpenText,
-  CalendarDays,
   ChevronLeft,
   ChevronRight,
+  Clock3,
   Compass,
   Image as ImageIcon,
+  LibraryBig,
   Loader2,
-  RefreshCw,
   Search,
-  X,
+  Settings2,
+  Sparkles,
 } from 'lucide-react';
 import {
+  coverImageUrl,
   getSquareStoryDetail,
   listSquareStories,
   mangaImageUrl,
-  refImageUrl,
+  type SquareFormat,
   type SquareStory,
   type SquareStoryDetail,
 } from '../api';
 
 const PAGE_SIZE = 12;
 
-const formatDate = (date: string) => {
-  if (!date) return '近期发布';
-  const value = new Date(date);
-  return Number.isNaN(value.getTime())
-    ? '近期发布'
-    : value.toLocaleDateString('zh-CN', { month: 'long', day: 'numeric' });
+type ContentFormat = Exclude<SquareFormat, 'all'>;
+type SquareLocation =
+  | { kind: 'list'; format: ContentFormat; page: number; query: string }
+  | { kind: 'detail'; format: ContentFormat; storyId: number; chapterId?: number };
+
+type ReadingState = {
+  chapterId?: number;
+  progress?: number;
+  fontSize?: number;
+  lineHeight?: number;
+  width?: number;
 };
 
-const formatStyle = (style: string) => style?.trim().replaceAll('_', ' ') || '漫画故事';
+const readingKey = (storyId: number, format: ContentFormat) => `artverse.square.reading.${storyId}.${format}`;
+
+function location(): SquareLocation {
+  const raw = window.location.hash.slice(1);
+  const [path, queryString = ''] = raw.split('?');
+  const query = new URLSearchParams(queryString);
+  const detail = /^\/square\/(novel|manga)\/(\d+)(?:\/chapter\/(\d+))?$/.exec(path);
+  if (detail) {
+    return {
+      kind: 'detail',
+      format: detail[1] as ContentFormat,
+      storyId: Number(detail[2]),
+      ...(detail[3] ? { chapterId: Number(detail[3]) } : {}),
+    };
+  }
+
+  return {
+    kind: 'list',
+    format: query.get('format') === 'manga' ? 'manga' : 'novel',
+    page: Math.max(0, Number(query.get('page')) || 0),
+    query: query.get('q') || '',
+  };
+}
+
+function go(next: SquareLocation, replace = false): void {
+  const hash = next.kind === 'detail'
+    ? `#/square/${next.format}/${next.storyId}${next.chapterId ? `/chapter/${next.chapterId}` : ''}`
+    : `#/square?format=${next.format}&page=${next.page}${next.query ? `&q=${encodeURIComponent(next.query)}` : ''}`;
+
+  if (window.location.hash === hash) {
+    window.dispatchEvent(new HashChangeEvent('hashchange'));
+    return;
+  }
+
+  if (replace) {
+    window.history.replaceState(null, '', hash);
+    window.dispatchEvent(new HashChangeEvent('hashchange'));
+    return;
+  }
+
+  window.location.hash = hash;
+}
+
+function storyHref(format: ContentFormat, storyId: number): string {
+  return `#/square/${format}/${storyId}`;
+}
+
+function chapterTitle(chapter: SquareStoryDetail['chapters'][number]): string {
+  return chapter.display_title || `第${chapter.chapter_number}章`;
+}
+
+function formatLabel(format: ContentFormat): string {
+  return format === 'novel' ? '小说' : '漫画';
+}
+
+function displayDate(value: string | null): string {
+  if (!value) return '近期发布';
+  return new Date(value).toLocaleDateString('zh-CN', { month: 'short', day: 'numeric' });
+}
+
+function displayDateTime(value: string | null): string {
+  if (!value) return '近期发布';
+  return new Date(value).toLocaleString('zh-CN', {
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+  });
+}
+
+function formatCount(format: ContentFormat, count: number): string {
+  return format === 'novel'
+    ? `${count.toLocaleString('zh-CN')} 字`
+    : `${count.toLocaleString('zh-CN')} 页`;
+}
+
+function readReadingState(storyId: number, format: ContentFormat): ReadingState {
+  try {
+    const raw = localStorage.getItem(readingKey(storyId, format));
+    if (!raw) return {};
+    const parsed = JSON.parse(raw) as ReadingState;
+    return parsed && typeof parsed === 'object' ? parsed : {};
+  } catch {
+    return {};
+  }
+}
+
+function progressPercent(progress: number | undefined): number {
+  if (typeof progress !== 'number' || Number.isNaN(progress)) return 0;
+  return Math.max(0, Math.min(100, Math.round(progress * 100)));
+}
+
+function chapterMetaLabel(chapter: SquareStoryDetail['chapters'][number], format: ContentFormat): string {
+  return `${chapter.chapter_number.toString().padStart(2, '0')} · ${formatCount(format, chapter.content_count)}`;
+}
 
 export default function SquarePage() {
+  const [route, setRoute] = useState<SquareLocation>(location);
+
+  useEffect(() => {
+    const onHash = () => setRoute(location());
+    window.addEventListener('hashchange', onHash);
+    return () => window.removeEventListener('hashchange', onHash);
+  }, []);
+
+  return route.kind === 'list' ? <SquareList route={route} /> : <StoryView route={route} />;
+}
+
+function SquareList({ route }: { route: Extract<SquareLocation, { kind: 'list' }> }) {
   const [stories, setStories] = useState<SquareStory[]>([]);
+  const [facets, setFacets] = useState<Record<SquareFormat, number>>({ all: 0, novel: 0, manga: 0 });
+  const [totalPages, setTotalPages] = useState(0);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
-  const [page, setPage] = useState(0);
-  const [totalPages, setTotalPages] = useState(0);
-  const [totalElements, setTotalElements] = useState(0);
-  const [search, setSearch] = useState('');
-  const [searchInput, setSearchInput] = useState('');
-  const [selected, setSelected] = useState<SquareStoryDetail | null>(null);
-  const [selectedChapterId, setSelectedChapterId] = useState<number | null>(null);
-  const [detailLoading, setDetailLoading] = useState(false);
-  const [detailError, setDetailError] = useState('');
-  const detailScrollRef = useRef<HTMLDivElement>(null);
+  const [input, setInput] = useState(route.query);
 
-  const load = useCallback(async (nextPage: number, keyword: string) => {
+  useEffect(() => setInput(route.query), [route.query]);
+
+  const load = useCallback(async () => {
     setLoading(true);
     setError('');
     try {
-      const result = await listSquareStories(nextPage, PAGE_SIZE, keyword || undefined);
-      setStories(result.content);
-      setTotalPages(result.total_pages);
-      setTotalElements(result.total_elements);
-      setPage(nextPage);
-    } catch (loadError) {
-      console.error(loadError);
-      setError('作品加载失败，请检查网络后重试');
+      const data = await listSquareStories(route.page, PAGE_SIZE, route.query || undefined, route.format);
+      setStories(data.content);
+      setTotalPages(data.total_pages);
+      setFacets(data.facets);
+    } catch {
+      setError('作品加载失败，请检查网络后重试。');
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [route]);
 
   useEffect(() => {
-    void load(0, search);
-  }, [load, search]);
+    void load();
+  }, [load]);
 
-  const handleSearch = () => setSearch(searchInput.trim());
-
-  const clearSearch = () => {
-    setSearchInput('');
-    setSearch('');
-  };
-
-  const openDetail = async (id: number) => {
-    setDetailLoading(true);
-    setDetailError('');
-    try {
-      const detail = await getSquareStoryDetail(id);
-      setSelected(detail);
-      setSelectedChapterId(detail.chapters.find((chapter) => chapter.images.length > 0)?.id ?? detail.chapters[0]?.id ?? null);
-      requestAnimationFrame(() => detailScrollRef.current?.scrollTo({ top: 0 }));
-    } catch (loadError) {
-      console.error(loadError);
-      setDetailError('作品详情加载失败，请稍后重试');
-    } finally {
-      setDetailLoading(false);
-    }
-  };
-
-  const selectedChapterIndex = selected?.chapters.findIndex((chapter) => chapter.id === selectedChapterId) ?? -1;
-  const selectedChapter = selectedChapterIndex >= 0 ? selected?.chapters[selectedChapterIndex] : undefined;
-
-  const selectChapter = (chapterId: number) => {
-    setSelectedChapterId(chapterId);
-    detailScrollRef.current?.scrollTo({ top: 0, behavior: 'smooth' });
-  };
-
-  const navigateChapter = (direction: -1 | 1) => {
-    if (!selected) return;
-    const nextChapter = selected.chapters[selectedChapterIndex + direction];
-    if (nextChapter) selectChapter(nextChapter.id);
-  };
-
-  if (detailLoading) {
-    return (
-      <div className="flex flex-1 items-center justify-center bg-bg-base">
-        <div className="flex items-center gap-3 text-sm text-text-secondary">
-          <Loader2 size={20} className="animate-spin text-accent" />正在打开作品
-        </div>
-      </div>
-    );
-  }
-
-  if (selected) {
-    const chapterTitle = selectedChapter
-      ? selectedChapter.display_title || `第 ${selectedChapter.chapter_number} 话`
-      : '';
-    const sortedImages = selectedChapter
-      ? [...selectedChapter.images].sort((a, b) => a.image_number - b.image_number)
-      : [];
-
-    return (
-      <div className="flex min-h-0 flex-1 flex-col bg-bg-base">
-        <header className="glass z-20 flex min-h-16 shrink-0 items-center justify-between gap-2 border-b border-border px-3 md:px-6">
-          <button
-            type="button"
-            onClick={() => { setSelected(null); setSelectedChapterId(null); }}
-            className="flex h-9 shrink-0 items-center gap-1 rounded-md px-2 text-sm font-medium text-text-secondary transition-colors hover:bg-bg-surface hover:text-text-primary"
-          >
-            <ChevronLeft size={18} />返回广场
-          </button>
-          <div className="flex min-w-0 items-center gap-2 px-1">
-            <span className="hidden max-w-48 truncate text-sm font-semibold text-text-primary sm:inline">{selected.title}</span>
-            {chapterTitle && <span className="hidden text-text-muted sm:inline">/</span>}
-            <span className="truncate text-sm text-text-secondary">{chapterTitle}</span>
-          </div>
-          {selected.chapters.length > 0 ? (
-            <select
-              value={selectedChapterId ?? ''}
-              aria-label="切换章节"
-              onChange={(event) => selectChapter(Number(event.target.value))}
-              className="h-9 max-w-[132px] shrink-0 rounded-md border border-border bg-bg-raised px-2 text-xs text-text-secondary focus:border-accent focus:outline-none sm:max-w-[200px]"
-            >
-              {selected.chapters.map((chapter) => (
-                <option key={chapter.id} value={chapter.id}>
-                  第 {chapter.chapter_number} 话 {chapter.display_title || ''}
-                </option>
-              ))}
-            </select>
-          ) : <span className="w-9 shrink-0" />}
-        </header>
-
-        <div ref={detailScrollRef} className="flex-1 overflow-y-auto bg-bg-surface/60">
-          {selected.chapters.length === 0 ? (
-            <div className="flex h-full items-center justify-center px-4 text-center text-text-muted">
-              <div><BookOpenText size={52} className="mx-auto mb-4" strokeWidth={1.1} /><p className="text-base">作者还没有发布章节</p></div>
-            </div>
-          ) : sortedImages.length === 0 ? (
-            <div className="flex h-full items-center justify-center px-4 text-center text-text-muted">
-              <div><ImageIcon size={52} className="mx-auto mb-4" strokeWidth={1.1} /><p className="text-base">该话暂无漫画画面</p></div>
-            </div>
-          ) : (
-            <main className="mx-auto max-w-3xl bg-bg-raised shadow-[0_0_40px_rgba(24,27,25,0.08)]" aria-label={`${selected.title} ${chapterTitle}`}>
-              {sortedImages.map((image) => (
-                <img
-                  key={image.id}
-                  src={mangaImageUrl(image.image_url)}
-                  alt={`${chapterTitle} 第 ${image.image_number} 页`}
-                  className="block h-auto w-full"
-                  loading="lazy"
-                />
-              ))}
-            </main>
-          )}
-        </div>
-
-        {selected.chapters.length > 0 && (
-          <footer className="flex shrink-0 items-center justify-center gap-3 border-t border-border bg-bg-raised px-3 py-3 md:gap-8">
-            <button type="button" onClick={() => navigateChapter(-1)} disabled={selectedChapterIndex <= 0} className="flex h-9 items-center gap-1 rounded-md border border-border px-3 text-sm font-medium text-text-secondary transition-colors hover:bg-bg-surface hover:text-text-primary disabled:cursor-not-allowed disabled:opacity-30"><ChevronLeft size={16} /><span className="hidden sm:inline">上一话</span></button>
-            <span className="min-w-24 text-center text-xs text-text-muted">{selectedChapterIndex + 1} / {selected.chapters.length}<span className="ml-2 hidden sm:inline">· {sortedImages.length} 页</span></span>
-            <button type="button" onClick={() => navigateChapter(1)} disabled={selectedChapterIndex >= selected.chapters.length - 1} className="flex h-9 items-center gap-1 rounded-md border border-border px-3 text-sm font-medium text-text-secondary transition-colors hover:bg-bg-surface hover:text-text-primary disabled:cursor-not-allowed disabled:opacity-30"><span className="hidden sm:inline">下一话</span><ChevronRight size={16} /></button>
-          </footer>
-        )}
-      </div>
-    );
-  }
+  const switchFormat = (format: ContentFormat) => go({ kind: 'list', format, page: 0, query: route.query });
+  const activeLabel = formatLabel(route.format);
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col bg-bg-base">
-      <header className="shrink-0 border-b border-border bg-bg-raised">
-        <div className="mx-auto w-full max-w-7xl px-4 py-5 md:px-8 md:py-7">
-          <div className="flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between">
+    <main id="square-main" className="page-atmosphere relative flex min-h-0 flex-1 flex-col overflow-y-auto">
+      <a href="#square-content" className="sr-only focus:not-sr-only">跳到作品列表</a>
+      <div className="relative mx-auto w-full max-w-6xl px-4 py-7 sm:px-6 sm:py-10 lg:px-8">
+        <header className="border-b border-border pb-6 sm:pb-8">
+          <div className="flex items-center gap-2 text-accent">
+            <Compass size={19} />
+            <span className="text-sm font-semibold tracking-[0.18em]">作品广场</span>
+          </div>
+          <div className="mt-4 flex flex-col gap-5 sm:flex-row sm:items-end sm:justify-between">
             <div>
-              <div className="flex items-center gap-2 text-xs font-semibold text-accent"><Compass size={15} />作品广场</div>
-              <h1 className="font-display mt-1.5 text-2xl font-bold text-text-primary md:text-3xl">发现值得追读的漫画故事</h1>
-              <p className="mt-1.5 text-sm text-text-secondary">浏览创作者公开作品，从封面进入完整章节。</p>
+              <h1 className="font-display text-3xl font-bold tracking-tight text-text-primary sm:text-4xl">
+                找一部，读进去
+              </h1>
+              <p className="mt-2 max-w-xl text-sm leading-6 text-text-secondary">
+                小说与漫画分栏展示，沿着你的阅读偏好继续发现下一段故事。
+              </p>
             </div>
-            <div className="flex w-full gap-2 lg:w-[420px]">
-              <div className="relative min-w-0 flex-1">
-                <Search size={16} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-text-muted" />
-                <input
-                  value={searchInput}
-                  onChange={(event) => setSearchInput(event.target.value)}
-                  onKeyDown={(event) => { if (event.key === 'Enter') handleSearch(); }}
-                  placeholder="搜索作品名称"
-                  className="h-10 w-full rounded-md border border-border bg-bg-base pl-9 pr-9 text-sm text-text-primary placeholder-text-muted focus:border-accent focus:outline-none"
-                />
-                {searchInput && (
-                  <button type="button" onClick={clearSearch} className="absolute right-2 top-1/2 flex h-7 w-7 -translate-y-1/2 items-center justify-center rounded-md text-text-muted hover:bg-bg-surface hover:text-text-primary" aria-label="清除搜索"><X size={14} /></button>
-                )}
-              </div>
-              <button type="button" onClick={handleSearch} className="flex h-10 shrink-0 items-center gap-1.5 rounded-md bg-accent px-4 text-sm font-semibold text-white transition-colors hover:bg-accent-hover">搜索<ArrowRight size={15} /></button>
+            <div className="hidden items-center gap-2 text-sm text-text-muted sm:flex">
+              <Sparkles size={16} className="text-accent" />
+              已收录 {facets.novel + facets.manga} 部公开作品
             </div>
           </div>
-        </div>
-      </header>
+        </header>
 
-      <div className="flex-1 overflow-y-auto">
-        <main className="mx-auto w-full max-w-7xl px-4 py-5 md:px-8 md:py-7">
-          <div className="mb-5 flex items-center justify-between gap-4">
-            <div className="flex items-baseline gap-2">
-              <h2 className="text-base font-semibold text-text-primary">{search ? `“${search}” 的搜索结果` : '全部公开作品'}</h2>
-              {!loading && !error && <span className="text-xs text-text-muted">{totalElements} 部</span>}
-            </div>
-            {search && <button type="button" onClick={clearSearch} className="text-xs font-medium text-accent hover:text-accent-hover">查看全部</button>}
+        <div className="sticky top-0 z-10 -mx-4 border-b border-border bg-bg-base/95 px-4 py-4 backdrop-blur sm:-mx-6 sm:px-6 lg:-mx-8 lg:px-8">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <nav className="flex w-fit items-center rounded-xl bg-bg-surface p-1 shadow-sm ring-1 ring-border" aria-label="作品类型">
+              {(['novel', 'manga'] as ContentFormat[]).map((format) => (
+                <button
+                  key={format}
+                  type="button"
+                  onClick={() => switchFormat(format)}
+                  aria-pressed={route.format === format}
+                  className={`min-h-10 rounded-lg px-4 text-sm font-semibold transition-all ${
+                    route.format === format
+                      ? 'bg-accent text-white shadow-sm'
+                      : 'text-text-secondary hover:bg-accent-soft hover:text-text-primary'
+                  }`}
+                >
+                  {formatLabel(format)}
+                  <span className="ml-1 opacity-75">{facets[format]}</span>
+                </button>
+              ))}
+            </nav>
+
+            <form
+              className="flex w-full gap-2 sm:w-80"
+              onSubmit={(event) => {
+                event.preventDefault();
+                go({ kind: 'list', format: route.format, page: 0, query: input.trim() });
+              }}
+            >
+              <label className="relative min-w-0 flex-1">
+                <span className="sr-only">搜索{activeLabel}</span>
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-text-muted" size={17} />
+                <input
+                  className="input-field h-10 w-full rounded-lg pl-9 text-sm"
+                  value={input}
+                  onChange={(event) => setInput(event.target.value)}
+                  placeholder={`搜索${activeLabel}标题或简介`}
+                />
+              </label>
+              <button
+                className="h-10 rounded-lg bg-accent px-4 text-sm font-semibold text-white transition hover:brightness-95 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+                type="submit"
+              >
+                搜索
+              </button>
+            </form>
+          </div>
+        </div>
+
+        <section id="square-content" className="pt-6" aria-live="polite">
+          <div className="mb-5 flex items-baseline justify-between">
+            <h2 className="font-display text-xl font-bold text-text-primary">{activeLabel}书架</h2>
+            <span className="text-sm text-text-muted">第 {route.page + 1} 页</span>
           </div>
 
           {loading ? (
-            <div className="grid grid-cols-2 gap-x-3 gap-y-6 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6">
-              {Array.from({ length: PAGE_SIZE }, (_, index) => (
-                <div key={index} className="animate-pulse">
-                  <div className="aspect-[3/4] rounded-md bg-bg-surface" />
-                  <div className="mt-3 h-4 w-3/4 rounded bg-bg-surface" />
-                  <div className="mt-2 h-3 w-1/2 rounded bg-bg-surface" />
-                </div>
+            <div className="grid gap-4 md:grid-cols-2">
+              {Array.from({ length: 6 }).map((_, index) => (
+                <div key={index} className="h-48 rounded-2xl border border-border shimmer-bg" />
               ))}
             </div>
-          ) : error || detailError ? (
-            <div className="flex min-h-72 flex-col items-center justify-center border-y border-border text-center">
-              <RefreshCw size={34} className="text-text-muted" strokeWidth={1.4} />
-              <p className="mt-3 text-sm font-medium text-text-primary">{error || detailError}</p>
-              <button type="button" onClick={() => { setDetailError(''); void load(page, search); }} className="mt-4 flex items-center gap-1.5 rounded-md border border-border bg-bg-raised px-3 py-2 text-sm text-text-secondary hover:border-accent/40 hover:text-accent"><RefreshCw size={14} />重新加载</button>
-            </div>
+          ) : error ? (
+            <Empty icon={<Compass size={42} />} text={error} action="重试" onAction={() => void load()} />
           ) : stories.length === 0 ? (
-            <div className="flex min-h-72 flex-col items-center justify-center border-y border-border text-center">
-              <BookOpenText size={42} className="text-text-muted" strokeWidth={1.25} />
-              <p className="mt-3 text-sm font-medium text-text-primary">{search ? '没有找到匹配的作品' : '暂时还没有公开作品'}</p>
-              <p className="mt-1 text-xs text-text-muted">{search ? '换一个更简短的关键词试试' : '创作者发布后会展示在这里'}</p>
+            <Empty
+              icon={<Search size={42} />}
+              text={`没有找到符合条件的${activeLabel}`}
+              action="清除搜索"
+              onAction={() => go({ kind: 'list', format: route.format, page: 0, query: '' })}
+            />
+          ) : (
+            <>
+              <div className="grid gap-4 md:grid-cols-2">
+                {stories.map((story) => <StoryCard key={`${story.id}:${story.format}`} story={story} />)}
+              </div>
+              <Pagination route={route} totalPages={totalPages} />
+            </>
+          )}
+        </section>
+      </div>
+    </main>
+  );
+}
+
+function StoryCard({ story }: { story: SquareStory }) {
+  return (
+    <article className="group overflow-hidden rounded-2xl border border-border bg-bg-surface shadow-[0_1px_2px_rgb(15_23_42/0.03)] transition duration-200 hover:-translate-y-0.5 hover:border-accent/40 hover:shadow-lg">
+      <a
+        href={storyHref(story.format, story.id)}
+        target="_blank"
+        rel="noopener noreferrer"
+        className="flex min-h-48 w-full gap-4 p-4 text-left focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-[-3px] focus-visible:outline-accent"
+        aria-label={`在新标签页打开${story.title}`}
+      >
+        <BookCover story={story} variant="card" />
+        <div className="flex min-w-0 flex-1 flex-col py-0.5">
+          <div className="flex items-center justify-between gap-3">
+            <span className="rounded-md bg-accent-soft px-2 py-1 text-xs font-semibold text-accent">
+              {formatLabel(story.format)}
+            </span>
+            <span className="shrink-0 text-xs text-text-muted">{displayDate(story.published_at)}</span>
+          </div>
+          <h3 className="mt-3 line-clamp-1 font-display text-lg font-bold text-text-primary transition-colors group-hover:text-accent">
+            {story.title}
+          </h3>
+          <p className="mt-2 line-clamp-3 text-sm leading-6 text-text-secondary">
+            {story.description || '作者暂未留下简介。'}
+          </p>
+          <div className="mt-auto flex items-center gap-3 pt-3 text-xs text-text-muted">
+            <span>{story.chapter_count} 章</span>
+            <span className="h-3 w-px bg-border" />
+            <span>{formatCount(story.format, story.content_count)}</span>
+            <span className="ml-auto inline-flex items-center gap-1 font-medium text-accent opacity-0 transition-opacity group-hover:opacity-100">
+              去详情
+              <ArrowRight size={14} />
+            </span>
+          </div>
+        </div>
+      </a>
+    </article>
+  );
+}
+
+function BookCover({
+  story,
+  variant,
+}: {
+  story: Pick<SquareStory, 'title' | 'cover_url'>;
+  variant: 'card' | 'detail';
+}) {
+  const [failed, setFailed] = useState(false);
+  const coverUrl = coverImageUrl(story.cover_url);
+  const hasCover = Boolean(coverUrl) && !failed;
+  const sizeClass = variant === 'detail'
+    ? 'h-[240px] w-[172px] rounded-[22px] sm:h-[280px] sm:w-[198px]'
+    : 'h-40 w-28 rounded-lg';
+
+  return (
+    <div className={`fanqie-book-cover relative shrink-0 overflow-hidden bg-accent-soft ${sizeClass}`}>
+      <div className="absolute inset-0 bg-gradient-to-br from-white/14 via-transparent to-black/14" />
+      <div className="absolute inset-y-0 left-0 w-5 bg-gradient-to-r from-black/18 to-transparent" />
+      {hasCover ? (
+        <img
+          src={coverUrl!}
+          alt={`${story.title}封面`}
+          className="h-full w-full object-cover"
+          loading="lazy"
+          onError={() => setFailed(true)}
+        />
+      ) : (
+        <div className="flex h-full flex-col justify-between p-3 sm:p-4">
+          <ImageIcon size={variant === 'detail' ? 26 : 20} className="text-accent/70" />
+          <span className={`font-display font-bold leading-5 text-accent ${variant === 'detail' ? 'text-xl' : 'text-base'}`}>
+            {story.title}
+          </span>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function Pagination({
+  route,
+  totalPages,
+}: {
+  route: Extract<SquareLocation, { kind: 'list' }>;
+  totalPages: number;
+}) {
+  return (
+    <div className="mt-8 flex items-center justify-center gap-3">
+      <button
+        className="flex h-11 items-center gap-1 rounded-lg border border-border px-3 text-sm text-text-secondary transition hover:border-accent disabled:cursor-not-allowed disabled:opacity-40"
+        disabled={route.page === 0}
+        onClick={() => go({ ...route, page: route.page - 1 })}
+      >
+        <ChevronLeft size={17} />
+        上一页
+      </button>
+      <span className="text-sm text-text-muted">{route.page + 1} / {Math.max(totalPages, 1)}</span>
+      <button
+        className="flex h-11 items-center gap-1 rounded-lg border border-border px-3 text-sm text-text-secondary transition hover:border-accent disabled:cursor-not-allowed disabled:opacity-40"
+        disabled={route.page + 1 >= totalPages}
+        onClick={() => go({ ...route, page: route.page + 1 })}
+      >
+        下一页
+        <ChevronRight size={17} />
+      </button>
+    </div>
+  );
+}
+
+function Empty({
+  icon,
+  text,
+  action,
+  onAction,
+}: {
+  icon: ReactNode;
+  text: string;
+  action: string;
+  onAction: () => void;
+}) {
+  return (
+    <div className="flex min-h-72 flex-col items-center justify-center rounded-2xl border border-dashed border-border bg-bg-surface px-4 text-center text-text-muted">
+      {icon}
+      <p className="mt-4 text-sm">{text}</p>
+      <button
+        className="mt-4 min-h-11 rounded-lg border border-border px-4 text-sm text-text-secondary hover:border-accent"
+        onClick={onAction}
+      >
+        {action}
+      </button>
+    </div>
+  );
+}
+
+function StoryView({ route }: { route: Extract<SquareLocation, { kind: 'detail' }> }) {
+  const [detail, setDetail] = useState<SquareStoryDetail | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+
+  useEffect(() => {
+    let active = true;
+    setLoading(true);
+    setError('');
+    void getSquareStoryDetail(route.storyId, route.format)
+      .then((data) => {
+        if (active) setDetail(data);
+      })
+      .catch(() => {
+        if (active) setError('作品详情加载失败或尚未公开。');
+      })
+      .finally(() => {
+        if (active) setLoading(false);
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [route.format, route.storyId]);
+
+  if (loading) {
+    return (
+      <div className="flex flex-1 items-center justify-center">
+        <Loader2 className="animate-spin text-accent" />
+        <span className="ml-2 text-sm text-text-secondary">正在打开作品</span>
+      </div>
+    );
+  }
+
+  if (!detail) {
+    return (
+      <div className="flex flex-1 items-center justify-center">
+        <Empty
+          icon={<BookOpenText size={42} />}
+          text={error}
+          action="返回广场"
+          onAction={() => go({ kind: 'list', format: route.format, page: 0, query: '' })}
+        />
+      </div>
+    );
+  }
+
+  if (route.chapterId == null) {
+    return <Detail detail={detail} onRead={(chapterId) => go({ kind: 'detail', format: detail.format, storyId: detail.id, chapterId })} />;
+  }
+
+  const current = detail.chapters.find((chapter) => chapter.id === route.chapterId);
+  if (!current) {
+    return (
+      <div className="flex flex-1 items-center justify-center">
+        <Empty
+          icon={<BookOpenText size={42} />}
+          text="章节不存在或尚未公开。"
+          action="返回作品详情"
+          onAction={() => go({ kind: 'detail', format: detail.format, storyId: detail.id })}
+        />
+      </div>
+    );
+  }
+
+  return <Reader detail={detail} chapterId={current.id} onBack={() => go({ kind: 'detail', format: detail.format, storyId: detail.id })} />;
+}
+
+function Detail({
+  detail,
+  onRead,
+}: {
+  detail: SquareStoryDetail;
+  onRead: (chapterId: number) => void;
+}) {
+  const saved = useMemo(() => readReadingState(detail.id, detail.format), [detail.format, detail.id]);
+  const chapterCount = detail.chapters.length;
+  const totalContent = detail.chapters.reduce((sum, chapter) => sum + chapter.content_count, 0);
+  const resume = detail.chapters.find((chapter) => chapter.id === saved.chapterId);
+  const firstChapter = detail.chapters[0];
+  const latestChapter = detail.chapters[detail.chapters.length - 1];
+  const primaryChapter = resume ?? firstChapter ?? null;
+  const otherFormats = detail.available_formats.filter((format) => format !== detail.format);
+  const intro = detail.description?.trim() || '作者暂未留下简介。';
+  const savedProgress = progressPercent(saved.progress);
+  const handleBack = () => {
+    if (window.history.length > 1) {
+      window.history.back();
+      return;
+    }
+    go({ kind: 'list', format: detail.format, page: 0, query: '' }, true);
+  };
+
+  return (
+    <main className="fanqie-detail-shell flex min-h-0 flex-1 overflow-y-auto">
+      <div className="mx-auto w-full max-w-6xl px-4 py-6 sm:px-6 lg:px-8">
+        <button
+          className="mb-5 inline-flex min-h-11 items-center gap-2 text-sm text-text-secondary transition hover:text-text-primary"
+          onClick={handleBack}
+        >
+          <ArrowLeft size={18} />
+          返回广场
+        </button>
+
+        <section className="fanqie-paper-card overflow-hidden">
+          <div className="grid gap-8 border-b border-border/80 px-5 py-6 sm:px-8 sm:py-8 xl:grid-cols-[200px_minmax(0,1fr)_240px]">
+            <BookCover story={detail} variant="detail" />
+
+            <div className="min-w-0">
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="fanqie-tag-primary">{formatLabel(detail.format)}</span>
+                <span className="fanqie-tag-secondary">{chapterCount} 章</span>
+                <span className="fanqie-tag-secondary">{formatCount(detail.format, totalContent)}</span>
+              </div>
+
+              <h1 className="mt-4 font-display text-3xl font-bold tracking-tight text-text-primary sm:text-[2.5rem]">
+                {detail.title}
+              </h1>
+
+              <div className="mt-5 grid gap-3 sm:grid-cols-3">
+                <StatCard label="总章节" value={`${chapterCount} 章`} />
+                <StatCard label={detail.format === 'novel' ? '全文体量' : '总页数'} value={formatCount(detail.format, totalContent)} />
+                <StatCard label="公开时间" value={displayDate(detail.published_at)} />
+              </div>
+
+              <div className="mt-5 rounded-2xl border border-border bg-bg-base/55 p-4">
+                <div className="flex flex-wrap items-center gap-x-5 gap-y-2 text-sm text-text-secondary">
+                  <span className="inline-flex items-center gap-2">
+                    <Clock3 size={16} className="text-accent" />
+                    最近更新
+                  </span>
+                  {latestChapter ? (
+                    <button
+                      className="font-medium text-text-primary underline decoration-accent/35 decoration-2 underline-offset-4 transition hover:text-accent"
+                      onClick={() => onRead(latestChapter.id)}
+                    >
+                      {chapterTitle(latestChapter)}
+                    </button>
+                  ) : (
+                    <span className="text-text-muted">暂无更新</span>
+                  )}
+                  <span className="text-text-muted">{displayDateTime(detail.published_at)}</span>
+                </div>
+
+                <p className="mt-4 line-clamp-4 whitespace-pre-wrap text-sm leading-7 text-text-secondary">
+                  {intro}
+                </p>
+              </div>
+
+              <div className="mt-6 flex flex-wrap gap-3">
+                {primaryChapter ? (
+                  <button className="fanqie-cta-primary" onClick={() => onRead(primaryChapter.id)}>
+                    {resume ? `继续阅读：${chapterTitle(resume)}` : '开始阅读'}
+                  </button>
+                ) : (
+                  <span className="inline-flex min-h-11 items-center rounded-xl border border-border px-4 text-sm text-text-muted">
+                    暂无可阅读章节
+                  </span>
+                )}
+
+                {latestChapter && primaryChapter && latestChapter.id !== primaryChapter.id && (
+                  <button className="fanqie-cta-secondary" onClick={() => onRead(latestChapter.id)}>
+                    阅读最新：{chapterTitle(latestChapter)}
+                  </button>
+                )}
+
+                {otherFormats.map((format) => (
+                  <button
+                    key={format}
+                    className="fanqie-cta-secondary"
+                    onClick={() => go({ kind: 'detail', format, storyId: detail.id })}
+                  >
+                    查看{formatLabel(format)}版
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <DetailInfoPanel
+              className="hidden xl:block"
+              detail={detail}
+              resume={resume}
+              latestChapter={latestChapter}
+              savedProgress={savedProgress}
+            />
+          </div>
+
+          <DetailInfoPanel
+            className="border-b border-border/80 px-5 py-5 sm:px-8 xl:hidden"
+            detail={detail}
+            resume={resume}
+            latestChapter={latestChapter}
+            savedProgress={savedProgress}
+          />
+
+          <div className="px-5 py-6 sm:px-8 sm:py-7">
+            <SectionHeading title="作品简介" subtitle="阅读前先看一眼故事底色与题材氛围。" />
+            <p className="fanqie-intro-copy mt-5 whitespace-pre-wrap">{intro}</p>
+          </div>
+        </section>
+
+        <section className="fanqie-paper-card mt-6 overflow-hidden">
+          <div className="border-b border-border/80 px-5 py-6 sm:px-8">
+            <div className="flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
+              <SectionHeading
+                title="章节目录"
+                subtitle={`${chapterCount} 章 · ${formatCount(detail.format, totalContent)}`}
+              />
+              {primaryChapter && (
+                <button className="fanqie-cta-secondary self-start md:self-auto" onClick={() => onRead(primaryChapter.id)}>
+                  {resume ? '回到上次阅读' : '从第一章开始'}
+                </button>
+              )}
+            </div>
+          </div>
+
+          {detail.chapters.length === 0 ? (
+            <div className="px-5 py-8 sm:px-8">
+              <Empty
+                icon={<LibraryBig size={42} />}
+                text="作品还没有公开章节。"
+                action="返回广场"
+                onAction={() => go({ kind: 'list', format: detail.format, page: 0, query: '' })}
+              />
             </div>
           ) : (
-            <div className="grid grid-cols-2 gap-x-3 gap-y-6 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6">
-              {stories.map((story) => (
-                <button key={story.id} type="button" onClick={() => void openDetail(story.id)} className="group min-w-0 text-left">
-                  <div className="relative aspect-[3/4] overflow-hidden rounded-md border border-border bg-bg-surface shadow-[0_1px_2px_rgba(24,27,25,0.04)] transition-all duration-300 group-hover:-translate-y-1 group-hover:border-accent/30 group-hover:shadow-[0_14px_30px_rgba(24,27,25,0.12)]">
-                    {story.cover_url ? (
-                      <img src={refImageUrl(story.cover_url)} alt={story.title} className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-[1.035]" loading="lazy" />
-                    ) : (
-                      <div className="flex h-full flex-col items-center justify-center gap-2 text-text-muted"><BookOpenText size={32} strokeWidth={1.25} /><span className="text-[11px]">暂无封面</span></div>
-                    )}
-                    <span className="absolute left-2 top-2 max-w-[calc(100%-1rem)] truncate rounded-sm bg-bg-raised/92 px-2 py-1 text-[10px] font-medium text-text-secondary shadow-sm backdrop-blur-sm">{formatStyle(story.manga_style)}</span>
-                    <span className="absolute bottom-2 right-2 flex h-8 w-8 items-center justify-center rounded-md bg-bg-base/78 text-white opacity-0 transition-all duration-200 group-hover:opacity-100"><ChevronRight size={17} /></span>
-                  </div>
-                  <h3 className="mt-3 truncate text-sm font-semibold text-text-primary transition-colors group-hover:text-accent">{story.title}</h3>
-                  <p className="mt-1 line-clamp-2 min-h-9 text-xs leading-[18px] text-text-secondary">{story.description || '作者暂未填写作品简介。'}</p>
-                  <div className="mt-2 flex items-center gap-1 text-[11px] text-text-muted"><CalendarDays size={12} />{formatDate(story.published_at)}</div>
-                </button>
+            <ol className="grid gap-x-8 px-5 pb-3 pt-2 sm:px-8 md:grid-cols-2 xl:grid-cols-3">
+              {detail.chapters.map((chapter) => (
+                <li key={chapter.id} className="border-b border-border/75">
+                  <button
+                    className="group flex min-h-20 w-full items-center justify-between gap-3 py-4 text-left"
+                    onClick={() => onRead(chapter.id)}
+                  >
+                    <span className="min-w-0">
+                      <span className="block text-[11px] uppercase tracking-[0.18em] text-text-muted">
+                        {chapterMetaLabel(chapter, detail.format)}
+                      </span>
+                      <span className="mt-1 block truncate text-[15px] text-text-primary transition-colors group-hover:text-accent">
+                        {chapterTitle(chapter)}
+                      </span>
+                    </span>
+                    <span className="shrink-0 text-xs text-text-muted transition group-hover:text-accent">
+                      阅读
+                    </span>
+                  </button>
+                </li>
               ))}
+            </ol>
+          )}
+        </section>
+      </div>
+    </main>
+  );
+}
+
+function DetailInfoPanel({
+  detail,
+  resume,
+  latestChapter,
+  savedProgress,
+  className,
+}: {
+  detail: SquareStoryDetail;
+  resume: SquareStoryDetail['chapters'][number] | undefined;
+  latestChapter: SquareStoryDetail['chapters'][number] | undefined;
+  savedProgress: number;
+  className?: string;
+}) {
+  const items = [
+    { label: '上次阅读', value: resume ? chapterTitle(resume) : '尚未开始' },
+    { label: '阅读进度', value: `${savedProgress}%` },
+    { label: '最近更新', value: latestChapter ? chapterTitle(latestChapter) : '暂无更新' },
+    { label: '开放形态', value: detail.available_formats.map(formatLabel).join(' / ') || formatLabel(detail.format) },
+  ];
+
+  return (
+    <aside className={`fanqie-side-note ${className ?? ''}`}>
+      <div className="flex items-center gap-2 text-sm font-semibold text-text-primary">
+        <Sparkles size={16} className="text-accent" />
+        阅读信息
+      </div>
+
+      <div className="mt-4 space-y-4">
+        {items.map((item) => (
+          <div key={item.label}>
+            <div className="text-xs uppercase tracking-[0.18em] text-text-muted">{item.label}</div>
+            <div className="mt-1 text-sm leading-6 text-text-primary">{item.value}</div>
+          </div>
+        ))}
+      </div>
+
+      <div className="mt-5">
+        <div className="flex items-center justify-between text-xs text-text-muted">
+          <span>当前阅读记忆</span>
+          <span>{savedProgress}%</span>
+        </div>
+        <div className="mt-2 h-2 overflow-hidden rounded-full bg-accent-soft">
+          <div className="h-full rounded-full bg-accent transition-[width] duration-300" style={{ width: `${savedProgress}%` }} />
+        </div>
+      </div>
+    </aside>
+  );
+}
+
+function SectionHeading({ title, subtitle }: { title: string; subtitle: string }) {
+  return (
+    <div>
+      <h2 className="font-display text-[1.9rem] font-bold tracking-tight text-text-primary">{title}</h2>
+      <p className="mt-2 text-sm text-text-muted">{subtitle}</p>
+    </div>
+  );
+}
+
+function StatCard({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="rounded-2xl border border-border bg-bg-base/55 px-4 py-3">
+      <div className="text-xs uppercase tracking-[0.18em] text-text-muted">{label}</div>
+      <div className="mt-2 text-lg font-semibold text-text-primary">{value}</div>
+    </div>
+  );
+}
+
+function Reader({
+  detail,
+  chapterId,
+  onBack,
+}: {
+  detail: SquareStoryDetail;
+  chapterId: number;
+  onBack: () => void;
+}) {
+  const index = detail.chapters.findIndex((chapter) => chapter.id === chapterId);
+  const chapter = detail.chapters[index];
+  const savedState = useMemo(() => readReadingState(detail.id, detail.format), [detail.format, detail.id]);
+  const progressRef = useRef<HTMLDivElement>(null);
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [fontSize, setFontSize] = useState(savedState.fontSize ?? 18);
+  const [lineHeight, setLineHeight] = useState(savedState.lineHeight ?? 1.8);
+  const [width, setWidth] = useState(savedState.width ?? 760);
+
+  useEffect(() => {
+    setFontSize(savedState.fontSize ?? 18);
+    setLineHeight(savedState.lineHeight ?? 1.8);
+    setWidth(savedState.width ?? 760);
+  }, [savedState.fontSize, savedState.lineHeight, savedState.width]);
+
+  useEffect(() => {
+    const key = readingKey(detail.id, detail.format);
+    const onScroll = () => {
+      const el = progressRef.current;
+      if (!el) return;
+
+      const progress = el.scrollHeight > el.clientHeight
+        ? el.scrollTop / (el.scrollHeight - el.clientHeight)
+        : 0;
+
+      localStorage.setItem(key, JSON.stringify({
+        chapterId,
+        progress,
+        fontSize,
+        lineHeight,
+        width,
+      }));
+    };
+
+    const el = progressRef.current;
+    el?.addEventListener('scroll', onScroll, { passive: true });
+    return () => el?.removeEventListener('scroll', onScroll);
+  }, [chapterId, detail.format, detail.id, fontSize, lineHeight, width]);
+
+  useEffect(() => {
+    const el = progressRef.current;
+    if (!el) return;
+
+    const restore = savedState.chapterId === chapterId ? savedState.progress ?? 0 : 0;
+    const frame = window.requestAnimationFrame(() => {
+      window.requestAnimationFrame(() => {
+        if (restore > 0 && el.scrollHeight > el.clientHeight) {
+          el.scrollTop = restore * (el.scrollHeight - el.clientHeight);
+          return;
+        }
+        el.scrollTop = 0;
+      });
+    });
+
+    return () => window.cancelAnimationFrame(frame);
+  }, [chapterId, fontSize, lineHeight, savedState.chapterId, savedState.progress, width]);
+
+  const navigate = (offset: -1 | 1) => {
+    const next = detail.chapters[index + offset];
+    if (next) go({ kind: 'detail', format: detail.format, storyId: detail.id, chapterId: next.id });
+  };
+
+  const hasContent = detail.format === 'novel'
+    ? Boolean(chapter.content?.trim())
+    : chapter.images.length > 0;
+
+  return (
+    <div className="flex min-h-0 flex-1 flex-col bg-bg-base">
+      <header className="border-b border-border bg-bg-surface/95 backdrop-blur">
+        <div className="mx-auto flex min-h-16 max-w-6xl items-center justify-between gap-3 px-3 sm:px-6">
+          <button className="flex min-h-11 items-center gap-1 text-sm text-text-secondary transition hover:text-text-primary" onClick={onBack}>
+            <ChevronLeft size={18} />
+            详情
+          </button>
+          <div className="min-w-0 text-center">
+            <div className="truncate text-sm font-medium text-text-primary">{detail.title}</div>
+            <div className="truncate text-xs text-text-muted">{chapterTitle(chapter)}</div>
+          </div>
+          <button
+            aria-label="阅读设置"
+            className="flex h-11 w-11 items-center justify-center rounded-xl border border-border text-text-secondary transition hover:border-accent hover:text-accent"
+            onClick={() => setSettingsOpen((value) => !value)}
+          >
+            <Settings2 size={18} />
+          </button>
+        </div>
+      </header>
+
+      {settingsOpen && (
+        <div className="border-b border-border bg-bg-surface">
+          <div className="mx-auto flex max-w-6xl flex-wrap gap-3 px-4 py-4 text-sm sm:px-6">
+            <label className="fanqie-setting-field">
+              <span>字号</span>
+              <select value={fontSize} onChange={(event) => setFontSize(Number(event.target.value))}>
+                {[16, 18, 20, 22].map((value) => <option key={value}>{value}</option>)}
+              </select>
+            </label>
+            <label className="fanqie-setting-field">
+              <span>行距</span>
+              <select value={lineHeight} onChange={(event) => setLineHeight(Number(event.target.value))}>
+                {[1.6, 1.8, 2].map((value) => <option key={value}>{value}</option>)}
+              </select>
+            </label>
+            <label className="fanqie-setting-field">
+              <span>宽度</span>
+              <select value={width} onChange={(event) => setWidth(Number(event.target.value))}>
+                {[640, 760, 880].map((value) => <option key={value}>{value}</option>)}
+              </select>
+            </label>
+          </div>
+        </div>
+      )}
+
+      <main ref={progressRef} className="flex-1 overflow-y-auto px-4 py-6 sm:px-6 sm:py-8">
+        <article className="mx-auto" style={{ maxWidth: detail.format === 'novel' ? width : 920 }}>
+          <header className="fanqie-reader-header">
+            <div className="text-xs uppercase tracking-[0.2em] text-text-muted">
+              {detail.title}
+            </div>
+            <h1 className="mt-3 font-display text-3xl font-bold text-text-primary">{chapterTitle(chapter)}</h1>
+            <div className="mt-3 text-sm text-text-muted">{chapterMetaLabel(chapter, detail.format)}</div>
+          </header>
+
+          {hasContent ? (
+            detail.format === 'novel' ? (
+              <div className="fanqie-reader-page mt-6">
+                <div
+                  className="fanqie-reader-copy whitespace-pre-wrap break-words text-text-primary"
+                  style={{ fontSize: `${fontSize}px`, lineHeight }}
+                >
+                  {chapter.content}
+                </div>
+              </div>
+            ) : (
+              <div className="mt-6 space-y-4">
+                {chapter.images.map((image) => (
+                  <div key={image.id} className="fanqie-reader-page overflow-hidden p-2 sm:p-3">
+                    <img
+                      className="mx-auto block max-w-full rounded-xl"
+                      src={mangaImageUrl(image.image_url)}
+                      alt={`${chapterTitle(chapter)}第 ${image.image_number} 页`}
+                      loading="lazy"
+                    />
+                  </div>
+                ))}
+              </div>
+            )
+          ) : (
+            <div className="mt-6">
+              <Empty
+                icon={<BookOpenText size={42} />}
+                text="本章节暂时没有可阅读内容。"
+                action="返回作品详情"
+                onAction={onBack}
+              />
             </div>
           )}
 
-          {!loading && !error && totalPages > 1 && (
-            <nav className="mt-9 flex items-center justify-center gap-3 border-t border-border pt-5" aria-label="作品分页">
-              <button type="button" onClick={() => void load(page - 1, search)} disabled={page === 0} className="flex h-9 items-center gap-1 rounded-md border border-border bg-bg-raised px-3 text-sm text-text-secondary transition-colors hover:border-accent/40 hover:text-accent disabled:cursor-not-allowed disabled:opacity-35"><ArrowLeft size={15} />上一页</button>
-              <span className="min-w-20 text-center text-xs text-text-muted">{page + 1} / {totalPages}</span>
-              <button type="button" onClick={() => void load(page + 1, search)} disabled={page >= totalPages - 1} className="flex h-9 items-center gap-1 rounded-md border border-border bg-bg-raised px-3 text-sm text-text-secondary transition-colors hover:border-accent/40 hover:text-accent disabled:cursor-not-allowed disabled:opacity-35">下一页<ArrowRight size={15} /></button>
-            </nav>
-          )}
-        </main>
-      </div>
+          <nav className="fanqie-reader-footer mt-8">
+            <button
+              disabled={index === 0}
+              className="fanqie-reader-nav disabled:opacity-40"
+              onClick={() => navigate(-1)}
+            >
+              <ArrowLeft size={18} />
+              上一章
+            </button>
+
+            <label className="fanqie-reader-select">
+              <span className="sr-only">切换章节</span>
+              <select
+                aria-label="切换章节"
+                value={chapterId}
+                onChange={(event) => go({
+                  kind: 'detail',
+                  format: detail.format,
+                  storyId: detail.id,
+                  chapterId: Number(event.target.value),
+                })}
+              >
+                {detail.chapters.map((item) => (
+                  <option key={item.id} value={item.id}>{chapterTitle(item)}</option>
+                ))}
+              </select>
+            </label>
+
+            <button
+              disabled={index >= detail.chapters.length - 1}
+              className="fanqie-reader-nav disabled:opacity-40"
+              onClick={() => navigate(1)}
+            >
+              下一章
+              <ArrowRight size={18} />
+            </button>
+          </nav>
+        </article>
+      </main>
     </div>
   );
 }

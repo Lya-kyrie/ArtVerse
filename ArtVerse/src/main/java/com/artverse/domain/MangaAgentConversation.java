@@ -10,9 +10,9 @@ import java.util.UUID;
 
 @Entity
 @Table(
-        name = "manga_agent_conversations",
+        name = "ai_conversations",
         uniqueConstraints = @UniqueConstraint(
-                name = "uk_manga_agent_conversations_uuid",
+                name = "uk_ai_conversations_uuid",
                 columnNames = {"conversation_uuid"}
         )
 )
@@ -32,18 +32,30 @@ public class MangaAgentConversation {
     @JsonIgnore
     private User user;
 
-    @ManyToOne(fetch = FetchType.LAZY, optional = false)
-    @JoinColumn(name = "story_id", nullable = false)
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "story_id")
     @JsonIgnore
     private Story story;
 
-    @ManyToOne(fetch = FetchType.LAZY, optional = false)
-    @JoinColumn(name = "chapter_id", nullable = false)
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "chapter_id")
     @JsonIgnore
     private Chapter chapter;
 
     @Column(nullable = false, length = 120)
     private String title;
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "conversation_type", nullable = false, length = 32)
+    private AiConversationType conversationType = AiConversationType.MANGA_AGENT;
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "title_source", nullable = false, length = 16)
+    private AiConversationTitleSource titleSource = AiConversationTitleSource.DEFAULT;
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "title_state", nullable = false, length = 16)
+    private AiConversationTitleState titleState = AiConversationTitleState.WAITING;
 
     @Enumerated(EnumType.STRING)
     @Column(nullable = false, length = 32)
@@ -55,6 +67,15 @@ public class MangaAgentConversation {
     @Column(name = "updated_at", nullable = false)
     private OffsetDateTime updatedAt;
 
+    @Column(name = "last_activity_at", nullable = false)
+    private OffsetDateTime lastActivityAt;
+
+    @Column(name = "title_generation_started_at")
+    private OffsetDateTime titleGenerationStartedAt;
+
+    @Column(name = "legacy_import_key", length = 160)
+    private String legacyImportKey;
+
     @Column(name = "archived_at")
     private OffsetDateTime archivedAt;
 
@@ -65,6 +86,10 @@ public class MangaAgentConversation {
         updatedAt = now;
         if (conversationUuid == null) conversationUuid = UUID.randomUUID();
         if (status == null) status = MangaAgentConversationStatus.ACTIVE;
+        if (conversationType == null) conversationType = AiConversationType.MANGA_AGENT;
+        if (titleSource == null) titleSource = AiConversationTitleSource.DEFAULT;
+        if (titleState == null) titleState = AiConversationTitleState.WAITING;
+        if (lastActivityAt == null) lastActivityAt = now;
     }
 
     @PreUpdate
