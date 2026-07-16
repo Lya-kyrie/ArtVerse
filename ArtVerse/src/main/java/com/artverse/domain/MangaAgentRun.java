@@ -50,6 +50,10 @@ public class MangaAgentRun {
     private UUID requestId;
 
     @Enumerated(EnumType.STRING)
+    @Column(name = "run_type", nullable = false, length = 32)
+    private AgentRunType runType = AgentRunType.MANGA_AGENT;
+
+    @Enumerated(EnumType.STRING)
     @Column(nullable = false, length = 32)
     private MangaAgentRunStatus status = MangaAgentRunStatus.RUNNING;
 
@@ -59,6 +63,9 @@ public class MangaAgentRun {
     @Enumerated(EnumType.STRING)
     @Column(nullable = false, length = 32)
     private MangaWorkflowRoute route = MangaWorkflowRoute.DIRECTOR;
+
+    @Column(name = "route_key", length = 64)
+    private String routeKey;
 
     @Enumerated(EnumType.STRING)
     @Column(name = "route_source", nullable = false, length = 32)
@@ -152,6 +159,8 @@ public class MangaAgentRun {
         updatedAt = now;
         lastProgressAt = now;
         if (requestId == null) requestId = UUID.randomUUID();
+        if (runType == null) runType = AgentRunType.MANGA_AGENT;
+        if (routeKey == null && route != null) routeKey = route.name();
         if (traceId == null) traceId = UUID.randomUUID();
     }
 

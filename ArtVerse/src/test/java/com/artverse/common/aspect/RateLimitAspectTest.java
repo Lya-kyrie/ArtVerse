@@ -3,6 +3,8 @@ package com.artverse.common.aspect;
 import cn.dev33.satoken.stp.StpUtil;
 import com.artverse.common.BusinessException;
 import com.artverse.config.ArtVerseProperties;
+import com.artverse.security.ClientIpResolver;
+import com.artverse.security.SlidingWindowRateLimiter;
 import org.aspectj.lang.ProceedingJoinPoint;
 import org.aspectj.lang.reflect.MethodSignature;
 import org.junit.jupiter.api.AfterEach;
@@ -10,24 +12,25 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.mockito.MockedStatic;
-import org.springframework.data.redis.core.StringRedisTemplate;
-import org.springframework.data.redis.core.script.DefaultRedisScript;
 import org.springframework.mock.web.MockHttpServletRequest;
 import org.springframework.web.context.request.RequestContextHolder;
 import org.springframework.web.context.request.ServletRequestAttributes;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
-import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.anyList;
-import static org.mockito.ArgumentMatchers.anyString;
-import static org.mockito.Mockito.*;
+import static org.mockito.ArgumentMatchers.argThat;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
+import static org.mockito.Mockito.when;
 
 @DisplayName("RateLimitAspect")
 class RateLimitAspectTest {
 
-    private StringRedisTemplate redisTemplate;
     private ArtVerseProperties properties;
+    private SlidingWindowRateLimiter rateLimiter;
+    private ClientIpResolver clientIpResolver;
     private RateLimitAspect aspect;
     private ProceedingJoinPoint joinPoint;
     private MethodSignature methodSignature;
@@ -35,9 +38,10 @@ class RateLimitAspectTest {
 
     @BeforeEach
     void setUp() throws NoSuchMethodException {
-        redisTemplate = mock(StringRedisTemplate.class);
         properties = new ArtVerseProperties();
-        aspect = new RateLimitAspect(redisTemplate, properties);
+        rateLimiter = mock(SlidingWindowRateLimiter.class);
+        clientIpResolver = mock(ClientIpResolver.class);
+        aspect = new RateLimitAspect(properties, rateLimiter, clientIpResolver);
 
         joinPoint = mock(ProceedingJoinPoint.class);
         methodSignature = mock(MethodSignature.class);
@@ -46,12 +50,13 @@ class RateLimitAspectTest {
         java.lang.reflect.Method method = TestController.class.getMethod("testEndpoint");
         when(methodSignature.getMethod()).thenReturn(method);
 
-        stpUtilMock = mockStatic(StpUtil.class);
+        stpUtilMock = org.mockito.Mockito.mockStatic(StpUtil.class);
         stpUtilMock.when(StpUtil::isLogin).thenReturn(false);
 
         MockHttpServletRequest request = new MockHttpServletRequest();
         request.setRemoteAddr("192.168.1.100");
         RequestContextHolder.setRequestAttributes(new ServletRequestAttributes(request));
+        when(clientIpResolver.resolve(request)).thenReturn("192.168.1.100");
     }
 
     @AfterEach
@@ -62,17 +67,15 @@ class RateLimitAspectTest {
 
     static class TestController {
         @RateLimit(windowSeconds = 60, maxRequests = 5, key = "test")
-        public void testEndpoint() {}
+        public void testEndpoint() {
+        }
     }
 
     @Test
     @DisplayName("allows request when under limit")
     void allowsWhenUnderLimit() throws Throwable {
-        when(redisTemplate.execute(
-                any(DefaultRedisScript.class),
-                anyList(),
-                anyString(), anyString(), anyString(), anyString(), anyString()
-        )).thenReturn(3L);
+        when(rateLimiter.incrementAndCheck(eq("rl:test:ip:192.168.1.100:default"), eq(60), eq(5)))
+                .thenReturn(new SlidingWindowRateLimiter.RateLimitResult(3, true));
         when(joinPoint.proceed()).thenReturn("OK");
 
         Object result = aspect.around(joinPoint);
@@ -84,30 +87,12 @@ class RateLimitAspectTest {
     @Test
     @DisplayName("blocks request when over limit")
     void blocksWhenOverLimit() {
-        when(redisTemplate.execute(
-                any(DefaultRedisScript.class),
-                anyList(),
-                anyString(), anyString(), anyString(), anyString(), anyString()
-        )).thenReturn(10L);
+        when(rateLimiter.incrementAndCheck(eq("rl:test:ip:192.168.1.100:default"), eq(60), eq(5)))
+                .thenReturn(new SlidingWindowRateLimiter.RateLimitResult(6, false));
 
         assertThatThrownBy(() -> aspect.around(joinPoint))
                 .isInstanceOf(BusinessException.class)
-                .matches(e -> ((BusinessException) e).getStatus() == 429);
-    }
-
-    @Test
-    @DisplayName("blocks the first request beyond the configured boundary")
-    void blocksAtBoundarySignal() throws Throwable {
-        when(redisTemplate.execute(
-                any(DefaultRedisScript.class),
-                anyList(),
-                anyString(), anyString(), anyString(), anyString(), anyString()
-        )).thenReturn(6L);
-
-        assertThatThrownBy(() -> aspect.around(joinPoint))
-                .isInstanceOf(BusinessException.class)
-                .matches(e -> ((BusinessException) e).getStatus() == 429);
-        verify(joinPoint, never()).proceed();
+                .matches(ex -> ((BusinessException) ex).getStatus() == 429);
     }
 
     @Test
@@ -119,7 +104,7 @@ class RateLimitAspectTest {
         Object result = aspect.around(joinPoint);
 
         assertThat(result).isEqualTo("OK");
-        verify(redisTemplate, never()).execute(any(), anyList(), anyString(), anyString(), anyString(), anyString(), anyString());
+        verifyNoInteractions(rateLimiter);
     }
 
     @Test
@@ -127,15 +112,12 @@ class RateLimitAspectTest {
     void usesUserIdWhenLoggedIn() throws Throwable {
         stpUtilMock.when(StpUtil::isLogin).thenReturn(true);
         stpUtilMock.when(StpUtil::getLoginIdAsLong).thenReturn(42L);
-        when(redisTemplate.execute(
-                any(DefaultRedisScript.class),
-                anyList(),
-                anyString(), anyString(), anyString(), anyString(), anyString()
-        )).thenReturn(1L);
+        when(rateLimiter.incrementAndCheck(argThat(key -> key.equals("rl:test:u42:default")), eq(60), eq(5)))
+                .thenReturn(new SlidingWindowRateLimiter.RateLimitResult(1, true));
         when(joinPoint.proceed()).thenReturn("OK");
 
         aspect.around(joinPoint);
 
-        assertThat(true).isTrue();
+        verify(rateLimiter).incrementAndCheck("rl:test:u42:default", 60, 5);
     }
 }

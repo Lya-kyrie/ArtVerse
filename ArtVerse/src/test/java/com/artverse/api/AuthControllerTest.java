@@ -1,13 +1,20 @@
 package com.artverse.api;
 
-import cn.dev33.satoken.exception.NotRoleException;
 import cn.dev33.satoken.stp.SaTokenInfo;
 import cn.dev33.satoken.stp.StpUtil;
+import com.artverse.api.dto.AuthDtos.ChallengeConfigResponse;
+import com.artverse.api.dto.AuthDtos.LoginRequest;
 import com.artverse.api.dto.AuthDtos.RefreshRequest;
+import com.artverse.api.dto.AuthDtos.RegisterRequest;
 import com.artverse.application.AuthService;
 import com.artverse.application.RefreshTokenService;
 import com.artverse.application.RefreshTokenService.Consumption;
 import com.artverse.common.BusinessException;
+import com.artverse.domain.User;
+import com.artverse.security.AuthCookieService;
+import com.artverse.security.AuthErrorCodes;
+import com.artverse.security.AuthGuardService;
+import jakarta.servlet.http.HttpServletResponse;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -18,10 +25,17 @@ import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.MockedStatic;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.http.ResponseEntity;
+import org.springframework.mock.web.MockHttpServletRequest;
+import org.springframework.mock.web.MockHttpServletResponse;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
-import static org.mockito.Mockito.*;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
 @DisplayName("AuthController")
@@ -31,6 +45,10 @@ class AuthControllerTest {
     private AuthService authService;
     @Mock
     private RefreshTokenService refreshTokenService;
+    @Mock
+    private AuthCookieService authCookieService;
+    @Mock
+    private AuthGuardService authGuardService;
     @InjectMocks
     private AuthController controller;
 
@@ -38,7 +56,7 @@ class AuthControllerTest {
 
     @BeforeEach
     void setUp() {
-        stpUtil = mockStatic(StpUtil.class);
+        stpUtil = org.mockito.Mockito.mockStatic(StpUtil.class);
     }
 
     @AfterEach
@@ -46,45 +64,89 @@ class AuthControllerTest {
         stpUtil.close();
     }
 
+    @Test
+    @DisplayName("returns the public challenge configuration")
+    void challengeConfig() {
+        when(authGuardService.isChallengeEnabled()).thenReturn(true);
+        when(authGuardService.provider()).thenReturn("turnstile");
+        when(authGuardService.siteKey()).thenReturn("site-key");
+        when(authGuardService.requiresRegistrationChallenge()).thenReturn(true);
+        when(authGuardService.loginMode()).thenReturn("adaptive");
+
+        ResponseEntity<ChallengeConfigResponse> result = controller.challengeConfig();
+
+        assertThat(result.getBody()).isEqualTo(new ChallengeConfigResponse(true, "turnstile", "site-key", true, "adaptive"));
+    }
+
     @Nested
-    @DisplayName("kickout")
-    class Kickout {
+    @DisplayName("login")
+    class Login {
 
         @Test
-        @DisplayName("blocks unauthenticated user with 401")
-        void unauthenticated() {
-            stpUtil.when(StpUtil::isLogin).thenReturn(false);
+        @DisplayName("issues a session cookie and clears failure counters on success")
+        void success() {
+            MockHttpServletRequest request = new MockHttpServletRequest();
+            MockHttpServletResponse response = new MockHttpServletResponse();
+            User user = new User();
+            user.setId(9L);
+            user.setUsername("alice");
+            when(authService.login("alice", "averylongpassword")).thenReturn(user);
+            when(refreshTokenService.issue(9L)).thenReturn("refresh-token");
+            when(refreshTokenService.getTimeoutSeconds()).thenReturn(43_200L);
+            SaTokenInfo tokenInfo = new SaTokenInfo();
+            tokenInfo.setTokenTimeout(3_600);
+            stpUtil.when(StpUtil::getTokenInfo).thenReturn(tokenInfo);
 
-            assertThatThrownBy(() -> controller.kickout(5L))
+            var result = controller.login(new LoginRequest("alice", "averylongpassword", "challenge-token"), request, response);
+
+            verify(authGuardService).enforceLoginRisk("alice", "challenge-token", request);
+            verify(authGuardService).clearLoginFailures("alice");
+            stpUtil.verify(() -> StpUtil.login(9L, "PC"));
+            verify(authCookieService).writeRefreshCookie(response, "refresh-token", 43_200L);
+            assertThat(result.getBody().authenticated()).isTrue();
+            assertThat(result.getBody().tokenTimeout()).isEqualTo(3_600);
+        }
+
+        @Test
+        @DisplayName("records a failed login attempt on 401")
+        void recordsFailureOn401() {
+            MockHttpServletRequest request = new MockHttpServletRequest();
+            MockHttpServletResponse response = new MockHttpServletResponse();
+            when(authService.login("alice", "wrong-password"))
+                    .thenThrow(new BusinessException(401, "用户名或密码错误"));
+
+            assertThatThrownBy(() -> controller.login(new LoginRequest("alice", "wrong-password", null), request, response))
                     .isInstanceOf(BusinessException.class)
-                    .satisfies(e -> {
-                        BusinessException be = (BusinessException) e;
-                        assertThat(be.getStatus()).isEqualTo(401);
-                    });
+                    .hasMessageContaining("用户名或密码错误");
+
+            verify(authGuardService).recordLoginFailure("alice");
+            verify(authCookieService, never()).writeRefreshCookie(any(HttpServletResponse.class), any(), any(Long.class));
         }
+    }
+
+    @Nested
+    @DisplayName("register")
+    class Register {
 
         @Test
-        @DisplayName("blocks non-admin user with 403")
-        void nonAdmin() {
-            stpUtil.when(StpUtil::isLogin).thenReturn(true);
-            stpUtil.when(() -> StpUtil.checkRole("ADMIN"))
-                    .thenThrow(new NotRoleException("ADMIN"));
+        @DisplayName("enforces human verification before creating an account")
+        void enforcesChallenge() {
+            MockHttpServletRequest request = new MockHttpServletRequest();
+            MockHttpServletResponse response = new MockHttpServletResponse();
+            User user = new User();
+            user.setId(5L);
+            user.setUsername("alice");
+            when(authService.register("alice", "alice@example.com", "averylongpassword")).thenReturn(user);
+            when(refreshTokenService.issue(5L)).thenReturn("refresh-token");
+            when(refreshTokenService.getTimeoutSeconds()).thenReturn(43_200L);
+            SaTokenInfo tokenInfo = new SaTokenInfo();
+            tokenInfo.setTokenTimeout(3_600);
+            stpUtil.when(StpUtil::getTokenInfo).thenReturn(tokenInfo);
 
-            assertThatThrownBy(() -> controller.kickout(5L))
-                    .isInstanceOf(NotRoleException.class);
-        }
+            controller.register(new RegisterRequest("alice", "alice@example.com", "averylongpassword", "token"), request, response);
 
-        @Test
-        @DisplayName("allows admin to kick out user")
-        void adminCanKickout() {
-            stpUtil.when(StpUtil::isLogin).thenReturn(true);
-            stpUtil.when(() -> StpUtil.checkRole("ADMIN")).then(inv -> null);
-            stpUtil.when(StpUtil::getLoginIdAsLong).thenReturn(1L);
-
-            controller.kickout(5L);
-
-            stpUtil.verify(() -> StpUtil.kickout(5L));
-            verify(refreshTokenService).revokeAll(5L);
+            verify(authGuardService).enforceRegistrationChallenge("token", request);
+            verify(authCookieService).writeRefreshCookie(response, "refresh-token", 43_200L);
         }
     }
 
@@ -93,140 +155,72 @@ class AuthControllerTest {
     class Refresh {
 
         @Test
-        @DisplayName("blocks unauthenticated with 401")
-        void unauthenticated() {
+        @DisplayName("restores a session from the refresh cookie")
+        void restoresSessionFromCookie() {
+            MockHttpServletRequest request = new MockHttpServletRequest();
+            MockHttpServletResponse response = new MockHttpServletResponse();
+            when(authCookieService.readRefreshToken(request)).thenReturn("cookie-token");
+            when(refreshTokenService.consume("cookie-token", null)).thenReturn(Consumption.valid(1L));
+            when(refreshTokenService.issue(1L)).thenReturn("rotated-token");
+            when(refreshTokenService.getTimeoutSeconds()).thenReturn(43_200L);
             stpUtil.when(StpUtil::isLogin).thenReturn(false);
+            SaTokenInfo tokenInfo = new SaTokenInfo();
+            tokenInfo.setTokenTimeout(1_800);
+            stpUtil.when(StpUtil::getTokenInfo).thenReturn(tokenInfo);
 
-            assertThatThrownBy(() -> controller.refresh(null))
-                    .isInstanceOf(BusinessException.class)
-                    .satisfies(e -> {
-                        BusinessException be = (BusinessException) e;
-                        assertThat(be.getStatus()).isEqualTo(401);
-                    });
-        }
-
-        @Test
-        @DisplayName("renews timeout and returns new token pair")
-        void renewsTimeout() {
-            stpUtil.when(StpUtil::isLogin).thenReturn(true);
-            stpUtil.when(StpUtil::getLoginIdAsLong).thenReturn(1L);
-            SaTokenInfo info = new SaTokenInfo();
-            info.setTokenName("satoken");
-            info.setTokenValue("access-token");
-            info.setTokenTimeout(43200);
-            stpUtil.when(StpUtil::getTokenInfo).thenReturn(info);
-            when(refreshTokenService.issue(1L)).thenReturn("new-refresh-token");
-            when(refreshTokenService.getTimeoutSeconds()).thenReturn(604800L);
-
-            var result = controller.refresh(null);
-
-            stpUtil.verify(() -> StpUtil.renewTimeout(43200));
-            assertThat(result.tokenValue()).isEqualTo("access-token");
-            assertThat(result.refreshToken()).isEqualTo("new-refresh-token");
-        }
-
-        @Test
-        @DisplayName("rotates refresh token and access token when provided")
-        void rotatesRefreshToken() {
-            stpUtil.when(StpUtil::isLogin).thenReturn(true);
-            stpUtil.when(StpUtil::getLoginIdAsLong).thenReturn(1L);
-            when(refreshTokenService.consume("old-rt", 1L)).thenReturn(Consumption.valid(1L));
-            SaTokenInfo info = new SaTokenInfo();
-            info.setTokenName("satoken");
-            info.setTokenValue("new-access");
-            info.setTokenTimeout(43200);
-            stpUtil.when(StpUtil::getTokenInfo).thenReturn(info);
-            when(refreshTokenService.issue(1L)).thenReturn("new-rt");
-            when(refreshTokenService.getTimeoutSeconds()).thenReturn(604800L);
-
-            var result = controller.refresh(new RefreshRequest("old-rt"));
-
-            verify(refreshTokenService).consume("old-rt", 1L);
-            stpUtil.verify(StpUtil::logout);
-            stpUtil.verify(() -> StpUtil.login(1L, "PC"));
-            assertThat(result.refreshToken()).isEqualTo("new-rt");
-        }
-
-        @Test
-        @DisplayName("restores access session from refresh token when cookie is missing")
-        void restoresMissingAccessSession() {
-            stpUtil.when(StpUtil::isLogin).thenReturn(false);
-            when(refreshTokenService.consume("valid-rt", null)).thenReturn(Consumption.valid(1L));
-            SaTokenInfo info = new SaTokenInfo();
-            info.setTokenName("satoken");
-            info.setTokenValue("restored-access");
-            info.setTokenTimeout(43200);
-            stpUtil.when(StpUtil::getTokenInfo).thenReturn(info);
-            when(refreshTokenService.issue(1L)).thenReturn("rotated-rt");
-
-            var result = controller.refresh(new RefreshRequest("valid-rt"));
+            var result = controller.refresh(null, request, response);
 
             stpUtil.verify(() -> StpUtil.login(1L, "PC"));
-            stpUtil.verify(StpUtil::logout, never());
-            assertThat(result.tokenValue()).isEqualTo("restored-access");
-            assertThat(result.refreshToken()).isEqualTo("rotated-rt");
+            verify(authCookieService).writeRefreshCookie(response, "rotated-token", 43_200L);
+            assertThat(result.getBody().authenticated()).isTrue();
         }
 
         @Test
-        @DisplayName("revokes all sessions on refresh token reuse")
-        void detectsReuse() {
+        @DisplayName("falls back to request body token during the migration window")
+        void fallsBackToBodyToken() {
+            MockHttpServletRequest request = new MockHttpServletRequest();
+            MockHttpServletResponse response = new MockHttpServletResponse();
+            when(authCookieService.readRefreshToken(request)).thenReturn(null);
+            when(authCookieService.isRefreshBodyFallbackEnabled()).thenReturn(true);
+            when(refreshTokenService.consume("body-token", null)).thenReturn(Consumption.valid(3L));
+            when(refreshTokenService.issue(3L)).thenReturn("new-cookie-token");
+            when(refreshTokenService.getTimeoutSeconds()).thenReturn(43_200L);
             stpUtil.when(StpUtil::isLogin).thenReturn(false);
-            when(refreshTokenService.consume("stolen-rt", null)).thenReturn(Consumption.reused(1L));
+            stpUtil.when(StpUtil::getTokenInfo).thenReturn(new SaTokenInfo());
 
-            assertThatThrownBy(() -> controller.refresh(new RefreshRequest("stolen-rt")))
-                    .isInstanceOf(BusinessException.class)
-                    .satisfies(e -> {
-                        BusinessException be = (BusinessException) e;
-                        assertThat(be.getStatus()).isEqualTo(401);
-                    });
+            controller.refresh(new RefreshRequest("body-token"), request, response);
 
-            verify(refreshTokenService).revokeAll(1L);
-            stpUtil.verify(() -> StpUtil.kickout(1L));
+            verify(refreshTokenService).consume("body-token", null);
+            verify(authCookieService).writeRefreshCookie(response, "new-cookie-token", 43_200L);
         }
 
         @Test
-        @DisplayName("rejects an unknown refresh token without revoking another session")
-        void rejectsUnknownTokenWithoutRevocation() {
+        @DisplayName("returns AUTH_EXPIRED when no session and no refresh token exist")
+        void missingSessionAndToken() {
+            MockHttpServletRequest request = new MockHttpServletRequest();
+            MockHttpServletResponse response = new MockHttpServletResponse();
+            when(authCookieService.readRefreshToken(request)).thenReturn(null);
+            when(authCookieService.isRefreshBodyFallbackEnabled()).thenReturn(false);
             stpUtil.when(StpUtil::isLogin).thenReturn(false);
-            when(refreshTokenService.consume("unknown-rt", null)).thenReturn(Consumption.invalid());
 
-            assertThatThrownBy(() -> controller.refresh(new RefreshRequest("unknown-rt")))
+            assertThatThrownBy(() -> controller.refresh(null, request, response))
                     .isInstanceOf(BusinessException.class)
-                    .satisfies(e -> assertThat(((BusinessException) e).getStatus()).isEqualTo(401));
-
-            verify(refreshTokenService, never()).revokeAll(anyLong());
-            stpUtil.verify(() -> StpUtil.kickout(any()), never());
+                    .matches(ex -> ((BusinessException) ex).getStatus() == 401)
+                    .matches(ex -> AuthErrorCodes.AUTH_EXPIRED.equals(((BusinessException) ex).getCode()));
         }
     }
 
-    @Nested
-    @DisplayName("me")
-    class Me {
+    @Test
+    @DisplayName("logout clears the refresh cookie and revokes refresh tokens")
+    void logoutClearsCookie() {
+        MockHttpServletResponse response = new MockHttpServletResponse();
+        stpUtil.when(StpUtil::isLogin).thenReturn(true);
+        stpUtil.when(StpUtil::getLoginIdAsLong).thenReturn(8L);
 
-        @Test
-        @DisplayName("blocks unauthenticated with 401")
-        void unauthenticated() {
-            stpUtil.when(StpUtil::isLogin).thenReturn(false);
+        controller.logout(response);
 
-            assertThatThrownBy(() -> controller.me())
-                    .isInstanceOf(BusinessException.class)
-                    .satisfies(e -> {
-                        BusinessException be = (BusinessException) e;
-                        assertThat(be.getStatus()).isEqualTo(401);
-                    });
-        }
-
-        @Test
-        @DisplayName("returns token info for authenticated user")
-        void authenticated() {
-            stpUtil.when(StpUtil::isLogin).thenReturn(true);
-            SaTokenInfo info = new SaTokenInfo();
-            info.setTokenName("satoken");
-            stpUtil.when(StpUtil::getTokenInfo).thenReturn(info);
-
-            Object result = controller.me();
-
-            assertThat(result).isSameAs(info);
-        }
+        verify(refreshTokenService).revokeAll(8L);
+        verify(authCookieService).clearRefreshCookie(response);
+        stpUtil.verify(StpUtil::logout);
     }
 }

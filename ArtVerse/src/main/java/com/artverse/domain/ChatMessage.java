@@ -6,6 +6,7 @@ import lombok.Getter;
 import lombok.Setter;
 
 import java.time.OffsetDateTime;
+import java.util.UUID;
 
 @Entity
 @Table(name = "chat_messages")
@@ -41,12 +42,16 @@ public class ChatMessage {
     @Column(name = "skill_versions_json", nullable = false, columnDefinition = "jsonb")
     private String skillVersionsJson = "{}";
 
+    @Column(name = "request_id", nullable = false)
+    private UUID requestId;
+
     @Column(name = "created_at", nullable = false, updatable = false)
     private OffsetDateTime createdAt;
 
     @PrePersist
     protected void onCreate() {
         createdAt = OffsetDateTime.now();
+        if (requestId == null) requestId = UUID.randomUUID();
         if (completionStatus == null) completionStatus = ChatMessageCompletionStatus.COMPLETE;
         if (skillVersionsJson == null || skillVersionsJson.isBlank()) skillVersionsJson = "{}";
     }

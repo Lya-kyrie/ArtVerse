@@ -1,6 +1,7 @@
-import { useCallback, useEffect, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
 import {
   BookOpenText,
+  ChevronRight,
   FileText,
   Globe,
   KeyRound,
@@ -10,6 +11,7 @@ import {
   PanelLeftOpen,
   Paintbrush,
   Sparkles,
+  UserRound,
 } from 'lucide-react';
 import ApiSettingsPage from './components/ApiSettingsPage';
 import HomePage from './components/HomePage';
@@ -20,7 +22,7 @@ import MyWorksPage from './components/MyWorksPage';
 import SquarePage from './components/SquarePage';
 import ThemeToggle from './components/ThemeToggle';
 import WorkspaceEditor from './components/WorkspaceEditor';
-import { isAuthenticated, logoutUser, type Story } from './api';
+import { getUser, hydrateAuthSession, isAuthenticated, logoutUser, type Story } from './api';
 import {
   isProtectedRoute,
   parseAppHash,
@@ -92,20 +94,33 @@ export default function App() {
   const [pendingCreateStory, setPendingCreateStory] = useState(false);
   const [workspaceCreateSignal, setWorkspaceCreateSignal] = useState<number | null>(null);
   const [navigationMessage, setNavigationMessage] = useState('');
+  const lastFocusedElementRef = useRef<HTMLElement | null>(null);
 
   const visibleRoute = route && (!authenticated && isProtectedRoute(route)) ? { view: 'square' as const } : route;
   const view: View = visibleRoute?.view ?? 'square';
+  const user = getUser();
+  const userName = user?.username?.trim() || 'Guest';
+  const userEmail = user?.email?.trim() || '登录后同步你的创作配置';
+  const userInitial = userName.slice(0, 1).toUpperCase();
   // A public work is a destination in its own right. Keep it outside the
   // creator-console chrome so a shared URL opens as an uninterrupted reading
   // page, rather than as a panel inside the application shell.
   const isSquareStoryRoute = visibleRoute?.view === 'square' && 'storyId' in visibleRoute;
 
   useEffect(() => {
-    setAuthenticated(isAuthenticated());
-    setAuthCheck(true);
+    let active = true;
+    void hydrateAuthSession().then((nextAuthenticated) => {
+      if (!active) return;
+      setAuthenticated(nextAuthenticated);
+      setAuthCheck(true);
+    });
+    return () => {
+      active = false;
+    };
   }, []);
 
   useEffect(() => {
+    if (!authCheck) return undefined;
     const syncRoute = () => {
       const parsed = parseAppHash(window.location.hash);
       if (parsed) {
@@ -118,13 +133,16 @@ export default function App() {
     window.addEventListener('hashchange', syncRoute);
     syncRoute();
     return () => window.removeEventListener('hashchange', syncRoute);
-  }, []);
+  }, [authCheck]);
 
   useEffect(() => {
     if (!authCheck || authenticated || !route || !isProtectedRoute(route)) return;
     setPendingRoute(route);
     if (!loginOpen) {
       setLoginMessage('请先登录后再使用该功能');
+      if (document.activeElement instanceof HTMLElement) {
+        lastFocusedElementRef.current = document.activeElement;
+      }
       setLoginOpen(true);
     }
   }, [authCheck, authenticated, loginOpen, route]);
@@ -134,6 +152,9 @@ export default function App() {
       setAuthenticated(false);
       setLoginMessage('登录已过期，请重新登录');
       setPendingRoute(route && isProtectedRoute(route) ? route : null);
+      if (document.activeElement instanceof HTMLElement) {
+        lastFocusedElementRef.current = document.activeElement;
+      }
       setLoginOpen(true);
       clearWorkspaceState();
     };
@@ -141,11 +162,29 @@ export default function App() {
     return () => window.removeEventListener('artverse:auth-expired', handleExpired);
   }, [route]);
 
+  useEffect(() => {
+    if (!loginOpen) {
+      lastFocusedElementRef.current?.focus?.();
+      return undefined;
+    }
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        event.preventDefault();
+        cancelLogin();
+      }
+    };
+    document.addEventListener('keydown', handleKeyDown);
+    return () => document.removeEventListener('keydown', handleKeyDown);
+  }, [loginOpen]);
+
   const consumeWorkspaceCreateSignal = () => {
     setWorkspaceCreateSignal(null);
   };
 
   const requireLogin = (target?: AppRoute) => {
+    if (document.activeElement instanceof HTMLElement) {
+      lastFocusedElementRef.current = document.activeElement;
+    }
     setLoginMessage('请先登录后再使用该功能');
     setPendingRoute(target || null);
     setLoginOpen(true);
@@ -278,6 +317,45 @@ export default function App() {
     );
   };
 
+  const sidebarUtilityItem = (
+    icon: ReactNode,
+    label: string,
+    onClick: () => void,
+    options?: {
+      description?: string;
+      accent?: boolean;
+      title?: string;
+    },
+  ) => (
+    <button
+      type="button"
+      onClick={onClick}
+      title={!sidebarOpen ? (options?.title ?? label) : undefined}
+      className={
+        'group flex min-h-10 w-full items-center gap-3 rounded-xl px-3 text-left text-sm font-medium transition-all duration-200 '
+        + (options?.accent
+          ? 'text-text-secondary hover:bg-accent-muted/30 hover:text-accent'
+          : 'text-text-secondary hover:bg-accent-soft hover:text-text-primary')
+        + (!sidebarOpen ? ' justify-center px-0' : '')
+      }
+    >
+      <span className="shrink-0">{icon}</span>
+      {sidebarOpen && (
+        <>
+          <span className="min-w-0 flex-1">
+            <span className="block truncate">{label}</span>
+            {options?.description && (
+              <span className="mt-0.5 block truncate text-[11px] font-normal text-text-muted">
+                {options.description}
+              </span>
+            )}
+          </span>
+          <ChevronRight size={15} className="shrink-0 text-text-muted transition-transform duration-200 group-hover:translate-x-0.5" />
+        </>
+      )}
+    </button>
+  );
+
   if (!authCheck) {
     return (
       <div className="flex h-dvh w-screen items-center justify-center bg-bg-base">
@@ -326,32 +404,59 @@ export default function App() {
             {navItem(<FileText size={18} />, '作品管理', 'myworks')}
           </nav>
 
-          <div className="flex flex-col gap-1 border-t border-border px-2 py-3">
-            {authenticated ? (
-              <>
-                {navItem(<KeyRound size={18} />, 'API 设置', 'settings')}
-                <button
-                  type="button"
-                  onClick={() => { void handleLogout(); }}
-                  title={!sidebarOpen ? '退出登录' : undefined}
-                  className="flex min-h-10 w-full items-center gap-3 rounded-xl px-3 text-sm font-medium text-text-secondary transition-colors hover:bg-accent-soft hover:text-accent"
-                >
-                  <LogOut size={18} />
-                  {sidebarOpen && <span>退出登录</span>}
-                </button>
-              </>
-            ) : (
-              <button
-                type="button"
-                onClick={() => requireLogin()}
-                title={!sidebarOpen ? '登录' : undefined}
-                className="flex min-h-10 w-full items-center gap-3 rounded-xl px-3 text-sm font-medium text-text-secondary transition-colors hover:bg-accent-soft hover:text-text-primary"
+          <div className="border-t border-border px-3 py-3">
+            <div
+              className={
+                'rounded-[22px] border border-border/80 bg-bg-surface/75 shadow-[0_10px_30px_rgba(15,23,42,0.06)] backdrop-blur-sm '
+                + (sidebarOpen ? 'p-3' : 'p-2')
+              }
+              title={!sidebarOpen ? (authenticated ? userName : '游客模式') : undefined}
+            >
+              <div
+                className={
+                  'flex items-center gap-3 rounded-2xl border border-border/70 bg-bg-base/70 '
+                  + (sidebarOpen ? 'px-3 py-3' : 'justify-center px-0 py-3')
+                }
               >
-                <LogIn size={18} />
-                {sidebarOpen && <span>登录</span>}
-              </button>
-            )}
-            <ThemeToggle compact={!sidebarOpen} />
+                <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-accent text-white shadow-glow">
+                  {authenticated ? <span className="text-sm font-semibold">{userInitial}</span> : <UserRound size={18} />}
+                </div>
+                {sidebarOpen && (
+                  <>
+                    <div className="min-w-0 flex-1">
+                      <div className="truncate text-sm font-semibold text-text-primary">{authenticated ? userName : '游客模式'}</div>
+                      <div className="mt-0.5 truncate text-[11px] text-text-muted">
+                        {authenticated ? userEmail : '登录后保存模型配置与创作记录'}
+                      </div>
+                    </div>
+                    <span className={`shrink-0 rounded-full px-2 py-1 text-[10px] font-semibold ${authenticated ? 'bg-accent-muted text-accent' : 'bg-bg-raised text-text-muted'}`}>
+                      {authenticated ? '已登录' : '访客'}
+                    </span>
+                  </>
+                )}
+              </div>
+
+              <div className="mt-2 rounded-2xl border border-border/70 bg-bg-base/55 p-1.5">
+                {authenticated
+                  ? sidebarUtilityItem(<KeyRound size={18} />, 'API 设置', () => goView('settings'), {
+                      description: '管理供应商、模型与密钥',
+                    })
+                  : sidebarUtilityItem(<LogIn size={18} />, '登录账号', () => requireLogin(), {
+                      description: '同步创作进度与个人配置',
+                    })}
+                <div className="mx-2 my-1 border-t border-border/70" />
+                <ThemeToggle compact={!sidebarOpen} />
+                {authenticated && (
+                  <>
+                    <div className="mx-2 my-1 border-t border-border/70" />
+                    {sidebarUtilityItem(<LogOut size={18} />, '退出登录', () => { void handleLogout(); }, {
+                      description: '清除当前会话并返回广场',
+                      accent: true,
+                    })}
+                  </>
+                )}
+              </div>
+            </div>
           </div>
         </aside>
       )}
@@ -410,10 +515,10 @@ export default function App() {
 
       {loginOpen && (
         <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-bg-overlay p-4 backdrop-blur-sm"
+          className="fixed inset-0 z-50 flex items-center justify-center bg-bg-overlay/95 p-4 backdrop-blur-md sm:p-6"
           onClick={cancelLogin}
         >
-          <div className="w-full max-w-sm animate-fade-in" onClick={(event) => event.stopPropagation()}>
+          <div className="w-full max-w-[38rem] animate-fade-in" onClick={(event) => event.stopPropagation()}>
             <LoginPage
               variant="modal"
               message={loginMessage}

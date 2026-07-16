@@ -49,30 +49,21 @@ public class NovelContentController {
     @PostMapping("/proposals")
     public NovelContentProposalService.ProposalResult createProposal(@PathVariable Long chapterId,
                                                                      @RequestBody CreateProposalRequest request) {
-        User user = currentUserService.requireCurrentUser();
-        UserProviderConfig config = apiKeyService.requireProviderConfig(
-                user,
-                new UserProviderConfig(ApiKeyService.SLOT_LLM, "", "", "", "", request.model()),
-                request.configId(),
-                "Please configure an LLM provider API key in Settings before creating a novel proposal.");
-        return proposalService.create(user, chapterId, request.conversationId(), request.throughMessageId(),
-                request.baseVersion(), config);
+        throw new BusinessException(410, "Novel content proposals have been retired. Use story-chat AG-UI draft confirmation instead.");
     }
 
     @PutMapping("/proposals/{proposalId}")
     public NovelContentProposalService.ProposalResult updateProposal(@PathVariable Long chapterId,
                                                                      @PathVariable UUID proposalId,
                                                                      @RequestBody UpdateProposalRequest request) {
-        User user = currentUserService.requireCurrentUser();
-        return proposalService.updateDraft(user, chapterId, proposalId, request.content(), request.expectedContentHash());
+        throw new BusinessException(410, "Novel content proposals have been retired. Use story-chat AG-UI draft confirmation instead.");
     }
 
     @PostMapping("/proposals/{proposalId}/commit")
     public NovelContentProposalService.CommitResult commitProposal(@PathVariable Long chapterId,
                                                                    @PathVariable UUID proposalId,
                                                                    @RequestBody CommitProposalRequest request) {
-        User user = currentUserService.requireCurrentUser();
-        return proposalService.commit(user, chapterId, proposalId, request.baseVersion(), request.expectedContentHash());
+        throw new BusinessException(410, "Novel content proposals have been retired. Use story-chat AG-UI draft confirmation instead.");
     }
 
     @PostMapping("/revisions/{revisionId}/restore")

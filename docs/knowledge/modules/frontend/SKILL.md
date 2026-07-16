@@ -34,7 +34,7 @@ npm run lint       # ESLint
 | `MangaAgentPage.tsx` | Manga agent chat + execution panel, story/chapter/model selectors, conversation list sidebar |
 | `HomePage.tsx` | Story workspace / story list; consumes `createStorySignal` to open the new-story dialog |
 | `WorkspaceEditor.tsx` | Story editor shell: chapter navigation, mobile chat/manga tabs, `ChatPanel`, and `MangaPanel` |
-| `ChatPanel.tsx` | AI novel-writing chat interface; `onGoToManga` switches the workspace editor to manga view |
+| `ChatPanel.tsx` | AI novel-writing chat interface; uses story-chat AG-UI runs and inline novel draft confirmation cards |
 | `MangaPanel.tsx` | Generated manga image display |
 | `ImageGenPage.tsx` | Standalone image generation UI |
 | `ImageEditor.tsx` | Image editing tools |
@@ -76,8 +76,9 @@ The frontend consumes AG-UI events via `@ag-ui/core` and `@ag-ui/client`. Live e
 
 - `App.tsx` includes a dedicated `settings` view. API settings render as a first-class page on the right content area.
 - `HomePage` consumes `createStorySignal` from the root shell to open the new-story dialog.
-- `WorkspaceEditor` owns chapter navigation and passes `onGoToManga` to `ChatPanel` for mobile tab switching.
+- `WorkspaceEditor` owns chapter navigation plus the mobile chat/manga tab switch.
 - `ChatPanel.tsx` reads models from every enabled LLM provider and sends the selected provider `config_id` plus model with story-chat requests.
+- `ChatPanel.tsx` must not call the retired novel-content proposal endpoints for new AI writes. It restores `NOVEL_CONTENT_DRAFT` artifacts from story-chat runs and resumes with `{ decision, artifact_id }`.
 - `ImageGenPage.tsx` reads models from every enabled image provider and sends the selected provider `config_id` plus model with image-generation requests. It restores persisted image-generation records on entry and polls while a record is `RUNNING`.
 - Image generation themes keep only lightweight message metadata and image cache keys in `localStorage`. `imageCache.ts` stores image Blobs in bounded IndexedDB storage; generated images read local-first and fall back to `/static/manga/**`, while reference images must never persist temporary `blob:` URLs.
 - `ModelSwitcher.tsx` groups models by provider profile rather than model vendor, so duplicate model names across profiles remain independently routable.

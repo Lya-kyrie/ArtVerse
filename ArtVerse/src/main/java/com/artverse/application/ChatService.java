@@ -75,6 +75,11 @@ public class ChatService {
         }
     }
 
+    @Transactional
+    public MangaAgentConversation storyConversation(Long chapterId, User user) {
+        return aiConversationService.storyConversation(user, chapterId);
+    }
+
     @Transactional(readOnly = true)
     public List<ChatMessage> getMessages(Long chapterId) {
         return chatMessageRepository.findByChapterIdOrderByCreatedAtAsc(chapterId);

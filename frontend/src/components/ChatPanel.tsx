@@ -1,22 +1,25 @@
-import { useEffect, useMemo, useRef, useState, type Dispatch, type SetStateAction } from 'react';
-import { FileText, History, Image, MessageSquare, Save, Send, Sparkles, Square, X } from 'lucide-react';
+import { useEffect, useRef, useState } from 'react';
+import { ChevronDown, ChevronUp, FileText, History, MessageSquare, Save, Send, Sparkles, Square } from 'lucide-react';
 import {
   API_KEY_CHANGE_EVENT,
-  chatStream,
-  commitNovelContentProposal,
-  createNovelContentProposal,
+  cancelStoryChatConversationRun,
+  createAiConversation,
+  getOpenStoryChatConversationRun,
   getPrimaryProviderModel,
   getProviderModelOptions,
+  getStoryChatRunArtifacts,
   listAiConversations,
   listNovelRevisions,
   renameAiConversation,
   restoreNovelRevision,
+  resumeStoryChatAgUiStream,
+  runStoryChatAgUiStream,
   saveNovelContent,
-  updateNovelContentProposal,
   type AiConversationSummary,
+  type ArtVerseAgUiEvent,
   type Chapter,
   type ChatMessage,
-  type NovelContentProposal,
+  type MangaAgentRunEvent,
   type NovelRevision,
 } from '../api';
 import MarkdownRenderer from './MarkdownRenderer';
@@ -24,27 +27,30 @@ import ModelSwitcher from './ModelSwitcher';
 import InlineConversationTitle from './InlineConversationTitle';
 
 type Mode = 'chat' | 'original';
-type ReviewTab = 'current' | 'candidate';
 type DisplayMessage = ChatMessage & { local_id?: string };
+
 const MAX_ORIGINAL_CHARS = 50000;
 
 interface Props {
   chapter: Chapter | null;
   onMessageSent?: () => void | Promise<void>;
   onChapterRefresh?: (chapterId: number) => void | Promise<void>;
-  onGoToManga?: () => void;
 }
 
-interface ProposalReviewState {
-  proposal: NovelContentProposal;
-  original: string;
-  draft: string;
+interface PendingDraftState {
+  requestId: string;
+  artifactId: string;
+  content: string;
   contentHash: string;
+  baseVersion: number;
+  currentWordCount: number;
+  draftWordCount: number;
+  expanded: boolean;
+  busy: boolean;
   error: string;
-  tab: ReviewTab;
 }
 
-export default function ChatPanel({ chapter, onMessageSent, onChapterRefresh, onGoToManga }: Props) {
+export default function ChatPanel({ chapter, onMessageSent, onChapterRefresh }: Props) {
   const [messages, setMessages] = useState<DisplayMessage[]>([]);
   const [input, setInput] = useState('');
   const [streaming, setStreaming] = useState(false);
@@ -54,13 +60,14 @@ export default function ChatPanel({ chapter, onMessageSent, onChapterRefresh, on
   const [originalText, setOriginalText] = useState('');
   const [serverOriginalText, setServerOriginalText] = useState('');
   const [writeBusy, setWriteBusy] = useState(false);
-  const [proposalBusy, setProposalBusy] = useState(false);
   const [originalError, setOriginalError] = useState('');
   const [originalNotice, setOriginalNotice] = useState('');
   const [revisions, setRevisions] = useState<NovelRevision[]>([]);
   const [showHistory, setShowHistory] = useState(false);
   const [conversation, setConversation] = useState<AiConversationSummary | null>(null);
-  const [review, setReview] = useState<ProposalReviewState | null>(null);
+  const [pendingDraft, setPendingDraft] = useState<PendingDraftState | null>(null);
+  const [activeRequestId, setActiveRequestId] = useState<string | null>(null);
+
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -69,26 +76,13 @@ export default function ChatPanel({ chapter, onMessageSent, onChapterRefresh, on
   const userScrolledUp = useRef(false);
 
   const originalDirty = originalText !== serverOriginalText;
-  const latestEligibleAssistantId = useMemo(() => {
-    if (streaming) return null;
-    const last = [...messages].reverse().find((message) =>
-      message.role === 'assistant'
-      && typeof message.id === 'number'
-      && (message.completion_status ?? 'complete') === 'complete',
-    );
-    return last?.id ?? null;
-  }, [messages, streaming]);
 
   const refreshRevisions = async (chapterId: number) => setRevisions(await listNovelRevisions(chapterId));
   const autoResize = (el: HTMLTextAreaElement) => { el.style.height = 'auto'; el.style.height = `${el.scrollHeight}px`; };
 
   useEffect(() => {
-    if (abortRef.current) {
-      const chapterId = streamingChapterIdRef.current;
-      abortRef.current.abort();
-      abortRef.current = null;
-      if (chapterId !== null) window.setTimeout(() => void onChapterRefresh?.(chapterId), 500);
-    }
+    abortRef.current?.abort();
+    abortRef.current = null;
     streamingChapterIdRef.current = null;
     if (chapter) {
       setMessages(getDisplayMessages(chapter));
@@ -102,7 +96,8 @@ export default function ChatPanel({ chapter, onMessageSent, onChapterRefresh, on
       setServerOriginalText('');
       setRevisions([]);
     }
-    setReview(null);
+    setPendingDraft(null);
+    setActiveRequestId(null);
     setMode('chat');
     setOriginalError('');
     setOriginalNotice('');
@@ -118,8 +113,19 @@ export default function ChatPanel({ chapter, onMessageSent, onChapterRefresh, on
   }, [chapter?.id, messages.length]);
 
   useEffect(() => {
+    if (!chapter || !conversation) return;
+    void getOpenStoryChatConversationRun(chapter.id, conversation.conversationId)
+      .then(async (run) => {
+        if (!run || run.status !== 'WAITING_USER') return;
+        const requestId = run.requestId ?? run.request_id;
+        if (requestId) await loadDraftCard(requestId, conversation.conversationId);
+      })
+      .catch(() => undefined);
+  }, [chapter?.id, conversation?.conversationId]);
+
+  useEffect(() => {
     if (!userScrolledUp.current) messagesEndRef.current?.scrollIntoView({ behavior: streaming ? 'instant' : 'smooth' });
-  }, [messages, streamContent, streaming]);
+  }, [messages, streamContent, streaming, pendingDraft]);
   useEffect(() => { userScrolledUp.current = false; }, [messages.length]);
   useEffect(() => {
     const element = scrollContainerRef.current;
@@ -138,13 +144,98 @@ export default function ChatPanel({ chapter, onMessageSent, onChapterRefresh, on
     return () => window.removeEventListener(API_KEY_CHANGE_EVENT, syncModels);
   }, []);
 
+  const appendAssistantError = (content: string) => {
+    setMessages((previous) => [...previous, {
+      local_id: `local-error-${Date.now()}`,
+      id: Date.now(),
+      role: 'assistant',
+      content,
+      completion_status: 'partial',
+      created_at: new Date().toISOString(),
+    }]);
+  };
+
+  async function loadDraftCard(requestId: string, conversationId: string) {
+    if (!chapter) return;
+    const artifacts = await getStoryChatRunArtifacts(chapter.id, conversationId, requestId);
+    const draft = [...artifacts].reverse().find((item) =>
+      item.type === 'NOVEL_CONTENT_DRAFT' && (item.status === 'VALIDATED' || item.status === 'DRAFT'));
+    if (!draft) return;
+    const payload = draft.payload || {};
+    const content = String(payload.content || '');
+    setPendingDraft({
+      requestId,
+      artifactId: draft.artifactId,
+      content,
+      contentHash: String(payload.content_hash || draft.checksum || ''),
+      baseVersion: Number(payload.base_version ?? chapter.version ?? 0),
+      currentWordCount: Number(payload.current_word_count ?? (serverOriginalText.trim().length || 0)),
+      draftWordCount: Number(payload.word_count ?? content.length),
+      expanded: false,
+      busy: false,
+      error: '',
+    });
+  }
+
+  const finishStream = async (reply: string) => {
+    abortRef.current = null;
+    streamingChapterIdRef.current = null;
+    setStreamContent('');
+    setStreaming(false);
+    if (reply.trim()) {
+      setMessages((previous) => [...previous, {
+        local_id: `assistant-${Date.now()}`,
+        id: Date.now(),
+        role: 'assistant',
+        content: reply.trim(),
+        completion_status: 'complete',
+        created_at: new Date().toISOString(),
+      }]);
+    }
+    await onMessageSent?.();
+  };
+
+  const handleStoryChatEvent = (
+    event: ArtVerseAgUiEvent,
+    requestId: string,
+    conversationId: string,
+    stream: { append: (delta: string) => void; finalText: () => string },
+  ) => {
+    if (!event || typeof event.type !== 'string') return;
+    if (event.type === 'TEXT_MESSAGE_CONTENT') {
+      stream.append(String((event as any).delta || ''));
+      return;
+    }
+    if (event.type === 'RUN_FINISHED') {
+      const interrupts = event.outcome?.interrupts || [];
+      if (event.outcome?.type === 'interrupt' || interrupts.length > 0) {
+        abortRef.current = null;
+        streamingChapterIdRef.current = null;
+        setStreamContent('');
+        setStreaming(false);
+        void loadDraftCard(requestId, conversationId);
+        return;
+      }
+      void finishStream(event.result?.reply || stream.finalText());
+      return;
+    }
+    if (event.type === 'RUN_ERROR') {
+      appendAssistantError(String((event as any).message || '小说对话执行失败。'));
+      setStreamContent('');
+      setStreaming(false);
+      abortRef.current = null;
+      streamingChapterIdRef.current = null;
+    }
+  };
+
   const handleSend = () => {
     if (!input.trim() || !chapter || streaming) return;
+    const text = input.trim();
     const userMessage: DisplayMessage = {
       local_id: `local-user-${Date.now()}`,
       id: Date.now(),
       role: 'user',
-      content: input.trim(),
+      content: text,
       completion_status: 'complete',
       created_at: new Date().toISOString(),
     };
@@ -153,38 +244,42 @@ export default function ChatPanel({ chapter, onMessageSent, onChapterRefresh, on
     if (textareaRef.current) textareaRef.current.style.height = 'auto';
     setStreaming(true);
     setStreamContent('');
+    setPendingDraft(null);
+    const requestId = createLocalRequestId();
+    setActiveRequestId(requestId);
     let accumulated = '';
     streamingChapterIdRef.current = chapter.id;
-    abortRef.current = chatStream(chapter.id, userMessage.content,
-      (token) => { accumulated += token; setStreamContent(accumulated); },
-      async (message) => {
-        abortRef.current = null;
-        streamingChapterIdRef.current = null;
-        setMessages((previous) => [...previous, message]);
-        setStreamContent('');
-        setStreaming(false);
-        await onMessageSent?.();
-      },
-      (error) => {
-        abortRef.current = null;
-        streamingChapterIdRef.current = null;
-        setMessages((previous) => [...previous, {
-          local_id: `local-error-${Date.now()}`,
-          id: Date.now(),
-          role: 'assistant',
-          content: `错误：${error}`,
-          completion_status: 'partial',
-          created_at: new Date().toISOString(),
-        }]);
-        setStreamContent('');
-        setStreaming(false);
-      },
-      selectedLlmModel);
+    void (async () => {
+      const activeConversation = conversation
+        ?? (await listAiConversations('STORY_CHAT', chapter.id).then((items) => items[0] ?? null))
+        ?? await createAiConversation('STORY_CHAT', undefined, chapter.id);
+      setConversation(activeConversation);
+      abortRef.current = runStoryChatAgUiStream(
+        chapter.id,
+        activeConversation.conversationId,
+        text,
+        requestId,
+        (event: MangaAgentRunEvent) => handleStoryChatEvent(event.data as ArtVerseAgUiEvent, requestId, activeConversation.conversationId, {
+          append(delta) { accumulated += delta; setStreamContent(accumulated); },
+          finalText() { return accumulated; },
+        }),
+        selectedLlmModel,
+      );
+    })().catch((error: any) => {
+      appendAssistantError(error.message || '小说对话启动失败。');
+      setStreamContent('');
+      setStreaming(false);
+      abortRef.current = null;
+      streamingChapterIdRef.current = null;
+    });
   };
 
   const handleAbort = () => {
     const chapterId = streamingChapterIdRef.current;
     abortRef.current?.abort();
+    if (chapter && conversation && activeRequestId) {
+      void cancelStoryChatConversationRun(chapter.id, conversation.conversationId, activeRequestId).catch(() => undefined);
+    }
     abortRef.current = null;
     streamingChapterIdRef.current = null;
     if (streamContent) {
@@ -202,6 +297,32 @@ export default function ChatPanel({ chapter, onMessageSent, onChapterRefresh, on
     window.setTimeout(() => chapterId !== null ? void onChapterRefresh?.(chapterId) : void onMessageSent?.(), 500);
   };
 
+  const handleDraftDecision = async (decision: 'confirm' | 'discard') => {
+    if (!chapter || !conversation || !pendingDraft || pendingDraft.busy) return;
+    setPendingDraft((current) => current ? { ...current, busy: true, error: '' } : current);
+    setStreaming(decision === 'confirm');
+    let accumulated = '';
+    abortRef.current = resumeStoryChatAgUiStream(
+      chapter.id,
+      conversation.conversationId,
+      pendingDraft.requestId,
+      decision,
+      pendingDraft.artifactId,
+      (event: MangaAgentRunEvent) => handleStoryChatEvent(event.data as ArtVerseAgUiEvent, pendingDraft.requestId, conversation.conversationId, {
+        append(delta) { accumulated += delta; setStreamContent(accumulated); },
+        finalText() { return accumulated; },
+      }),
+      selectedLlmModel,
+    );
+    window.setTimeout(async () => {
+      setPendingDraft((current) => current?.artifactId === pendingDraft.artifactId ? null : current);
+      if (decision === 'confirm') {
+        await refreshRevisions(chapter.id).catch(() => undefined);
+        await onChapterRefresh?.(chapter.id);
+      }
+    }, 1200);
+  };
+
   const handleOriginalSave = async () => {
     if (!chapter || writeBusy) return;
     const content = originalText.trim();
@@ -213,74 +334,13 @@ export default function ChatPanel({ chapter, onMessageSent, onChapterRefresh, on
       const result = await saveNovelContent(chapter.id, content, chapter.version);
       setOriginalText(content);
       setServerOriginalText(content);
-      setOriginalNotice('小说原文已保存。');
+      setOriginalNotice(result.chapter_version !== undefined
+        ? `小说原文已保存，当前版本 ${result.chapter_version}。`
+        : '小说原文已保存。');
       await refreshRevisions(chapter.id);
       await onChapterRefresh?.(chapter.id);
-      if (result.chapter_version !== undefined) setOriginalNotice(`小说原文已保存，当前版本 ${result.chapter_version}。`);
     } catch (error: any) {
       setOriginalError(error.message || '保存失败。');
-    } finally {
-      setWriteBusy(false);
-    }
-  };
-
-  const handleCreateProposal = async (message: DisplayMessage) => {
-    if (!chapter || proposalBusy || writeBusy || typeof message.id !== 'number') return;
-    if (chapter.version === undefined) { setOriginalError('章节版本缺失，请刷新后再整理。'); setMode('original'); return; }
-    if (originalDirty) { setOriginalError('小说原文有未保存修改，请先保存或放弃修改后再整理正文草稿。'); setMode('original'); return; }
-    const activeConversation = conversation ?? (await listAiConversations('STORY_CHAT', chapter.id).then((items) => items[0] ?? null));
-    if (!activeConversation) { setOriginalError('未找到当前章节对话，请先发送一条消息后再整理。'); return; }
-    setProposalBusy(true); setOriginalError(''); setOriginalNotice('');
-    try {
-      const proposal = await createNovelContentProposal(
-        chapter.id,
-        activeConversation.conversationId,
-        message.id,
-        chapter.version,
-        selectedLlmModel,
-      );
-      setReview({
-        proposal,
-        original: serverOriginalText,
-        draft: proposal.content,
-        contentHash: proposal.content_hash,
-        error: '',
-        tab: 'candidate',
-      });
-    } catch (error: any) {
-      setOriginalError(error.message || '整理正文草稿失败。');
-    } finally {
-      setProposalBusy(false);
-    }
-  };
-
-  const closeReview = () => {
-    if (!review) return;
-    if (review.draft !== review.proposal.content && !window.confirm('候选正文有未提交修改，确定丢弃吗？')) return;
-    setReview(null);
-  };
-
-  const commitReview = async () => {
-    if (!chapter || !review || writeBusy || chapter.version === undefined) return;
-    setWriteBusy(true);
-    setReview((current) => current ? { ...current, error: '' } : current);
-    try {
-      let currentProposal = review.proposal;
-      let currentHash = review.contentHash;
-      if (review.draft !== review.proposal.content) {
-        currentProposal = await updateNovelContentProposal(chapter.id, review.proposal.proposal_id, review.draft, review.contentHash);
-        currentHash = currentProposal.content_hash;
-      }
-      const result = await commitNovelContentProposal(chapter.id, currentProposal.proposal_id, chapter.version, currentHash);
-      setOriginalText(review.draft.trim());
-      setServerOriginalText(review.draft.trim());
-      await refreshRevisions(chapter.id);
-      await onChapterRefresh?.(chapter.id);
-      setReview(null);
-      setMode('original');
-      setOriginalNotice(result.changed ? '已确认替换原文，可从历史版本恢复。' : '候选正文与当前原文一致，未创建新版本。');
-    } catch (error: any) {
-      setReview((current) => current ? { ...current, error: error.message || '确认替换失败。候选内容已保留。' } : current);
     } finally {
       setWriteBusy(false);
     }
@@ -313,76 +373,55 @@ export default function ChatPanel({ chapter, onMessageSent, onChapterRefresh, on
     </div>
 
     {mode === 'original' ? <div className="flex min-h-0 flex-1 flex-col">
-      <div className="shrink-0 px-4 pb-2 pt-3 text-xs leading-relaxed text-text-secondary">小说原文是章节正式正文。手工保存、恢复和 AI 草稿确认都会创建历史版本。</div>
+      <div className="shrink-0 px-4 pb-2 pt-3 text-xs leading-relaxed text-text-secondary">小说原文是章节正式正文。手工保存、恢复和 AI 确认写入都会创建历史版本。</div>
       <div className="min-h-0 flex-1 px-4 pb-3"><textarea value={originalText} onChange={(event) => { setOriginalText(event.target.value); setOriginalError(''); setOriginalNotice(''); }} placeholder={`粘贴或撰写小说原文，最长 ${MAX_ORIGINAL_CHARS} 字`} className="h-full w-full resize-none rounded-lg border border-border bg-bg-surface p-3 text-sm leading-relaxed text-text-primary outline-none transition-colors placeholder:text-text-muted focus:border-accent" /></div>
       {showHistory && <div className="mx-4 mb-3 max-h-36 overflow-y-auto rounded-lg border border-border bg-bg-base p-2 text-xs">{revisions.length === 0 ? <p className="px-2 py-1 text-text-muted">暂无历史版本。</p> : revisions.map((revision) => <div key={revision.id} className="flex items-center gap-2 rounded px-2 py-1.5 hover:bg-bg-surface"><span className="font-medium text-text-primary">v{revision.revision_number}</span><span className="text-text-muted">{revision.source}</span><span className="ml-auto text-text-muted">{new Date(revision.created_at).toLocaleString()}</span><button type="button" onClick={() => handleRestore(revision)} disabled={writeBusy} className="text-accent hover:text-accent-hover disabled:opacity-40">恢复</button></div>)}</div>}
       <div className="flex shrink-0 items-center justify-between gap-3 px-4 pb-3"><div className="text-xs text-text-secondary">{originalText.length.toLocaleString()} / {MAX_ORIGINAL_CHARS.toLocaleString()} 字{originalDirty && <span className="ml-3 text-amber-600">未保存</span>}{originalError && <span className="ml-3 text-red-600" role="alert">{originalError}</span>} {originalNotice && <span className="ml-3 text-accent">{originalNotice}</span>}</div><div className="flex items-center gap-2"><button type="button" onClick={() => setShowHistory((value) => !value)} className="flex items-center gap-1.5 rounded-md border border-border px-3 py-2 text-xs font-medium text-text-secondary transition-colors hover:text-text-primary" aria-expanded={showHistory}><History size={13} />历史{revisions.length ? ` (${revisions.length})` : ''}</button><button type="button" onClick={handleOriginalSave} disabled={!chapter || writeBusy || !originalText.trim()} className="flex items-center gap-1.5 rounded-md bg-accent px-4 py-2 text-xs font-medium text-white transition-colors hover:bg-accent-hover disabled:cursor-not-allowed disabled:opacity-30"><Save size={13} />{writeBusy ? '保存中...' : '保存原文'}</button></div></div>
     </div> : <>
       <div ref={scrollContainerRef} className="flex-1 space-y-4 overflow-y-auto px-4 py-4">
-        {messages.length === 0 && !streaming && <div className="flex h-full items-center justify-center text-sm text-text-muted">开始和 AI 讨论你的小说创意。</div>}
-        {messages.map((message) => <div key={message.local_id ?? message.id} className={`flex ${message.role === 'user' ? 'justify-end' : 'w-full justify-start'}`}><div className={`rounded-xl px-4 py-3 text-sm leading-relaxed ${message.role === 'user' ? 'max-w-[80%] rounded-br-sm bg-accent-muted/40 text-text-primary' : 'w-full rounded-bl-sm border border-border bg-bg-raised text-text-primary shadow-sm'}`}><MarkdownRenderer content={message.content} />{message.role === 'assistant' && message.id === latestEligibleAssistantId && <div className="mt-3 flex justify-end border-t border-border/70 pt-2"><button type="button" onClick={() => handleCreateProposal(message)} disabled={proposalBusy || writeBusy || originalDirty} className="flex min-h-9 items-center gap-1.5 rounded-md border border-accent/25 bg-accent-soft px-2.5 py-1.5 text-xs font-medium text-accent transition-colors hover:bg-accent-muted/40 disabled:cursor-not-allowed disabled:opacity-40"><Sparkles size={13} />{proposalBusy ? '整理中...' : '整理为正文草稿'}</button></div>}</div></div>)}
+        {messages.length === 0 && !streaming && !pendingDraft && <div className="flex h-full items-center justify-center text-sm text-text-muted">开始和 AI 讨论你的小说创意。</div>}
+        {messages.map((message) => <div key={message.local_id ?? message.id} className={`flex ${message.role === 'user' ? 'justify-end' : 'w-full justify-start'}`}><div className={`rounded-xl px-4 py-3 text-sm leading-relaxed ${message.role === 'user' ? 'max-w-[80%] rounded-br-sm bg-accent-muted/40 text-text-primary' : 'w-full rounded-bl-sm border border-border bg-bg-raised text-text-primary shadow-sm'}`}><MarkdownRenderer content={message.content} /></div></div>)}
+        {pendingDraft && <NovelDraftCard draft={pendingDraft} onToggle={() => setPendingDraft((value) => value ? { ...value, expanded: !value.expanded } : value)} onDecision={handleDraftDecision} />}
         {streaming && <div className="flex justify-start"><div className="w-full rounded-xl rounded-bl-sm border border-border bg-bg-raised px-4 py-3 text-sm leading-relaxed text-text-primary shadow-sm">{streamContent ? <><MarkdownRenderer content={streamContent} /><span className="ml-0.5 inline-block h-4 w-1.5 rounded-sm bg-accent" /></> : 'AI 思考中...'}</div></div>}
-        {onGoToManga && messages.length > 0 && !streaming && <div className="flex justify-center py-3"><button type="button" onClick={onGoToManga} className="flex items-center gap-1.5 rounded-md border border-accent-secondary/20 bg-accent-secondary/10 px-4 py-2 text-xs font-medium text-accent-secondary transition-colors"><Image size={14} />查看漫画 / 生成分镜</button></div>}
         <div ref={messagesEndRef} />
       </div>
       <div className="border-t border-border/80 bg-bg-base/80 px-3 py-3 backdrop-blur-md md:px-4">
-        <div className="mb-2 flex justify-end"><ModelSwitcher capability="llm" selectedModel={selectedLlmModel} onSelect={setSelectedLlmModel} disabled={streaming || proposalBusy} /></div>
+        <div className="mb-2 flex justify-end"><ModelSwitcher capability="llm" selectedModel={selectedLlmModel} onSelect={setSelectedLlmModel} disabled={streaming || !!pendingDraft?.busy} /></div>
         <div className="group relative overflow-hidden rounded-2xl border border-border bg-bg-surface/95 shadow-lg shadow-black/10 transition-all duration-200 focus-within:border-accent/70 focus-within:bg-bg-raised focus-within:shadow-[0_0_0_3px_var(--color-accent-muted)]">
           <div className="flex items-end gap-3 px-3 py-3">
             <div className="mb-0.5 hidden h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-border bg-bg-base text-accent shadow-sm md:flex"><Sparkles size={15} aria-hidden="true" /></div>
-            <textarea ref={textareaRef} value={input} onChange={(event) => { setInput(event.target.value); autoResize(event.target); }} onKeyDown={(event) => { if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); handleSend(); } }} placeholder="描述你的小说想法，或要求 AI 润色、改写、续写..." rows={1} className="min-h-10 flex-1 resize-none bg-transparent py-2 text-[15px] leading-6 text-text-primary outline-none placeholder:text-text-muted/80" style={{ maxHeight: '160px', overflow: 'auto' }} />
-            {streaming ? <button type="button" onClick={handleAbort} className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-accent text-white shadow-md shadow-black/20 transition-all duration-200 hover:bg-accent-hover hover:shadow-lg" title="停止生成" aria-label="停止生成"><Square size={17} /></button> : <button type="button" onClick={handleSend} disabled={!input.trim() || proposalBusy} className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-accent text-white shadow-md shadow-black/20 transition-all duration-200 hover:bg-accent-hover hover:shadow-lg disabled:cursor-not-allowed disabled:bg-bg-raised disabled:text-text-muted disabled:shadow-none" title="发送消息" aria-label="发送消息"><Send size={17} /></button>}
+            <textarea ref={textareaRef} value={input} onChange={(event) => { setInput(event.target.value); autoResize(event.target); }} onKeyDown={(event) => { if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); handleSend(); } }} placeholder="描述你的小说想法，或要求 AI 润色、改写、续写并保存..." rows={1} className="min-h-10 flex-1 resize-none bg-transparent py-2 text-[15px] leading-6 text-text-primary outline-none placeholder:text-text-muted/80" style={{ maxHeight: '160px', overflow: 'auto' }} />
+            {streaming ? <button type="button" onClick={handleAbort} className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-accent text-white shadow-md shadow-black/20 transition-all duration-200 hover:bg-accent-hover hover:shadow-lg" title="停止生成" aria-label="停止生成"><Square size={17} /></button> : <button type="button" onClick={handleSend} disabled={!input.trim() || !!pendingDraft?.busy} className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-accent text-white shadow-md shadow-black/20 transition-all duration-200 hover:bg-accent-hover hover:shadow-lg disabled:cursor-not-allowed disabled:bg-bg-raised disabled:text-text-muted disabled:shadow-none" title="发送消息" aria-label="发送消息"><Send size={17} /></button>}
           </div>
         </div>
       </div>
     </>}
-    {review && <ProposalReviewDialog review={review} setReview={setReview} onClose={closeReview} onCommit={commitReview} committing={writeBusy} />}
   </div>;
 }
 
-function ProposalReviewDialog({
-  review,
-  setReview,
-  onClose,
-  onCommit,
-  committing,
-}: {
-  review: ProposalReviewState;
-  setReview: Dispatch<SetStateAction<ProposalReviewState | null>>;
-  onClose: () => void;
-  onCommit: () => void;
-  committing: boolean;
+function NovelDraftCard({ draft, onToggle, onDecision }: {
+  draft: PendingDraftState;
+  onToggle: () => void;
+  onDecision: (decision: 'confirm' | 'discard') => void;
 }) {
-  const delta = review.draft.length - review.original.length;
-  return <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-3" role="dialog" aria-modal="true" aria-label="正文草稿确认">
-    <div className="flex max-h-[92dvh] w-full max-w-6xl flex-col rounded-lg border border-border bg-bg-base shadow-xl">
-      <div className="flex items-center justify-between border-b border-border px-4 py-3">
-        <div><h3 className="text-sm font-semibold text-text-primary">确认正文草稿</h3><p className="text-xs text-text-secondary">字数 {review.draft.length.toLocaleString()}，较当前原文 {delta >= 0 ? '+' : ''}{delta.toLocaleString()}</p></div>
-        <button type="button" onClick={onClose} className="flex h-9 w-9 items-center justify-center rounded-md text-text-secondary hover:bg-bg-surface hover:text-text-primary" aria-label="关闭"><X size={16} /></button>
+  const delta = draft.draftWordCount - draft.currentWordCount;
+  return <section className="rounded-lg border border-accent/25 bg-bg-raised p-4 text-sm shadow-sm" aria-live="polite">
+    <div className="flex items-start justify-between gap-3">
+      <div>
+        <h3 className="text-sm font-semibold text-text-primary">小说原文草稿</h3>
+        <p className="mt-1 text-xs text-text-secondary">基准版本 {draft.baseVersion} · 当前 {draft.currentWordCount.toLocaleString()} 字 · 草稿 {draft.draftWordCount.toLocaleString()} 字 · {delta >= 0 ? '+' : ''}{delta.toLocaleString()}</p>
       </div>
-      <div className="border-b border-border px-4 py-2 md:hidden">
-        <div className="grid grid-cols-2 rounded-md border border-border p-0.5">
-          <button type="button" onClick={() => setReview((value) => value ? { ...value, tab: 'current' } : value)} className={`rounded px-3 py-2 text-xs ${review.tab === 'current' ? 'bg-bg-raised text-text-primary' : 'text-text-secondary'}`}>当前原文</button>
-          <button type="button" onClick={() => setReview((value) => value ? { ...value, tab: 'candidate' } : value)} className={`rounded px-3 py-2 text-xs ${review.tab === 'candidate' ? 'bg-bg-raised text-text-primary' : 'text-text-secondary'}`}>正文候选</button>
-        </div>
-      </div>
-      <div className="grid min-h-0 flex-1 grid-cols-1 gap-3 overflow-hidden p-4 md:grid-cols-2">
-        <section className={`${review.tab === 'current' ? 'block' : 'hidden'} min-h-[55dvh] flex-col md:flex`}>
-          <div className="mb-2 text-xs font-medium text-text-secondary">当前原文（只读）</div>
-          <div className="h-full overflow-y-auto rounded-md border border-border bg-bg-surface p-3 text-sm leading-relaxed whitespace-pre-wrap text-text-secondary">{review.original || '当前章节暂无原文。'}</div>
-        </section>
-        <section className={`${review.tab === 'candidate' ? 'block' : 'hidden'} min-h-[55dvh] flex-col md:flex`}>
-          <div className="mb-2 text-xs font-medium text-text-secondary">正文候选（可编辑）</div>
-          <textarea value={review.draft} onChange={(event) => setReview((value) => value ? { ...value, draft: event.target.value, error: '' } : value)} className="h-full min-h-[55dvh] resize-none rounded-md border border-border bg-bg-surface p-3 text-sm leading-relaxed text-text-primary outline-none focus:border-accent" />
-        </section>
-      </div>
-      {review.error && <div className="px-4 pb-2 text-xs text-red-600" role="alert">{review.error}</div>}
-      <div className="flex items-center justify-end gap-2 border-t border-border px-4 py-3">
-        <button type="button" onClick={onClose} disabled={committing} className="rounded-md border border-border px-4 py-2 text-xs font-medium text-text-secondary hover:text-text-primary disabled:opacity-40">取消</button>
-        <button type="button" onClick={onCommit} disabled={committing || !review.draft.trim()} className="rounded-md bg-accent px-4 py-2 text-xs font-medium text-white hover:bg-accent-hover disabled:cursor-not-allowed disabled:opacity-40">{committing ? '确认中...' : '确认替换原文（可从历史恢复）'}</button>
-      </div>
+      <button type="button" onClick={onToggle} className="flex h-8 w-8 items-center justify-center rounded-md border border-border text-text-secondary hover:text-text-primary" aria-expanded={draft.expanded} title={draft.expanded ? '收起草稿' : '展开草稿'}>
+        {draft.expanded ? <ChevronUp size={15} /> : <ChevronDown size={15} />}
+      </button>
     </div>
-  </div>;
+    {draft.expanded ? <div className="mt-3 max-h-72 overflow-y-auto rounded-md border border-border bg-bg-surface p-3 whitespace-pre-wrap leading-relaxed text-text-primary">{draft.content}</div> : <p className="mt-3 line-clamp-3 whitespace-pre-wrap text-text-secondary">{draft.content}</p>}
+    {draft.error && <p className="mt-2 text-xs text-red-600" role="alert">{draft.error}</p>}
+    <div className="mt-3 flex justify-end gap-2">
+      <button type="button" onClick={() => onDecision('discard')} disabled={draft.busy} className="rounded-md border border-border px-3 py-2 text-xs font-medium text-text-secondary hover:text-text-primary disabled:opacity-40">放弃</button>
+      <button type="button" onClick={() => onDecision('confirm')} disabled={draft.busy} className="rounded-md bg-accent px-3 py-2 text-xs font-medium text-white hover:bg-accent-hover disabled:opacity-40">{draft.busy ? '处理中...' : '确认写入'}</button>
+    </div>
+  </section>;
 }
 
 function getDisplayMessages(chapter: Chapter): DisplayMessage[] {
@@ -396,4 +435,9 @@ function isLegacyImportedOriginalMirror(chapter: Chapter, message: Pick<DisplayM
   if (chapter.content_source !== 'import') return false;
   const originalText = (chapter.novel_content ?? '').trim();
   return originalText.length > 0 && message.role === 'user' && message.content.trim() === originalText;
+}
+
+function createLocalRequestId(): string {
+  if (typeof crypto !== 'undefined' && 'randomUUID' in crypto) return crypto.randomUUID();
+  return `${Date.now()}-${Math.random().toString(16).slice(2)}`;
 }

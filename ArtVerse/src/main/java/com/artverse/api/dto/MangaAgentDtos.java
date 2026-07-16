@@ -5,6 +5,7 @@ import com.artverse.application.AgentUserInputRequest;
 import com.artverse.application.MangaAgentRunService;
 import com.artverse.application.workflow.MangaWorkflowRoute;
 import com.artverse.application.workflow.MangaRouteSource;
+import com.artverse.domain.AgentRunType;
 import com.artverse.domain.MangaAgentConversation;
 
 import java.time.OffsetDateTime;
@@ -23,6 +24,11 @@ public final class MangaAgentDtos {
     }
 
     public record ResumeRequest(String answer, String model, String provider, String label, String apiKey, String baseUrl, Long configId) {
+    }
+
+    public record StoryChatResumeRequest(String decision, UUID artifactId, String answer, String model,
+                                         String provider, String label, String apiKey, String baseUrl,
+                                         Long configId) {
     }
 
     public record OpenRunResponse(RunStateResponse run) {
@@ -50,11 +56,13 @@ public final class MangaAgentDtos {
     }
 
     public record RunStateResponse(UUID requestId,
+                                   AgentRunType runType,
                                    String status,
                                    String inputMessage,
                                    String finalReply,
                                    String errorMessage,
                                    MangaWorkflowRoute route,
+                                   String routeKey,
                                    AgentUserInputRequest userInputRequest,
                                    List<RunEventDto> events,
                                    OffsetDateTime createdAt,
@@ -78,11 +86,13 @@ public final class MangaAgentDtos {
         public static RunStateResponse from(MangaAgentRunService.RunSnapshot snapshot) {
             return new RunStateResponse(
                     snapshot.requestId(),
+                    snapshot.runType(),
                     snapshot.status().name(),
                     snapshot.inputMessage(),
                     snapshot.finalReply(),
                     snapshot.errorMessage(),
                     snapshot.route(),
+                    snapshot.routeKey(),
                     snapshot.userInputRequest(),
                     snapshot.events().stream().map(RunEventDto::from).toList(),
                     snapshot.createdAt(),

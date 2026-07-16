@@ -7,6 +7,8 @@ import java.util.List;
 public enum AgentTaskType {
     CHAT("chat"),
     NOVEL("novel"),
+    STORY_CHAT_READ("story-chat-read"),
+    STORY_CHAT_WRITE("story-chat-write"),
     MANGA_ROUTER("manga-router"),
     MANGA_CONVERSATION("manga-conversation"),
     MANGA_CREATIVE("manga-creative"),
@@ -40,6 +42,8 @@ public enum AgentTaskType {
                 || this == MANGA_CREATIVE
                 || this == MANGA_STORYBOARD
                 || this == MANGA_REVIEW
-                || this == MANGA_DIRECTOR;
+                || this == MANGA_DIRECTOR
+                || this == STORY_CHAT_READ
+                || this == STORY_CHAT_WRITE;
     }
 }

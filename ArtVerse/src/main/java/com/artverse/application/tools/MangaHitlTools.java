@@ -92,7 +92,15 @@ public class MangaHitlTools extends ToolBase {
                 question == null || question.isBlank() ? "Please confirm how to proceed." : question.trim(),
                 options,
                 Boolean.TRUE.equals(allowFreeText),
-                reason == null ? "" : reason.trim()
+                reason == null ? "" : reason.trim(),
+                inferPurpose(reason)
         );
+    }
+
+    private String inferPurpose(String reason) {
+        if (reason != null && reason.toLowerCase().contains("artifact")) {
+            return "BUSINESS_CONFIRMATION";
+        }
+        return null;
     }
 }

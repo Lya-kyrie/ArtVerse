@@ -39,6 +39,10 @@ public class ChapterNovelRevision {
     @JoinColumn(name = "proposal_id", unique = true)
     private NovelContentProposal proposal;
 
+    @OneToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "agent_run_artifact_id", unique = true)
+    private MangaAgentRunArtifact agentRunArtifact;
+
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "created_by_user_id")
     private User createdBy;

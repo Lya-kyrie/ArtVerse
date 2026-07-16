@@ -18,6 +18,8 @@ public interface ChapterNovelRevisionRepository extends JpaRepository<ChapterNov
 
     Optional<ChapterNovelRevision> findByProposalId(java.util.UUID proposalId);
 
+    Optional<ChapterNovelRevision> findByAgentRunArtifactId(Long artifactId);
+
     @Query("SELECT COALESCE(MAX(r.revisionNumber), 0) FROM ChapterNovelRevision r WHERE r.chapter.id = :chapterId")
     int findLatestRevisionNumber(@Param("chapterId") Long chapterId);
 }

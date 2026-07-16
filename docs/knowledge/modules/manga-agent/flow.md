@@ -27,6 +27,12 @@ All endpoints are scoped to `/api/chapters/{chapterId}/manga-agent`.
 - `POST /runs/{requestId}/resume`: synchronous resume. Body: `{ answer }` plus provider/model fields.
 - `POST /ag-ui/runs/{requestId}/resume`: default AG-UI streaming resume. Body: `{ answer }` plus provider/model fields.
 
+Story chat reuses the same durable run/event/artifact substrate under `/api/chapters/{chapterId}/story-chat`:
+
+- `POST /conversations/{conversationId}/ag-ui/run`: starts a story-chat AG-UI run. The service writes `run_type=STORY_CHAT` and a generic `route_key` such as `READ`, `DRAFT`, `POLISH`, `REVIEW`, or `WRITE`.
+- `POST /conversations/{conversationId}/ag-ui/runs/{requestId}/resume`: resumes a waiting story-chat run with `{ decision: "confirm" | "discard", artifact_id }`.
+- `GET /conversations/{conversationId}/runs/open`, `GET /runs/{requestId}`, `GET /runs/{requestId}/events`, `GET /runs/{requestId}/artifacts`, and `POST /runs/{requestId}/cancel` mirror the Manga Agent semantics.
+
 Frontend types and stream parsing live in `frontend/src/api.ts`. The frontend depends on `@ag-ui/core` and `@ag-ui/client` for formal AG-UI event types. `ArtVerseMangaAgentHttpAgent` extends the official `HttpAgent` and adapts AG-UI `RunAgentInput` to the current ArtVerse body. The Manga Agent page no longer exposes a route selector; the semantic router selects a specialist directly and uses `DIRECTOR` only for validated compound requests. The left sidebar lists chapter conversations explicitly, and switching a conversation reloads messages plus open-run state.
 
 `MangaAgentPage.tsx` renders the execution panel from AG-UI and persisted run events. Live progress should prefer `RUN_STARTED`, `STATE_SNAPSHOT`, `CUSTOM` run/tool audit events, `TEXT_MESSAGE_START`, `TEXT_MESSAGE_CONTENT`, `TEXT_MESSAGE_END`, `RUN_FINISHED`, and `RUN_ERROR`. The panel shows the active request id, latest run status, recent event timeline, tool activity, cancel action, and human-in-the-loop waiting state.
@@ -75,7 +81,11 @@ The cancel endpoint marks the active in-memory tool/run state before removing it
 
 `manga_agent_runs` stores status, route, input/final/error data, waiting/routing/plan JSON, workflow/trace/model/Skill/knowledge/budget metadata, lease owner, fencing token, and timestamps. Runs belong to one conversation. New executions are routed by `MangaWorkflowRouter`; `ExecutionPlanCompiler` creates at most three validated Director steps. Valid statuses are `RUNNING`, `WAITING_USER`, `SUCCEEDED`, `DEGRADED`, `FAILED`, `CANCELLED`, and `INTERRUPTED`.
 
+The physical table name remains `manga_agent_runs`, but rows also carry `run_type` and `route_key`. Manga rows use `run_type=MANGA_AGENT`; story-chat rows use `run_type=STORY_CHAT` and keep the legacy enum `route` compatible while `route_key` holds story-chat routes.
+
 `manga_agent_run_steps` is the durable step journal used to resume from the first unfinished compiled step. `manga_agent_run_artifacts` stores storyboard drafts, validation/evaluation results, checksums, and commit status. A chapter changes only through `commit_storyboard`, which validates artifact state, chapter version, idempotency key, and fencing token.
+
+For story chat, `manga_agent_run_artifacts` also stores `NOVEL_CONTENT_DRAFT` complete chapter snapshots. `draft_novel_content` records content hash, base chapter version, and word counts without changing the chapter. `commit_novel_content` requires the current run, current user, matching chapter, confirmed artifact id, current lease/fencing token, unchanged base version, and matching hash before it creates a `chapter_novel_revisions` row linked by `agent_run_artifact_id` and updates `chapters.novel_content`.
 
 `manga_agent_run_events` stores event name, type, phase, label, status, full JSON payload, creation time, and its monotonic database id. Persisted events are the replay/audit source; Redis Stream is the cross-instance live notification channel. Do not persist `text_delta` events by default.
 

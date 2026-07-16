@@ -29,6 +29,7 @@ public class ArtVerseProperties {
     private Idempotency idempotency = new Idempotency();
     private Agent agent = new Agent();
     private Secrets secrets = new Secrets();
+    private Auth auth = new Auth();
 
     @Data
     public static class Storage {
@@ -39,6 +40,72 @@ public class ArtVerseProperties {
     public static class Secrets {
         private String encryptionKey = "ArtVerse!ApiKey1";
         private int activeKeyVersion = 2;
+    }
+
+    @Data
+    public static class Auth {
+        private Cookie cookie = new Cookie();
+        private Challenge challenge = new Challenge();
+        private Risk risk = new Risk();
+        private Proxy proxy = new Proxy();
+        private Csrf csrf = new Csrf();
+    }
+
+    @Data
+    public static class Cookie {
+        private boolean secure = false;
+        private boolean refreshBodyFallbackEnabled = true;
+        private String refreshCookieName = "artverse-refresh";
+        private long refreshTokenTimeoutSeconds = 43_200;
+    }
+
+    @Data
+    public static class Challenge {
+        private ChallengeMode mode = ChallengeMode.DISABLED;
+        private String provider = "turnstile";
+        private String siteKey = "";
+        private String secretKey = "";
+        private List<String> allowedHostnames = List.of("localhost", "127.0.0.1");
+        private int verifyTimeoutMs = 3_000;
+    }
+
+    public enum ChallengeMode {
+        DISABLED,
+        OBSERVE,
+        ENFORCE
+    }
+
+    @Data
+    public static class Risk {
+        private String hmacKey = "";
+        private int loginFailureChallengeThreshold = 3;
+        private int loginFailureWindowSeconds = 900;
+        private int loginIpChallengeThreshold = 20;
+        private int loginIpHardLimit = 100;
+        private int loginIpWindowSeconds = 300;
+        private int registerIpLimit = 10;
+        private int registerIpWindowSeconds = 3_600;
+        private int degradedLoginAccountLimit = 3;
+        private int degradedLoginIpLimit = 10;
+        private int degradedLoginAccountWindowSeconds = 900;
+        private int degradedLoginIpWindowSeconds = 300;
+    }
+
+    @Data
+    public static class Proxy {
+        private List<String> trustedCidrs = List.of();
+    }
+
+    @Data
+    public static class Csrf {
+        private EnforcementMode mode = EnforcementMode.REPORT;
+        private String headerName = "X-ArtVerse-Client";
+        private String headerValue = "web";
+    }
+
+    public enum EnforcementMode {
+        REPORT,
+        ENFORCE
     }
 
     @Data

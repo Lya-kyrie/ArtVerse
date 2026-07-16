@@ -1,5 +1,6 @@
 package com.artverse.api;
 
+import cn.dev33.satoken.stp.StpUtil;
 import com.artverse.guard.GuardStatsService;
 import com.artverse.guard.GuardEventService;
 import lombok.RequiredArgsConstructor;
@@ -21,11 +22,13 @@ public class GuardStatsController {
 
     @GetMapping("/stats")
     public Map<String, Object> stats() {
+        requireAdmin();
         return guardStatsService.stats();
     }
 
     @GetMapping("/events")
     public Map<String, Object> events(@RequestParam(defaultValue = "100") int limit) {
+        requireAdmin();
         List<Map<String, Object>> events = guardEventService.recentEvents(limit);
         return Map.of("events", events);
     }
@@ -33,6 +36,11 @@ public class GuardStatsController {
     @GetMapping("/metrics")
     public Map<String, Object> metrics(@RequestParam(defaultValue = "HOUR") String bucket,
                                        @RequestParam(defaultValue = "24") int range) {
+        requireAdmin();
         return guardStatsService.metricBuckets(bucket, range);
+    }
+
+    private void requireAdmin() {
+        StpUtil.checkRole("ADMIN");
     }
 }

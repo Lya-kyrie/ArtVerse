@@ -38,6 +38,13 @@ public class NovelContentService {
     @Transactional
     public SaveResult save(Long chapterId, Long userId, String content, Long baseVersion,
                            NovelContentRevisionSource source, NovelContentProposal proposal) {
+        return save(chapterId, userId, content, baseVersion, source, proposal, null);
+    }
+
+    @Transactional
+    public SaveResult save(Long chapterId, Long userId, String content, Long baseVersion,
+                           NovelContentRevisionSource source, NovelContentProposal proposal,
+                           MangaAgentRunArtifact agentRunArtifact) {
         String normalized = normalize(content);
         if (baseVersion == null) {
             throw new BusinessException(400, "base_version is required");
@@ -59,6 +66,7 @@ public class NovelContentService {
         revision.setContentHash(hash);
         revision.setSource(source == null ? NovelContentRevisionSource.MANUAL : source);
         revision.setProposal(proposal);
+        revision.setAgentRunArtifact(agentRunArtifact);
         revision.setCreatedBy(chapter.getStory().getUser());
         revision = revisionRepository.save(revision);
 

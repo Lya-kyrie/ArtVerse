@@ -3,6 +3,8 @@ package com.artverse.agent.gateway.tools;
 import com.artverse.application.tools.MangaContextTools;
 import com.artverse.application.tools.MangaHitlTools;
 import com.artverse.application.tools.StoryboardAgentTools;
+import com.artverse.application.tools.StoryChatContextTools;
+import com.artverse.application.tools.StoryChatNovelContentTools;
 import io.agentscope.core.tool.Toolkit;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -22,6 +24,8 @@ class AgentToolGroupSupportTest {
     private MangaContextTools contextTools;
     private StoryboardAgentTools storyboardTools;
     private MangaHitlTools hitlTools;
+    private StoryChatContextTools storyChatContextTools;
+    private StoryChatNovelContentTools storyChatNovelContentTools;
     private Toolkit toolkit;
     private AgentToolGroupSupport support;
 
@@ -30,12 +34,15 @@ class AgentToolGroupSupportTest {
         contextTools = mock(MangaContextTools.class);
         storyboardTools = mock(StoryboardAgentTools.class);
         hitlTools = mock(MangaHitlTools.class);
+        storyChatContextTools = mock(StoryChatContextTools.class);
+        storyChatNovelContentTools = mock(StoryChatNovelContentTools.class);
         toolkit = mock(Toolkit.class);
         Toolkit.ToolRegistration registration = mock(Toolkit.ToolRegistration.class);
         when(toolkit.registration()).thenReturn(registration);
         when(registration.tool(any())).thenReturn(registration);
         when(registration.group(anyString())).thenReturn(registration);
-        support = new AgentToolGroupSupport(contextTools, storyboardTools, hitlTools);
+        support = new AgentToolGroupSupport(contextTools, storyboardTools, hitlTools,
+                storyChatContextTools, storyChatNovelContentTools);
     }
 
     @Test
@@ -71,6 +78,29 @@ class AgentToolGroupSupportTest {
         verify(toolkit, never()).createToolGroup(eq(AgentToolGroupSupport.STORYBOARD_TOOLS), anyString(), eq(true));
         verify(toolkit).setActiveGroups(List.of(
                 AgentToolGroupSupport.CONTEXT_TOOLS,
+                AgentToolGroupSupport.HITL_TOOLS));
+    }
+
+    @Test
+    void storyChatReadConfigurationExcludesWriteTools() {
+        support.configureStoryChatRead(toolkit);
+
+        verifyGroupCreated(AgentToolGroupSupport.STORY_CHAT_CONTEXT_TOOLS);
+        verify(toolkit, never()).createToolGroup(eq(AgentToolGroupSupport.STORY_CHAT_WRITE_TOOLS), anyString(), eq(true));
+        verify(toolkit).setActiveGroups(List.of(AgentToolGroupSupport.STORY_CHAT_CONTEXT_TOOLS));
+    }
+
+    @Test
+    void storyChatWriteConfigurationActivatesDraftCommitAndHitlTools() {
+        support.configureStoryChatWrite(toolkit);
+
+        verifyGroupCreated(AgentToolGroupSupport.STORY_CHAT_CONTEXT_TOOLS);
+        verifyGroupCreated(AgentToolGroupSupport.STORY_CHAT_WRITE_TOOLS);
+        verifyGroupCreated(AgentToolGroupSupport.HITL_TOOLS);
+        verify(toolkit.registration()).tool(storyChatNovelContentTools);
+        verify(toolkit).setActiveGroups(List.of(
+                AgentToolGroupSupport.STORY_CHAT_CONTEXT_TOOLS,
+                AgentToolGroupSupport.STORY_CHAT_WRITE_TOOLS,
                 AgentToolGroupSupport.HITL_TOOLS));
     }
 

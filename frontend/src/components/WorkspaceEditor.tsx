@@ -198,7 +198,6 @@ export default function WorkspaceEditor({ storyId, onBack, onLoadError }: Props)
             chapter={currentChapter}
             onMessageSent={refreshCurrentChapter}
             onChapterRefresh={handleChapterRefresh}
-            onGoToManga={() => setMobileTab('manga')}
           />
         </div>
         <div className={'h-full md:w-1/2 ' + (mobileTab === 'manga' ? '' : 'hidden md:block')}>

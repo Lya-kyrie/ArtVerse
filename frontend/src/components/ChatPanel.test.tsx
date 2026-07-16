@@ -2,10 +2,16 @@ import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/re
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import ChatPanel from './ChatPanel';
 import {
-  commitNovelContentProposal,
-  createNovelContentProposal,
-  updateNovelContentProposal,
+  createAiConversation,
+  getOpenStoryChatConversationRun,
+  getStoryChatRunArtifacts,
+  listAiConversations,
+  runStoryChatAgUiStream,
+  resumeStoryChatAgUiStream,
+  type AiConversationSummary,
   type Chapter,
+  type MangaAgentArtifact,
+  type MangaAgentRunSnapshot,
 } from '../api';
 
 vi.mock('./MarkdownRenderer', () => ({ default: ({ content }: { content: string }) => <div>{content}</div> }));
@@ -14,17 +20,19 @@ vi.mock('./InlineConversationTitle', () => ({ default: ({ title }: { title: stri
 
 vi.mock('../api', () => ({
   API_KEY_CHANGE_EVENT: 'api-key-change',
-  chatStream: vi.fn(),
-  commitNovelContentProposal: vi.fn(),
-  createNovelContentProposal: vi.fn(),
+  cancelStoryChatConversationRun: vi.fn(),
+  createAiConversation: vi.fn().mockResolvedValue({ conversationId: 'conv-created', title: 'Story Chat' }),
+  getOpenStoryChatConversationRun: vi.fn().mockResolvedValue(null),
   getPrimaryProviderModel: () => 'model-a',
   getProviderModelOptions: () => ['model-a'],
+  getStoryChatRunArtifacts: vi.fn().mockResolvedValue([]),
   listAiConversations: vi.fn().mockResolvedValue([{ conversationId: 'conv-1', title: 'Story Chat' }]),
   listNovelRevisions: vi.fn().mockResolvedValue([]),
   renameAiConversation: vi.fn(),
   restoreNovelRevision: vi.fn(),
+  resumeStoryChatAgUiStream: vi.fn(() => new AbortController()),
+  runStoryChatAgUiStream: vi.fn(() => new AbortController()),
   saveNovelContent: vi.fn(),
-  updateNovelContentProposal: vi.fn(),
 }));
 
 const chapter: Chapter = {
@@ -42,67 +50,115 @@ const chapter: Chapter = {
   ],
 };
 
-describe('ChatPanel novel proposal flow', () => {
+const existingConversation = {
+  conversationId: 'conv-1',
+  title: 'Story Chat',
+} as AiConversationSummary;
+
+const createdConversation = {
+  conversationId: 'conv-created',
+  title: 'Story Chat',
+} as AiConversationSummary;
+
+const waitingRun = {
+  requestId: 'run-1',
+  status: 'WAITING_USER',
+  events: [],
+} as MangaAgentRunSnapshot;
+
+describe('ChatPanel story chat safe draft flow', () => {
   beforeEach(() => {
-    vi.mocked(createNovelContentProposal).mockReset();
-    vi.mocked(updateNovelContentProposal).mockReset();
-    vi.mocked(commitNovelContentProposal).mockReset();
-    vi.mocked(createNovelContentProposal).mockResolvedValue({
-      proposal_id: 'proposal-1',
-      content: '正文候选',
-      content_hash: 'hash-1',
-      base_version: 4,
-      through_message_id: 2,
-      status: 'draft',
+    Object.defineProperty(window.HTMLElement.prototype, 'scrollIntoView', {
+      configurable: true,
+      value: vi.fn(),
+      writable: true,
     });
-    vi.mocked(updateNovelContentProposal).mockResolvedValue({
-      proposal_id: 'proposal-1',
-      content: '编辑后正文',
-      content_hash: 'hash-2',
-      base_version: 4,
-      through_message_id: 2,
-      status: 'draft',
-    });
-    vi.mocked(commitNovelContentProposal).mockResolvedValue({
-      proposal_id: 'proposal-1',
-      changed: true,
-      chapter_version: 5,
-      content_hash: 'hash-2',
-      status: 'committed',
-    });
+    vi.mocked(getOpenStoryChatConversationRun).mockResolvedValue(null);
+    vi.mocked(getStoryChatRunArtifacts).mockResolvedValue([]);
+    vi.mocked(listAiConversations).mockResolvedValue([existingConversation]);
+    vi.mocked(createAiConversation).mockResolvedValue(createdConversation);
+    vi.mocked(runStoryChatAgUiStream).mockClear();
+    vi.mocked(resumeStoryChatAgUiStream).mockClear();
   });
 
   afterEach(() => cleanup());
 
-  it('opens editable preview instead of directly saving an assistant reply', async () => {
+  it('does not show the retired proposal action', async () => {
     render(<ChatPanel chapter={chapter} />);
 
-    fireEvent.click(await screen.findByRole('button', { name: '整理为正文草稿' }));
-
-    expect(createNovelContentProposal).toHaveBeenCalledWith(7, 'conv-1', 2, 4, 'model-a');
-    expect(await screen.findByRole('dialog', { name: '正文草稿确认' })).toBeTruthy();
-    expect(commitNovelContentProposal).not.toHaveBeenCalled();
-  });
-
-  it('updates edited proposal before committing replacement', async () => {
-    render(<ChatPanel chapter={chapter} onChapterRefresh={vi.fn().mockResolvedValue(undefined)} />);
-    fireEvent.click(await screen.findByRole('button', { name: '整理为正文草稿' }));
-    const editor = await screen.findByDisplayValue('正文候选');
-    fireEvent.change(editor, { target: { value: '编辑后正文' } });
-
-    fireEvent.click(screen.getByRole('button', { name: '确认替换原文（可从历史恢复）' }));
-
-    await waitFor(() => expect(updateNovelContentProposal).toHaveBeenCalledWith(7, 'proposal-1', '编辑后正文', 'hash-1'));
-    expect(commitNovelContentProposal).toHaveBeenCalledWith(7, 'proposal-1', 4, 'hash-2');
-  });
-
-  it('does not show proposal action for partial assistant messages', async () => {
-    render(<ChatPanel chapter={{
-      ...chapter,
-      messages: [{ id: 2, role: 'assistant', content: '半截回复', completion_status: 'partial', created_at: '2026-07-16T00:00:01Z' }],
-    }} />);
-
-    await screen.findByText('半截回复');
+    await screen.findByText('普通 AI 回复');
     expect(screen.queryByRole('button', { name: '整理为正文草稿' })).toBeNull();
+    expect(screen.queryByRole('button', { name: '查看漫画 / 生成分镜' })).toBeNull();
+  });
+
+  it('restores a waiting novel draft card from run artifacts', async () => {
+    vi.mocked(getOpenStoryChatConversationRun).mockResolvedValue(waitingRun);
+    vi.mocked(getStoryChatRunArtifacts).mockResolvedValue([{
+      artifactId: 'artifact-1',
+      requestId: 'run-1',
+      type: 'NOVEL_CONTENT_DRAFT',
+      status: 'VALIDATED',
+      schemaVersion: '1',
+      checksum: 'hash-1',
+      payload: {
+        content: '原片段加续写',
+        content_hash: 'hash-1',
+        base_version: 4,
+        current_word_count: 0,
+        word_count: 6,
+      },
+      evaluation: {},
+    } satisfies MangaAgentArtifact]);
+
+    render(<ChatPanel chapter={chapter} />);
+
+    expect(await screen.findByText('小说原文草稿')).toBeTruthy();
+    expect(screen.getByText('原片段加续写')).toBeTruthy();
+  });
+
+  it('confirms a restored draft through structured resume payload', async () => {
+    vi.mocked(getOpenStoryChatConversationRun).mockResolvedValue(waitingRun);
+    vi.mocked(getStoryChatRunArtifacts).mockResolvedValue([{
+      artifactId: 'artifact-1',
+      requestId: 'run-1',
+      type: 'NOVEL_CONTENT_DRAFT',
+      status: 'VALIDATED',
+      schemaVersion: '1',
+      checksum: 'hash-1',
+      payload: { content: '草稿正文', content_hash: 'hash-1', base_version: 4, word_count: 4 },
+      evaluation: {},
+    } satisfies MangaAgentArtifact]);
+
+    render(<ChatPanel chapter={chapter} />);
+    fireEvent.click(await screen.findByRole('button', { name: '确认写入' }));
+
+    await waitFor(() => expect(resumeStoryChatAgUiStream).toHaveBeenCalledWith(
+      7,
+      'conv-1',
+      'run-1',
+      'confirm',
+      'artifact-1',
+      expect.any(Function),
+      'model-a',
+    ));
+  });
+
+  it('creates a chapter story chat conversation before sending when none exists', async () => {
+    vi.mocked(listAiConversations).mockResolvedValue([]);
+
+    render(<ChatPanel chapter={{ ...chapter, messages: [] }} />);
+    const textbox = await screen.findByPlaceholderText(/AI/);
+    fireEvent.change(textbox, { target: { value: 'please continue and save' } });
+    fireEvent.keyDown(textbox, { key: 'Enter', shiftKey: false });
+
+    await waitFor(() => expect(createAiConversation).toHaveBeenCalledWith('STORY_CHAT', undefined, 7));
+    expect(runStoryChatAgUiStream).toHaveBeenCalledWith(
+      7,
+      'conv-created',
+      'please continue and save',
+      expect.any(String),
+      expect.any(Function),
+      'model-a',
+    );
   });
 });

@@ -1,137 +1,164 @@
-﻿# Auth Module Skill
+# Auth Module Skill
 
-Sa-Token 认证模块：登录、注册、令牌管理、限流、角色鉴权。
+Sa-Token 认证模块：登录、注册、refresh cookie、渐进式人机验证、Redis 风控、CSRF 与角色鉴权。
 
 ## Architecture
 
-```
-frontend (httpOnly cookie)
-  └─ POST /api/auth/login|register  → AuthController → AuthService → UserRepository (PostgreSQL)
-  └─ POST /api/auth/logout|refresh  → AuthController (StpUtil)
-  └─ POST /api/auth/kickout          → AuthController (admin role check)
-  └─ GET  /api/auth/me               → AuthController
+```text
+frontend (cookie session + adaptive challenge)
+  ├─ GET  /api/auth/challenge/config
+  ├─ POST /api/auth/login|register
+  ├─ POST /api/auth/logout|refresh
+  └─ POST /api/auth/kickout
 
-SaTokenConfig (Java)   → interceptor allowlist: /api/auth/**, /api/square/**, /static/**, /actuator/health
-                        → remaining /api/** requires login
-
-StpInterfaceImpl        → provides role list from User.role (DB-backed)
-RateLimitAspect         → Redis Lua sliding window, per-IP or per-userId
-```
-
-## Token Lifecycle
-
-| Phase | Detail |
-|-------|--------|
-| Login | `POST /api/auth/login` → `StpUtil.login(userId, "PC")` → cookie `satoken` set (`httpOnly`, `SameSite=Lax`) |
-| Auto-renew | `active-timeout: 1800` (30 min) — any request within window auto-extends |
-| Hard expiry | `timeout: 43200` (12 h) — absolute max token lifetime |
-| Manual refresh | `POST /api/auth/refresh` consumes the refresh token, recreates the access session, and rotates both tokens |
-| Logout | `POST /api/auth/logout` → `StpUtil.logout()` — destroys current token only |
-| Kickout | `POST /api/auth/kickout?userId=X` → `StpUtil.kickout(userId)` — admin only, destroys all tokens for user |
-| Multi-device | `is-concurrent: true`, `is-share: false` — each device gets independent token |
-
-### Important semantics
-
-- `timeout` is the hard ceiling for the current access token session. It is 12 hours.
-- `active-timeout` is the sliding idle window. Any authenticated request within 30 minutes extends the session automatically.
-- `/api/auth/refresh` can restore the access session when the `satoken` cookie is missing or expired. It must not require an existing access-token login when a valid refresh token is supplied.
-- The refresh request accepts the frontend's `refresh_token` JSON field and the Java-style `refreshToken` alias.
-- Refresh tokens are separate from access tokens, stored as SHA-256 Redis indexes, consumed once, and rotated on use. Detected reuse revokes all indexed refresh and access sessions for that user.
-- An authenticated request without a refresh token retains the compatibility behavior and renews the current access-token timeout.
-
-## Cookie Strategy
-
-Token delivery uses **httpOnly cookie** as primary channel (XSS-safe), with header fallback for transition:
-
-```yaml
-sa-token:
-  is-read-cookie: true    # read token from cookie
-  is-write-cookie: true   # write token to Set-Cookie on login
-  is-read-header: true    # also read from satoken header (deprecated, transitional)
-  is-write-header: false  # do NOT write token to response header
-  cookie:
-    path: /               # send cookie to every protected API path
-    http-only: true       # JS cannot read cookie
-    same-site: lax        # CSRF protection
-    secure: false         # set true for HTTPS-only deployments
+AuthController
+  ├─ AuthGuardService
+  │   ├─ ClientIpResolver
+  │   ├─ AuthRiskService
+  │   └─ TurnstileHumanVerificationService
+  ├─ AuthService
+  │   └─ PasswordHashService (Argon2id + legacy BCrypt upgrade)
+  ├─ RefreshTokenService
+  └─ AuthCookieService
 ```
 
-Frontend:
-- `credentials: 'same-origin'` on all fetch calls (sends cookie automatically)
-- Access token is never stored in `localStorage`; the rotating refresh token currently is
-- `isAuthenticated()` checks `getUser()` (from `LS_USER`) not token existence
-- `authFetch()` auto-calls `/api/auth/refresh` on 401
+## Public vs Protected Routes
 
-## Rate Limiting
+- Public:
+  - `POST /api/auth/login`
+  - `POST /api/auth/register`
+  - `POST /api/auth/refresh`
+  - `GET /api/auth/challenge/config`
+  - `GET /api/square/**`
+- Protected by Sa-Token login:
+  - `POST /api/auth/logout`
+  - `POST /api/auth/kickout`
+  - `GET /api/auth/me`
+  - `/api/user/**`
+  - all remaining `/api/**`
+- `/api/internal/guard/**` 不再公开，控制器内要求 `ADMIN`。
 
-`@RateLimit` annotation on controller methods, backed by Redis Lua sliding window.
+## Session Model
 
-| Endpoint | Window | Max | Key |
-|----------|--------|-----|-----|
-| `/api/auth/register` | 60s | 5 | `register` |
-| `/api/auth/login` | 60s | 10 | `login` |
-| `/api/auth/logout` | 60s | 30 | `logout` |
-| `/api/auth/refresh` | 60s | 20 | `refresh` |
-| `/api/auth/kickout` | 60s | 10 | `kickout` |
-| `/api/auth/me` | 60s | 60 | `me` |
+- Access token:
+  - 由 Sa-Token 写入 `satoken` HttpOnly cookie。
+  - 默认读 cookie，不再读 header。
+  - `SameSite=Strict`，`Secure` 由 `ARTVERSE_AUTH_COOKIE_SECURE` 控制。
+- Refresh token:
+  - 独立 HttpOnly cookie，由 `AuthCookieService` 写入。
+  - 生产安全 cookie 名会自动切到 `__Host-artverse-refresh`。
+  - Redis 仅保存 SHA-256 hash，原始 token 不落库。
+  - refresh token 一次性消费，重放会撤销该用户所有 refresh/access 会话。
+- 迁移兼容:
+  - `POST /api/auth/refresh` 先读 cookie。
+  - 若开启 `artverse.auth.cookie.refresh-body-fallback-enabled`，仍接受旧请求体 `refresh_token` / `refreshToken`，用于 12 小时迁移窗口。
 
-Key resolution: `userId` for authenticated users, `IP` (from `X-Forwarded-For` or `RemoteAddr`) for unauthenticated.
+## Challenge / Human Verification
 
-## Role Model
+- 配置入口: `artverse.auth.challenge.*`
+- 当前实现: Cloudflare Turnstile server-side validation
+- 模式:
+  - `DISABLED`: 不启用 challenge
+  - `OBSERVE`: 前端可加载 challenge，但后端只记录失败/缺失，不阻断
+  - `ENFORCE`: 缺失、失败、hostname/action 不匹配都会拒绝
+- 后端校验:
+  - token 长度上限 2048
+  - 校验 `success`
+  - 校验 `action=login|register`
+  - 校验允许的 `hostname`
+  - 网络异常或上游 5xx 归类为 `CHALLENGE_UNAVAILABLE`
+- 对外错误码:
+  - `CHALLENGE_REQUIRED`
+  - `CHALLENGE_FAILED`
+  - `CHALLENGE_UNAVAILABLE`
 
-| Role | Permissions |
-|------|-------------|
-| `USER` | Default for all new registrations |
-| `ADMIN` | Can kick out any user via `/api/auth/kickout` |
+## Redis 风控
 
-Roles stored in `users.role` column (VARCHAR(20), default `USER`).
-`StpInterfaceImpl.getRoleList()` reads from DB on each permission check.
+- 共用基础设施: `SlidingWindowRateLimiter`
+- 登录 IP 桶:
+  - `20 / 5min` 后要求 challenge
+  - `100 / 5min` 后直接 `429 AUTH_RATE_LIMITED`
+- 登录账号失败桶:
+  - `3 / 15min` 后要求 challenge
+  - 成功登录后清零
+- 注册 IP 桶:
+  - `10 / hour`，超限直接 `429`
+- 降级登录:
+  - 仅在 challenge 上游不可用时生效
+  - 账号 `3 / 15min`
+  - IP `10 / 5min`
+- Redis key 不直接使用原始用户名/IP，而是经 `HmacSHA256` 派生。
+
+## Client IP Semantics
+
+- `ClientIpResolver` 仅在 `remoteAddr` 落在 `artverse.auth.proxy.trusted-cidrs` 时读取 `Forwarded` / `X-Forwarded-For`
+- 从右向左选取首个非可信代理地址作为真实客户端 IP
+- 未配置可信代理时直接使用 `remoteAddr`
 
 ## Password Policy
 
-Enforced in `AuthService.validatePassword()`:
-- Minimum 8 characters, maximum 128
-- At least 2 of: letters, digits, special characters
-- Rejects blank/null passwords
+- 新注册密码:
+  - 15 到 128 个字符
+  - 允许 Unicode，不再强制字符类别组合
+- 哈希:
+  - 新密码使用 Argon2id
+  - 旧 BCrypt 账号首次登录成功后自动升级为 Argon2id
+  - 不存在用户名时也执行 dummy hash，减少时序枚举差异
 
-Hashing: BCrypt strength 10 (`BCryptPasswordEncoder`).
+## Data Normalization
+
+- 用户名:
+  - 注册与登录前统一 `trim`
+  - 保持大小写敏感
+- 邮箱:
+  - 注册前统一 `trim + lowercase`
+- Flyway `V46__auth_security_hardening.sql`:
+  - 先检测 trim/lowercase 后的冲突
+  - 再落盘修正并增加约束
+
+## CSRF / Browser Contract
+
+- 所有 `/api/**` 的 `POST/PUT/PATCH/DELETE` 请求需要:
+  - `Origin` 命中 `artverse.cors-origins`
+  - `X-ArtVerse-Client: web`
+- 配置入口: `artverse.auth.csrf.mode`
+  - `REPORT`: 只告警
+  - `ENFORCE`: 返回 `403 CSRF_REJECTED`
+
+## Frontend Contract
+
+- 认证状态不再持久化到 `localStorage`
+- `hydrateAuthSession()` 以 `/api/user/me` 为权威
+- 首次 `401` 时尝试 `/api/auth/refresh`
+- 登录:
+  - 默认不展示 challenge
+  - 后端返回 `CHALLENGE_REQUIRED` 后才显示 Turnstile
+- 注册:
+  - challenge 启用时直接要求完成验证
 
 ## Key Files
 
 | File | Role |
 |------|------|
-| `api/AuthController.java` | REST endpoints (login, register, logout, refresh, kickout, me) |
-| `api/dto/AuthDtos.java` | Request/response DTOs with validation annotations |
-| `application/AuthService.java` | Registration + login business logic, password validation |
-| `application/RefreshTokenService.java` | Refresh token issue, one-time consumption, reuse detection, revocation |
-| `config/SaTokenConfig.java` | Sa-Token interceptor, password encoder, RedisTemplate |
-| `config/StpInterfaceImpl.java` | Role permission provider for Sa-Token |
-| `config/BCryptPasswordEncoder.java` | BCrypt hashing (jBCrypt, no Spring Security dep) |
-| `common/aspect/RateLimitAspect.java` | Redis sliding window rate limiter |
-| `common/GlobalExceptionHandler.java` | 401/403/429/400 error mapping |
-| `domain/User.java` | JPA entity with `role` field |
-| `domain/Role.java` | USER/ADMIN enum |
-| `persistence/UserRepository.java` | User lookup by username/email |
+| `ArtVerse/src/main/java/com/artverse/api/AuthController.java` | 登录/注册/refresh/challenge config 合同 |
+| `ArtVerse/src/main/java/com/artverse/application/AuthService.java` | 用户归一化、注册、登录、密码升级 |
+| `ArtVerse/src/main/java/com/artverse/application/RefreshTokenService.java` | refresh token issue/consume/revoke |
+| `ArtVerse/src/main/java/com/artverse/security/AuthGuardService.java` | challenge + 风控编排 |
+| `ArtVerse/src/main/java/com/artverse/security/AuthRiskService.java` | Redis 风控桶 |
+| `ArtVerse/src/main/java/com/artverse/security/TurnstileHumanVerificationService.java` | Turnstile server-side 校验 |
+| `ArtVerse/src/main/java/com/artverse/security/CsrfProtectionFilter.java` | CSRF Header + Origin 校验 |
+| `ArtVerse/src/main/java/com/artverse/security/ClientIpResolver.java` | 可信代理 IP 解析 |
+| `frontend/src/api.ts` | cookie 会话恢复、legacy refresh 迁移、CSRF headers |
+| `frontend/src/components/LoginPage.tsx` | 登录/注册表单、Turnstile 挑战流 |
 
 ## Tests
 
-| Test | Coverage |
-|------|----------|
-| `AuthServiceTest` | Registration validation, login success/failure, password policy, duplicate detection |
-| `AuthControllerTest` | Kickout auth (401/403/admin), refresh lifecycle, /me auth |
-| `RefreshTokenServiceTest` | Hashed token indexing, one-time consumption, reuse detection, legacy rotation, revocation |
-| `BCryptPasswordEncoderTest` | Encode/match correctness, null safety, salt uniqueness |
-| `RateLimitAspectTest` | Allow/block thresholds, disabled mode, IP/userId key resolution |
-
-Run: `mvn test -pl .`
-
-## Configuration Reference
-
-`application.yml` under `sa-token:`:
-- `timeout`: hard token expiry in seconds (43200 = 12h)
-- `active-timeout`: auto-renew threshold (1800 = 30min)
-- `is-concurrent`: allow multi-device login (true)
-- `is-share`: share token across devices (false)
-- `token-style`: uuid format
-- `cookie.http-only`: block JS access (true)
-- `cookie.path`: cookie scope (`/`)
+- Backend:
+  - `AuthControllerTest`
+  - `AuthServiceTest`
+  - `RefreshTokenServiceTest`
+  - `RateLimitAspectTest`
+  - `AuthDtosTest`
+- Frontend:
+  - `src/components/LoginPage.test.tsx`
+  - `src/api.auth.test.ts`

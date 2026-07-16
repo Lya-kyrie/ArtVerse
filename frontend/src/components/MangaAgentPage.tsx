@@ -27,6 +27,7 @@ import {
   getProviderModelOptions,
   getMangaAgentConversationMessages,
   getOpenMangaAgentConversationRun,
+  formatMangaAgentError,
   listChapters,
   listMangaAgentConversations,
   listStories,
@@ -313,7 +314,7 @@ function inferExecutionEvent(event: Record<string, any>): ExecutionEventItem {
       id: `${type}-${createdAt || Date.now()}`,
       type,
       title: '运行失败',
-      detail: String(event.message || event.error || '智能体运行出现错误'),
+      detail: formatMangaAgentError(event.message || event.error),
       createdAt,
       tone: 'error',
       icon: 'warning',
@@ -698,7 +699,7 @@ export default function MangaAgentPage({ onCreateStory }: { onCreateStory?: () =
     }
 
     if (rawEvent.type === 'RUN_ERROR') {
-      const message = String(rawEvent.message || rawEvent.error || '智能体运行失败');
+      const message = formatMangaAgentError(rawEvent.message || rawEvent.error);
       setRunStatus(message);
       setError(message);
       setSending(false);
@@ -805,7 +806,7 @@ export default function MangaAgentPage({ onCreateStory }: { onCreateStory?: () =
     }
 
     if (event.type === 'error') {
-      const message = event.data?.detail || event.data?.error || '智能体请求失败';
+      const message = formatMangaAgentError(event.data?.detail || event.data?.error);
       recordAgUiEvent({
         type: 'RUN_ERROR',
         message,

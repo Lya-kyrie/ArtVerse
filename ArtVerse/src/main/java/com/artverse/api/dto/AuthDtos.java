@@ -18,32 +18,51 @@ public class AuthDtos {
             String email,
 
             @NotBlank(message = "密码不能为空")
-            @Size(min = 8, max = 128, message = "密码长度需在 8 到 128 个字符之间")
-            String password
-    ) {}
+            @Size(min = 15, max = 128, message = "密码长度需在 15 到 128 个字符之间")
+            String password,
+
+            @Size(max = 2048, message = "challenge token is too long")
+            String challengeToken
+    ) {
+    }
 
     public record LoginRequest(
             @NotBlank(message = "用户名不能为空")
             String username,
 
             @NotBlank(message = "密码不能为空")
-            String password
-    ) {}
+            String password,
+
+            @Size(max = 2048, message = "challenge token is too long")
+            String challengeToken
+    ) {
+    }
 
     public record RefreshRequest(
             @JsonAlias("refresh_token")
+            @Size(max = 2048, message = "refresh token is too long")
             String refreshToken
-    ) {}
+    ) {
+    }
 
     public record AuthResponse(
-            String tokenName,
-            String tokenValue,
+            boolean authenticated,
             long tokenTimeout,
-            String refreshToken,
             long refreshTokenTimeout
-    ) {}
+    ) {
+    }
 
-    public record UserInfo(Long id, String username, String email) {}
+    public record ChallengeConfigResponse(
+            boolean enabled,
+            String provider,
+            String siteKey,
+            boolean registrationRequired,
+            String loginMode
+    ) {
+    }
+
+    public record UserInfo(Long id, String username, String email) {
+    }
 
     public record ApiKeyRequest(
             @NotBlank(message = "provider 不能为空")
@@ -51,7 +70,9 @@ public class AuthDtos {
 
             @NotBlank(message = "apiKey 不能为空")
             String apiKey
-    ) {}
+    ) {
+    }
 
-    public record ApiKeyResponse(String provider, String apiKeyMasked) {}
+    public record ApiKeyResponse(String provider, String apiKeyMasked) {
+    }
 }

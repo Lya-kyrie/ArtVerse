@@ -3,7 +3,9 @@ package com.artverse.api;
 import com.artverse.application.ApiKeyService;
 import com.artverse.application.ChatService;
 import com.artverse.application.CurrentUserService;
+import com.artverse.application.StoryChatAgentService;
 import com.artverse.application.UserProviderConfig;
+import com.artverse.domain.MangaAgentConversation;
 import com.artverse.domain.ChatMessage;
 import com.artverse.domain.User;
 import lombok.RequiredArgsConstructor;
@@ -19,6 +21,7 @@ import java.util.Map;
 public class ChatController {
 
     private final ChatService chatService;
+    private final StoryChatAgentService storyChatAgentService;
     private final ApiKeyService apiKeyService;
     private final CurrentUserService currentUserService;
 
@@ -33,8 +36,9 @@ public class ChatController {
                 configId(body),
                 "Please configure an LLM provider API key in Settings before using story chat."
         );
-        chatService.saveUserMessage(chapterId, content, user);
-        return chatService.streamChat(chapterId, user, llmConfig);
+        MangaAgentConversation conversation = chatService.storyConversation(chapterId, user);
+        return storyChatAgentService.runAgUiStream(chapterId, conversation.getConversationUuid(),
+                content, null, user, llmConfig);
     }
 
     @GetMapping("/messages")

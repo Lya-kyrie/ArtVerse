@@ -1,5 +1,6 @@
 package com.artverse.application;
 
+import com.artverse.config.ArtVerseProperties;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Service;
 
@@ -20,21 +21,23 @@ public class RefreshTokenService {
     private static final String USER_PREFIX = "rt:user:";
     private static final String USED_PREFIX = "rt:used:";
     private static final String LEGACY_PREFIX = "rt:";
-    private static final Duration REFRESH_TOKEN_TTL = Duration.ofHours(12);
-    private static final long REFRESH_TOKEN_TIMEOUT_SECONDS = 12 * 3600;
 
     private final StringRedisTemplate redis;
+    private final Duration refreshTokenTtl;
+    private final long refreshTokenTimeoutSeconds;
 
-    public RefreshTokenService(StringRedisTemplate redis) {
+    public RefreshTokenService(StringRedisTemplate redis, ArtVerseProperties properties) {
         this.redis = redis;
+        this.refreshTokenTimeoutSeconds = properties.getAuth().getCookie().getRefreshTokenTimeoutSeconds();
+        this.refreshTokenTtl = Duration.ofSeconds(refreshTokenTimeoutSeconds);
     }
 
     public String issue(long userId) {
         String token = UUID.randomUUID().toString();
         String tokenHash = hash(token);
-        redis.opsForValue().set(tokenKey(tokenHash), Long.toString(userId), REFRESH_TOKEN_TTL);
+        redis.opsForValue().set(tokenKey(tokenHash), Long.toString(userId), refreshTokenTtl);
         redis.opsForSet().add(userKey(userId), tokenHash);
-        redis.expire(userKey(userId), REFRESH_TOKEN_TTL);
+        redis.expire(userKey(userId), refreshTokenTtl);
         return token;
     }
 
@@ -46,8 +49,6 @@ public class RefreshTokenService {
         String tokenHash = hash(token);
         String storedUserId = redis.opsForValue().getAndDelete(tokenKey(tokenHash));
 
-        // Tokens issued before the reverse index was introduced can still be
-        // rotated while their access token remains valid.
         if (storedUserId == null && authenticatedUserId != null) {
             Boolean deleted = redis.delete(LEGACY_PREFIX + authenticatedUserId + ":" + token);
             if (Boolean.TRUE.equals(deleted)) {
@@ -79,8 +80,6 @@ public class RefreshTokenService {
         keys.add(userKey(userId));
         redis.delete(keys);
 
-        // Remove tokens created by the previous storage layout during the
-        // migration window. This path disappears once all 12-hour tokens age out.
         Set<String> legacyKeys = redis.keys(LEGACY_PREFIX + userId + ":*");
         if (legacyKeys != null && !legacyKeys.isEmpty()) {
             redis.delete(legacyKeys);
@@ -88,11 +87,11 @@ public class RefreshTokenService {
     }
 
     public long getTimeoutSeconds() {
-        return REFRESH_TOKEN_TIMEOUT_SECONDS;
+        return refreshTokenTimeoutSeconds;
     }
 
     private void markUsed(String tokenHash, long userId) {
-        redis.opsForValue().set(USED_PREFIX + tokenHash, Long.toString(userId), REFRESH_TOKEN_TTL);
+        redis.opsForValue().set(USED_PREFIX + tokenHash, Long.toString(userId), refreshTokenTtl);
     }
 
     private static String tokenKey(String tokenHash) {

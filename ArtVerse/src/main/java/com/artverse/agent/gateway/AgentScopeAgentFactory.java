@@ -160,6 +160,8 @@ public class AgentScopeAgentFactory {
         return switch (taskType) {
             case MANGA_ROUTER -> agent.getRouterMaxModelCalls();
             case MANGA_CONVERSATION, MANGA_CREATIVE -> agent.getConversationMaxModelCalls();
+            case STORY_CHAT_READ -> agent.getConversationMaxModelCalls();
+            case STORY_CHAT_WRITE -> agent.getDirectorMaxModelCalls();
             case MANGA_STORYBOARD -> agent.getStoryboardMaxModelCalls();
             case MANGA_REVIEW -> 3;
             case MANGA_DIRECTOR -> agent.getDirectorMaxModelCalls();

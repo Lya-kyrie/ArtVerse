@@ -1,6 +1,7 @@
 package com.artverse.application;
 
 import com.artverse.application.RefreshTokenService.ConsumptionStatus;
+import com.artverse.config.ArtVerseProperties;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -14,8 +15,13 @@ import java.util.Collection;
 import java.util.Set;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.mockito.ArgumentMatchers.*;
-import static org.mockito.Mockito.*;
+import static org.mockito.ArgumentMatchers.argThat;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.ArgumentMatchers.startsWith;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
 
 @DisplayName("RefreshTokenService")
 class RefreshTokenServiceTest {
@@ -33,7 +39,9 @@ class RefreshTokenServiceTest {
         sets = mock(SetOperations.class);
         when(redis.opsForValue()).thenReturn(values);
         when(redis.opsForSet()).thenReturn(sets);
-        service = new RefreshTokenService(redis);
+        ArtVerseProperties properties = new ArtVerseProperties();
+        properties.getAuth().getCookie().setRefreshTokenTimeoutSeconds(43_200);
+        service = new RefreshTokenService(redis, properties);
     }
 
     @Test

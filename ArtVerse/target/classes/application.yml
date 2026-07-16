@@ -36,6 +36,42 @@ artverse:
   secrets:
     encryption-key: ${ARTVERSE_SECRET_ENCRYPTION_KEY:ArtVerse!ApiKey1}
     active-key-version: 2
+  auth:
+    cookie:
+      secure: ${ARTVERSE_AUTH_COOKIE_SECURE:false}
+      refresh-body-fallback-enabled: true
+      refresh-cookie-name: artverse-refresh
+      refresh-token-timeout-seconds: 43200
+    challenge:
+      # Local default uses Cloudflare Turnstile test keys so the register challenge
+      # is visible without extra setup. Deployments should override these values.
+      mode: ${ARTVERSE_AUTH_CHALLENGE_MODE:observe}
+      provider: turnstile
+      site-key: ${ARTVERSE_TURNSTILE_SITE_KEY:1x00000000000000000000AA}
+      secret-key: ${ARTVERSE_TURNSTILE_SECRET_KEY:1x0000000000000000000000000000000AA}
+      allowed-hostnames:
+        - localhost
+        - 127.0.0.1
+      verify-timeout-ms: 3000
+    risk:
+      hmac-key: ${ARTVERSE_AUTH_RISK_HMAC_KEY:dev-auth-risk-hmac}
+      login-failure-challenge-threshold: 3
+      login-failure-window-seconds: 900
+      login-ip-challenge-threshold: 20
+      login-ip-hard-limit: 100
+      login-ip-window-seconds: 300
+      register-ip-limit: 10
+      register-ip-window-seconds: 3600
+      degraded-login-account-limit: 3
+      degraded-login-ip-limit: 10
+      degraded-login-account-window-seconds: 900
+      degraded-login-ip-window-seconds: 300
+    proxy:
+      trusted-cidrs: []
+    csrf:
+      mode: report
+      header-name: X-ArtVerse-Client
+      header-value: web
   cors-origins:
     - http://localhost:5173
     - http://127.0.0.1:5173
@@ -156,15 +192,15 @@ sa-token:
   token-style: uuid        # uuid / 32str / random
   token-prefix: ""         # 不加 Bearer 前缀
   is-read-cookie: true
-  is-read-header: true
+  is-read-header: false
   is-write-cookie: true
   is-write-header: false
   is-log: true
   cookie:
     path: /
     http-only: true
-    same-site: lax
-    secure: false
+    same-site: strict
+    secure: ${ARTVERSE_AUTH_COOKIE_SECURE:false}
 
   # === 拦截器配置 ===
   intercept-urls:

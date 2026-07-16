@@ -3,6 +3,7 @@ package com.artverse.application;
 import com.artverse.agent.AgentRunEvent;
 import com.artverse.agent.BusinessSkillSelection;
 import com.artverse.common.BusinessException;
+import com.artverse.domain.AgentRunType;
 import com.artverse.domain.Chapter;
 import com.artverse.domain.MangaAgentConversation;
 import com.artverse.domain.MangaAgentRun;
@@ -125,11 +126,24 @@ public class MangaAgentRunService {
     @Transactional
     public MangaAgentRun startOrReuse(MangaAgentConversation conversation, UUID requestId, String inputMessage,
                                       MangaWorkflowRoute route) {
+        return startOrReuse(conversation, requestId, inputMessage, AgentRunType.MANGA_AGENT, route,
+                route == null ? MangaWorkflowRoute.DIRECTOR.name() : route.name());
+    }
+
+    @Transactional
+    public MangaAgentRun startOrReuse(MangaAgentConversation conversation, UUID requestId, String inputMessage,
+                                      AgentRunType runType, MangaWorkflowRoute route, String routeKey) {
         MangaWorkflowRoute effectiveRoute = route == null ? MangaWorkflowRoute.DIRECTOR : route;
+        AgentRunType effectiveRunType = runType == null ? AgentRunType.MANGA_AGENT : runType;
+        String effectiveRouteKey = routeKey == null || routeKey.isBlank()
+                ? effectiveRoute.name()
+                : routeKey.trim().toUpperCase();
         MangaAgentRun claimed = runRepository.findByConversationIdAndRequestId(conversation.getId(), requestId)
                 .map(existing -> {
                     if (existing.getStatus() == MangaAgentRunStatus.WAITING_USER) {
                         existing.setRoute(effectiveRoute);
+                        existing.setRunType(effectiveRunType);
+                        existing.setRouteKey(effectiveRouteKey);
                         existing.setStatus(MangaAgentRunStatus.RUNNING);
                         existing.setUserInputRequestJson(null);
                         existing.setErrorMessage(null);
@@ -147,7 +161,9 @@ public class MangaAgentRunService {
                     run.setConversation(conversation);
                     run.setRequestId(requestId);
                     run.setInputMessage(inputMessage);
+                    run.setRunType(effectiveRunType);
                     run.setRoute(effectiveRoute);
+                    run.setRouteKey(effectiveRouteKey);
                     run.setStatus(MangaAgentRunStatus.RUNNING);
                     run.setCurrentPhase("MODEL");
                     return runRepository.save(run);
@@ -163,6 +179,7 @@ public class MangaAgentRunService {
     public MangaAgentRun updateRoutingDecision(MangaAgentRun run, RoutingDecision decision, MangaRouteSource source) {
         MangaAgentRun attached = runRepository.getReferenceById(run.getId());
         attached.setRoute(decision.route());
+        attached.setRouteKey(decision.route().name());
         attached.setRouteSource(source == null ? MangaRouteSource.AUTO : source);
         attached.setRouteConfidence(decision.confidence());
         attached.setRouterVersion(decision.routerVersion());
@@ -672,11 +689,15 @@ public class MangaAgentRunService {
                 .toList();
         return new RunSnapshot(
                 run.getRequestId(),
+                run.getRunType() == null ? AgentRunType.MANGA_AGENT : run.getRunType(),
                 run.getStatus(),
                 run.getInputMessage(),
                 run.getFinalReply(),
                 run.getErrorMessage(),
                 run.getRoute() == null ? MangaWorkflowRoute.DIRECTOR : run.getRoute(),
+                run.getRouteKey() == null || run.getRouteKey().isBlank()
+                        ? (run.getRoute() == null ? MangaWorkflowRoute.DIRECTOR.name() : run.getRoute().name())
+                        : run.getRouteKey(),
                 waitingInput(run),
                 events,
                 run.getCreatedAt(),
@@ -953,11 +974,13 @@ public class MangaAgentRunService {
 
     public record RunSnapshot(
             UUID requestId,
+            AgentRunType runType,
             MangaAgentRunStatus status,
             String inputMessage,
             String finalReply,
             String errorMessage,
             MangaWorkflowRoute route,
+            String routeKey,
             AgentUserInputRequest userInputRequest,
             List<RunEventSnapshot> events,
             OffsetDateTime createdAt,
@@ -983,7 +1006,8 @@ public class MangaAgentRunService {
                            String errorMessage, MangaWorkflowRoute route, AgentUserInputRequest userInputRequest,
                            List<RunEventSnapshot> events, OffsetDateTime createdAt, OffsetDateTime updatedAt,
                            OffsetDateTime completedAt, OffsetDateTime lastProgressAt, String currentPhase) {
-            this(requestId, status, inputMessage, finalReply, errorMessage, route, userInputRequest, events,
+            this(requestId, AgentRunType.MANGA_AGENT, status, inputMessage, finalReply, errorMessage, route,
+                    route == null ? MangaWorkflowRoute.DIRECTOR.name() : route.name(), userInputRequest, events,
                     createdAt, updatedAt, completedAt, lastProgressAt, currentPhase, MangaRouteSource.AUTO, null, null,
                     "manga-workflow-v1", null, Map.of(), null, null, Map.of(), Map.of(), null, List.of(), List.of());
         }

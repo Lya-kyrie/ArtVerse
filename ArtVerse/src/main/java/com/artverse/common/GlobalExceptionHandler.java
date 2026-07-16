@@ -1,6 +1,7 @@
 package com.artverse.common;
 
 import cn.dev33.satoken.exception.NotLoginException;
+import com.artverse.security.AuthErrorCodes;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
@@ -21,6 +22,9 @@ public class GlobalExceptionHandler {
     public ResponseEntity<Map<String, Object>> handleBusiness(BusinessException ex) {
         Map<String, Object> body = new LinkedHashMap<>();
         body.put("detail", ex.getMessage());
+        if (ex.getCode() != null) {
+            body.put("code", ex.getCode());
+        }
         if (ex.getProvider() != null) {
             body.put("provider", ex.getProvider());
         }
@@ -33,7 +37,7 @@ public class GlobalExceptionHandler {
                 request.getMethod(), request.getRequestURI(), ex.getMessage());
         return ResponseEntity.status(401).body(Map.of(
                 "detail", "Login expired",
-                "code", "AUTH_EXPIRED"));
+                "code", AuthErrorCodes.AUTH_EXPIRED));
     }
 
     @ExceptionHandler(MethodArgumentNotValidException.class)

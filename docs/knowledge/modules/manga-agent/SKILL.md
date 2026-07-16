@@ -20,6 +20,7 @@ Image generation is not performed by the Manga Agent. The agent prepares or refi
 ## Code Map
 
 - REST/SSE entrypoint: `ArtVerse/src/main/java/com/artverse/api/MangaAgentController.java`.
+- Story chat AG-UI entrypoint: `ArtVerse/src/main/java/com/artverse/api/StoryChatController.java`.
 - Request/response DTOs: `ArtVerse/src/main/java/com/artverse/api/dto/MangaAgentDtos.java`.
 - Public application facade: `ArtVerse/src/main/java/com/artverse/application/MangaAgentService.java`. Depends on `MangaAgentConversationService` for conversation/message operations, `MangaWorkflowOrchestrator` for execution, `MangaAgentRunService` for run lifecycle, and `MangaAgentRunEventPublisher` for SSE.
 - Workflow execution orchestration: `ArtVerse/src/main/java/com/artverse/application/workflow/MangaWorkflowOrchestrator.java`.
@@ -41,6 +42,7 @@ Image generation is not performed by the Manga Agent. The agent prepares or refi
 - Runtime Skill registry: `ArtVerseSkillRegistry` and AgentScope `ArtVerseSkillRepository`; only platform-managed manifests published from `ArtVerse/src/main/resources/business-agent-skills/` are loaded.
 - RAG context and candidate approval: `KnowledgeService`, `KnowledgeCandidateService`, and `/api/stories/{storyId}/knowledge/candidates`.
 - Storyboard draft/commit: `StoryboardArtifactService` and `manga_agent_run_artifacts`.
+- Novel content draft/commit: `StoryChatAgentService`, `NovelContentArtifactService`, `StoryChatNovelContentTools`, and `manga_agent_run_artifacts` with `artifact_type=NOVEL_CONTENT_DRAFT`.
 - Distributed controls: `AgentBudgetService`, `AgentRunLeaseService`, Redis-backed `AgentConcurrencyGate`, and run fencing tokens.
 - Durable extraction pipeline: `AgentOutboxService`, `AgentOutboxWorker`, and `KnowledgeExtractionService` claim changed chapters with database lease/fencing, use only an active user-owned LLM configuration, and write pending candidates for approval.
 - Session recovery: `AgentSessionHydrator` sends only the current turn while AgentState is healthy and falls back to PostgreSQL history when state is absent.
@@ -86,6 +88,8 @@ Manga tools are grouped through AgentScope `Toolkit` and activated per task stra
 
 Conversation, creative, and review agents receive only context tools. Storyboard agents receive all three groups. Director agents receive context and HITL groups. Router, chat, and novel agents receive no Manga tools. Every `AgentTaskType` must be covered by exactly one strategy so a new task cannot silently inherit an unsafe tool set.
 
+Story chat uses separate AgentScope task types and the same persistent run substrate. `STORY_CHAT_READ` receives only `get_novel_context`; `STORY_CHAT_WRITE` receives `get_novel_context`, `draft_novel_content`, `commit_novel_content`, and `ask_user`. Generic `CHAT` remains tool-less for compatibility and must not be used as the new story-chat write route.
+
 - `get_chapter_context`: read-only; returns story, chapter, source excerpt, storyboard scenes, and generated image status.
 - `draft_structured_storyboard`: creates a persisted draft, validates page/panel and storyboard hard constraints, and returns a structured evaluator result without changing the chapter.
 - `commit_storyboard`: the sole new workflow chapter write. It accepts one validated artifact and checks chapter version plus run fencing token.
@@ -115,6 +119,7 @@ After a mutating tool succeeds, failures in the final agent response may degrade
 - When backend emits AG-UI frames, `MangaAgentPage.tsx` must translate `ag_ui_event` frames into execution panel state and synchronize final persisted messages after `RUN_FINISHED`; otherwise the frontend can appear stuck or require a manual refresh.
 - The execution panel should treat `RUN_STARTED`, `STATE_SNAPSHOT`, `CUSTOM`, `TEXT_MESSAGE_CONTENT`, `RUN_FINISHED`, and `RUN_ERROR` as live events. Business run status (`RUNNING`, `WAITING_USER`, and terminal states) remains visible as secondary metadata.
 - Use `ask_user` for blocking decisions instead of plain-text questions.
+- Novel-content AI writes must use `draft_novel_content -> ask_user -> confirmed resume -> commit_novel_content`. The draft is a complete chapter snapshot stored as `NOVEL_CONTENT_DRAFT`; confirmation is bound to the specific `artifact_id`; `commit_novel_content` is rejected before that confirmation and is the only AI path that may update `chapters.novel_content`.
 - Create and persist the run before semantic routing so routing clarification can enter `WAITING_USER`.
 - `ROUTING` resumes reclassify using the original input plus answer; business and mutation resumes keep the persisted route.
 - Overwriting an existing storyboard requires application-enforced `MUTATION_CONFIRMATION`; prompt instructions alone are insufficient.

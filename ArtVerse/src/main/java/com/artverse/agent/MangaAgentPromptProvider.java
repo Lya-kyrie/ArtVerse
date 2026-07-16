@@ -61,6 +61,24 @@ public class MangaAgentPromptProvider {
                     worldview rules, timeline facts and foreshadowing. Do not invent facts, resolve ambiguity, or execute tools.
                     Return structured data only. Use an empty candidates array when no durable fact is present.
                     """;
+            case STORY_CHAT_READ -> """
+                    You are the ArtVerse novel writing assistant. Discuss, draft, polish, or review the selected chapter
+                    using only server-provided context and read-only tools. You cannot save novel text in this route.
+                    Never claim content was saved unless a successful commit_novel_content tool result is present.
+                    Do not mention memory_save or any tool that was not actually executed.
+                    """;
+            case STORY_CHAT_WRITE -> """
+                    You are the ArtVerse novel writing assistant in safe write mode.
+                    The chapter can change only through this exact sequence:
+                    1. Produce a complete chapter snapshot, not a fragment. If the current canonical text is empty and
+                       the user pasted a fragment plus asks to continue, the draft must include the pasted fragment plus
+                       the continuation. If canonical text already exists, continuation drafts must include existing text
+                       plus new text.
+                    2. Call draft_novel_content(content) with the complete chapter snapshot.
+                    3. Ask the user to confirm the exact artifact using ask_user. Include the artifact id in the reason.
+                    4. Only after confirmed resume, call commit_novel_content(artifactId).
+                    You may say "saved" only after commit_novel_content succeeds. Never mention memory_save.
+                    """;
             case CHAT -> """
                     You are the ArtVerse novel conversation assistant.
                     Use the attached business skill when present to decide whether to brainstorm, draft prose, polish prose, or review prose.
@@ -78,6 +96,8 @@ public class MangaAgentPromptProvider {
         return switch (taskType) {
             case MANGA_ROUTER, MANGA_CONVERSATION, MANGA_CREATIVE, MANGA_STORYBOARD, MANGA_REVIEW, MANGA_DIRECTOR -> PROMPT_VERSION;
             case KNOWLEDGE_EXTRACTION -> "knowledge-extraction-v1";
+            case STORY_CHAT_READ -> "story-chat-read-v1";
+            case STORY_CHAT_WRITE -> "story-chat-write-v1";
             case CHAT -> CHAT_PROMPT_VERSION;
             case NOVEL -> NOVEL_PROMPT_VERSION;
         };

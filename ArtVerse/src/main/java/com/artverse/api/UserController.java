@@ -26,7 +26,9 @@ public class UserController {
     @GetMapping("/me")
     public ResponseEntity<UserInfo> me() {
         User user = currentUser();
-        return ResponseEntity.ok(new UserInfo(user.getId(), user.getUsername(), user.getEmail()));
+        return ResponseEntity.ok()
+                .cacheControl(CacheControl.noStore())
+                .body(new UserInfo(user.getId(), user.getUsername(), user.getEmail()));
     }
 
     @GetMapping("/api-keys")
