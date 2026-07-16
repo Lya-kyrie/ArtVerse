@@ -50,13 +50,25 @@ public class StaticMediaController {
     }
 
     private void serveMinioObject(String objectKey, HttpServletResponse response) {
-        try (InputStream in = objectStorageService.get(properties.getMinio().getBucket(), objectKey);
+        var bucket = properties.getMinio().getBucket();
+
+        // Try to set Content-Length so the browser can show download progress.
+        objectStorageService.stat(bucket, objectKey)
+                .ifPresent(stat -> response.setContentLengthLong(stat.sizeBytes()));
+
+        // Set headers before obtaining the OutputStream.
+        response.setContentType(contentTypeFor(objectKey));
+        applyImmutableCache(response);
+
+        try (InputStream in = objectStorageService.get(bucket, objectKey);
              OutputStream out = response.getOutputStream()) {
-            response.setContentType(contentTypeFor(objectKey));
-            applyImmutableCache(response);
             in.transferTo(out);
         } catch (Exception e) {
-            log.warn("Failed to serve MinIO object {}: {}", objectKey, e.getMessage());
+            if (isConnectionReset(e)) {
+                log.debug("Client disconnected while serving MinIO object {}: {}", objectKey, e.getMessage());
+            } else {
+                log.warn("Failed to serve MinIO object {}: {}", objectKey, e.getMessage());
+            }
             response.setHeader(HttpHeaders.CACHE_CONTROL, "no-store");
             response.setStatus(HttpServletResponse.SC_NOT_FOUND);
         }
@@ -81,7 +93,11 @@ public class StaticMediaController {
                 in.transferTo(out);
             }
         } catch (Exception e) {
-            log.warn("Failed to serve file {}: {}", path, e.getMessage());
+            if (isConnectionReset(e)) {
+                log.debug("Client disconnected while serving file {}: {}", path, e.getMessage());
+            } else {
+                log.warn("Failed to serve file {}: {}", path, e.getMessage());
+            }
             response.setHeader(HttpHeaders.CACHE_CONTROL, "no-store");
             response.setStatus(HttpServletResponse.SC_INTERNAL_SERVER_ERROR);
         }
@@ -89,5 +105,21 @@ public class StaticMediaController {
 
     private void applyImmutableCache(HttpServletResponse response) {
         response.setHeader(HttpHeaders.CACHE_CONTROL, IMMUTABLE_BROWSER_CACHE);
+    }
+
+    /**
+     * Check whether the exception was caused by the client disconnecting mid-stream.
+     * These are normal occurrences (e.g. tab close, page navigation) and should not
+     * be logged as warnings.
+     */
+    private static boolean isConnectionReset(Throwable t) {
+        while (t != null) {
+            if (t instanceof java.io.IOException
+                    && "Connection reset by peer".equals(t.getMessage())) {
+                return true;
+            }
+            t = t.getCause();
+        }
+        return false;
     }
 }

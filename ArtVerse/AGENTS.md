@@ -7,6 +7,10 @@ Use repository business knowledge before changing complex AI workflow code. Star
 - Manga agent chat, SSE runs, HITL resume, AgentScope tools, run persistence: `docs/knowledge/modules/manga-agent/SKILL.md`.
 - Guard/idempotency/rate-limit and storyboard generation knowledge are planned modules; inspect code directly until their skills are added.
 
+Business-agent runtime Skills are backend-owned resources under `ArtVerse/src/main/resources/business-agent-skills/`. Do not source runtime business Skills from `.agents/skills`.
+
+`.agents/skills` is reserved for Codex/development skills only. Business-agent source materials or reference packs must not live there once they participate in backend runtime behavior.
+
 When a change touches a documented module, compare the skill with the current code. If the code and knowledge disagree, mention the mismatch and update the relevant knowledge file in the same change when possible.
 
 ## Backend Checks

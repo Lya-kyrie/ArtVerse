@@ -19,8 +19,8 @@ Bridges ArtVerse business logic to the AgentScope Java v2 SDK (`agentscope-core`
 | Class | Role |
 |-------|------|
 | `AgentScopeAgentFactory` | Creates/caches `HarnessAgent` instances per user/story/chapter/conversation/model/prompt. Delegates tool setup by task type. |
-| `ArtVerseSkillRepository` | Read-only AgentScope Skill repository backed only by published platform manifests. |
-| `ArtVerseSkillRegistry` | Resolves capabilities to fixed published Skill versions and applies user settings only to configurable Skills. |
+| `ArtVerseSkillRepository` | Read-only AgentScope Skill repository backed by backend classpath manifests under `business-agent-skills/`. |
+| `ArtVerseSkillRegistry` | Loads platform-managed business Skill manifests from `ArtVerse/src/main/resources/business-agent-skills/`, resolves task or novel-mode selection, and forbids per-user runtime toggles. |
 | `AgentToolConfigurationRegistry` | Indexes tool configuration strategies by `AgentTaskType`; fails startup on missing or duplicate coverage. |
 | `AgentToolGroupSupport` | Encapsulates AgentScope `Toolkit` group creation and tool registration. |
 | `AgentScopeRuntimeContextFactory` | Creates AgentScope v2 `RuntimeContext` with `MangaAgentRuntimeContext` |
@@ -78,7 +78,7 @@ Tool access is task-specific and is selected through `AgentToolConfigurationStra
 ## Key Decisions
 
 - **Agent caching**: bounded Caffeine cache with configurable maximum size and expiry-after-access; evicted `HarnessAgent` instances are closed.
-- **Skill resolution**: the Router emits capabilities only. Application code selects a published checksum/version and disables AgentScope dynamic/default workspace Skills.
+- **Skill resolution**: runtime business Skills are backend-owned resources declared in `business-agent-skills/catalog.yml`. Application code selects one or more published manifests, disables AgentScope dynamic/default workspace Skills, and enables only the curated Skill keys for that run.
 - **Model resolution**: BYOK config id and model resolve to a dedicated model after HTTPS, DNS/private-network, and header validation. Raw provider fields remain compatibility-only; no agent path falls back to an operator API key.
 - **Workspace files**: `KNOWLEDGE.md` is a conversation-scoped projection rewritten before each run through AgentScope `RemoteFilesystem`. PostgreSQL messages and approved knowledge remain sources of truth.
 - **Session hydration**: `AgentSessionHydrator` avoids duplicating PostgreSQL history when Redis AgentState exists and supplies recent persisted history only for recovery.
@@ -89,6 +89,12 @@ Tool access is task-specific and is selected through `AgentToolConfigurationStra
 - **Retry boundary**: only the tool-free structured Router call is retried. Executor calls are never resubscribed after tools may have run.
 - **Resilience isolation**: circuit breakers are partitioned by router/executor role, provider, and Base URL hash.
 - **Exhaustive tool policy**: Every `AgentTaskType` must be owned by exactly one tool strategy. The registry rejects missing and duplicate mappings during Spring startup.
+
+## Skill Ownership Boundary
+
+- Runtime business Skills for manga and novel agents live only in backend resources: `ArtVerse/src/main/resources/business-agent-skills/`.
+- `.agents/skills` is not a runtime source. It may contain Codex/development helper skills only.
+- Historical or incubating business-skill source packs belong in documentation/reference space, not in the development skill discovery path.
 
 ## Invariants
 

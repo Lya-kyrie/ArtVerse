@@ -63,7 +63,7 @@ public class ArtVerseSkillRepository implements AgentSkillRepository {
 
     @Override
     public AgentSkillRepositoryInfo getRepositoryInfo() {
-        return new AgentSkillRepositoryInfo("artverse-database", SOURCE, false);
+        return new AgentSkillRepositoryInfo("artverse-classpath", SOURCE, false);
     }
 
     @Override
@@ -86,13 +86,17 @@ public class ArtVerseSkillRepository implements AgentSkillRepository {
     private AgentSkill toAgentSkill(ArtVerseSkillRegistry.SkillManifest manifest) {
         Map<String, Object> metadata = new LinkedHashMap<>();
         metadata.put("name", manifest.skillKey());
-        metadata.put("description", "ArtVerse controlled runtime Skill " + manifest.semanticVersion());
+        metadata.put("title", manifest.title());
+        metadata.put("domain", manifest.domain());
+        metadata.put("description", manifest.description());
         metadata.put("version", manifest.semanticVersion());
         metadata.put("checksum", manifest.checksum());
+        metadata.put("status", manifest.status());
         metadata.put("routes", manifest.supportedRoutes());
         metadata.put("capabilities", manifest.capabilities());
+        metadata.put("prompt_version", manifest.promptVersion());
         metadata.put("allowed_tool_groups", manifest.allowedToolGroups());
         metadata.put("budget", manifest.budgetPolicy());
-        return new AgentSkill(metadata, manifest.promptTemplate(), Map.of(), SOURCE);
+        return new AgentSkill(metadata, manifest.promptTemplate(), manifest.resources(), SOURCE);
     }
 }

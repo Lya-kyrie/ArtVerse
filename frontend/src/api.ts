@@ -680,6 +680,18 @@ export function getProviderRequestPayload(
   return { model: decodeProviderModelSelection(selection).model };
 }
 
+export function getImageGenerationProviderPayload(selection?: string): Record<string, string | number> {
+  if (!selection) return {};
+  const option = getProviderModelSelectionMeta('image', selection);
+  if (!option) {
+    return { model: decodeProviderModelSelection(selection).model };
+  }
+  return {
+    model: option.model,
+    ...(option.configId ? { config_id: option.configId } : {}),
+  };
+}
+
 export function toProviderEndpointConfig(preset: ProviderPresetConfig): ProviderEndpointConfig {
   return {
     configId: preset.remoteId,
@@ -883,9 +895,10 @@ export interface Story {
 
 export interface ChatMessage {
   id: number;
-  chapter_id: number;
+  chapter_id?: number;
   role: string;
   content: string;
+  completion_status?: 'complete' | 'partial';
   created_at: string;
 }
 
@@ -902,6 +915,7 @@ export interface Chapter {
   id: number;
   story_id: number;
   chapter_number: number;
+  version?: number;
   novel_content: string | null;
   content_source?: 'chat' | 'import' | null;
   created_at: string;
@@ -1097,7 +1111,7 @@ export function chatStream(
   chapterId: number,
   content: string,
   onToken: (token: string) => void,
-  _onDone: (fullContent: string) => void,
+  _onDone: (message: ChatMessage) => void,
   onError: (err: string) => void,
   model?: string,
 ): AbortController {
@@ -1131,7 +1145,13 @@ export function chatStream(
             if (currentEvent === 'token' && data.content !== undefined) {
               onToken(data.content);
             } else if (currentEvent === 'done' && data.content !== undefined) {
-              _onDone(data.content);
+              _onDone(data.message || {
+                id: Date.now(),
+                role: 'assistant',
+                content: data.content,
+                completion_status: 'complete',
+                created_at: new Date().toISOString(),
+              });
             } else if (currentEvent === 'error' || data.error) {
               onError(data.error);
             }
@@ -1584,10 +1604,11 @@ export async function regenerateImage(
   prompt: string,
   model?: string,
 ): Promise<{ id: number; image_number: number; image_path: string; prompt: string }> {
+  const providerPayload = getImageGenerationProviderPayload(model);
   const res = await authFetch(`${BASE}/api/chapters/${chapterId}/regenerate-image/${imageNumber}`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ prompt, ...(model ? { model } : {}) }),
+    body: JSON.stringify({ prompt, ...providerPayload }),
   });
   if (!res.ok) throw new Error(await res.text());
   return res.json();
@@ -1629,10 +1650,11 @@ export function generateMangaStream(
   });
 
   const connect = () => {
+    const providerPayload = getImageGenerationProviderPayload(model);
     authFetch(`${BASE}/api/chapters/${chapterId}/generate-manga-stream`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ assetGroupId: assetGroupId ?? null, ...(model ? { model } : {}) }),
+      body: JSON.stringify({ assetGroupId: assetGroupId ?? null, ...providerPayload }),
       signal: controller.signal,
     })
       .then(async (res) => {
@@ -1842,6 +1864,128 @@ export interface KnowledgeRecallPreview {
   contextHash: string;
   embeddingSpaceId: number;
   snapshotId?: number | null;
+}
+
+export type NovelRevisionSource = 'manual' | 'ai' | 'restore' | 'legacy_import' | 'generated';
+
+export interface NovelRevision {
+  id: number;
+  revision_number: number;
+  content: string;
+  content_hash: string;
+  source: NovelRevisionSource;
+  created_at: string;
+}
+
+export interface NovelContentSaveResult {
+  changed: boolean;
+  chapter_version: number;
+  revision_id?: number;
+  revision_number?: number;
+  content_hash?: string;
+  auditId?: string;
+}
+
+export async function saveNovelContent(
+  chapterId: number,
+  content: string,
+  baseVersion: number,
+): Promise<NovelContentSaveResult> {
+  const res = await authFetch(`${BASE}/api/chapters/${chapterId}/novel-content`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ content, base_version: baseVersion }),
+  });
+  if (!res.ok) throw new Error(parseApiError(await res.text()));
+  return res.json();
+}
+
+export interface NovelContentProposal {
+  proposal_id: string;
+  content: string;
+  content_hash: string;
+  base_version: number;
+  through_message_id: number;
+  status: 'draft' | 'committed';
+}
+
+export interface NovelContentProposalCommitResult extends NovelContentSaveResult {
+  proposal_id: string;
+  status: 'draft' | 'committed';
+}
+
+export async function createNovelContentProposal(
+  chapterId: number,
+  conversationId: string,
+  throughMessageId: number,
+  baseVersion: number,
+  modelSelection?: string,
+): Promise<NovelContentProposal> {
+  const option = modelSelection ? getProviderModelSelectionMeta('llm', modelSelection) : null;
+  const model = option?.model || (modelSelection ? decodeProviderModelSelection(modelSelection).model : '');
+  const res = await authFetch(`${BASE}/api/chapters/${chapterId}/novel-content/proposals`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      conversation_id: conversationId,
+      through_message_id: throughMessageId,
+      base_version: baseVersion,
+      ...(option?.configId ? { config_id: option.configId } : {}),
+      ...(model ? { model } : {}),
+    }),
+  });
+  if (!res.ok) throw new Error(parseApiError(await res.text()));
+  return res.json();
+}
+
+export async function updateNovelContentProposal(
+  chapterId: number,
+  proposalId: string,
+  content: string,
+  expectedContentHash: string,
+): Promise<NovelContentProposal> {
+  const res = await authFetch(`${BASE}/api/chapters/${chapterId}/novel-content/proposals/${proposalId}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ content, expected_content_hash: expectedContentHash }),
+  });
+  if (!res.ok) throw new Error(parseApiError(await res.text()));
+  return res.json();
+}
+
+export async function commitNovelContentProposal(
+  chapterId: number,
+  proposalId: string,
+  baseVersion: number,
+  expectedContentHash: string,
+): Promise<NovelContentProposalCommitResult> {
+  const res = await authFetch(`${BASE}/api/chapters/${chapterId}/novel-content/proposals/${proposalId}/commit`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ base_version: baseVersion, expected_content_hash: expectedContentHash }),
+  });
+  if (!res.ok) throw new Error(parseApiError(await res.text()));
+  return res.json();
+}
+
+export async function listNovelRevisions(chapterId: number): Promise<NovelRevision[]> {
+  const res = await authFetch(`${BASE}/api/chapters/${chapterId}/novel-content/revisions`);
+  if (!res.ok) throw new Error(parseApiError(await res.text()));
+  return res.json();
+}
+
+export async function restoreNovelRevision(
+  chapterId: number,
+  revisionId: number,
+  baseVersion: number,
+): Promise<NovelContentSaveResult> {
+  const res = await authFetch(`${BASE}/api/chapters/${chapterId}/novel-content/revisions/${revisionId}/restore`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ base_version: baseVersion }),
+  });
+  if (!res.ok) throw new Error(parseApiError(await res.text()));
+  return res.json();
 }
 
 export interface AiConversationSummary {

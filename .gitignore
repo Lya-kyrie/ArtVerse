@@ -31,6 +31,7 @@ temp/
 *.log
 frontend/build-*.txt
 frontend/build-error.txt
+output/
 sql.zip
 wechat_article_*.txt
 

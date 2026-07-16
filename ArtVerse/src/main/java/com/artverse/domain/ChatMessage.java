@@ -34,11 +34,20 @@ public class ChatMessage {
     @Column(nullable = false, columnDefinition = "TEXT")
     private String content;
 
+    @Enumerated(EnumType.STRING)
+    @Column(name = "completion_status", nullable = false, length = 16)
+    private ChatMessageCompletionStatus completionStatus = ChatMessageCompletionStatus.COMPLETE;
+
+    @Column(name = "skill_versions_json", nullable = false, columnDefinition = "jsonb")
+    private String skillVersionsJson = "{}";
+
     @Column(name = "created_at", nullable = false, updatable = false)
     private OffsetDateTime createdAt;
 
     @PrePersist
     protected void onCreate() {
         createdAt = OffsetDateTime.now();
+        if (completionStatus == null) completionStatus = ChatMessageCompletionStatus.COMPLETE;
+        if (skillVersionsJson == null || skillVersionsJson.isBlank()) skillVersionsJson = "{}";
     }
 }

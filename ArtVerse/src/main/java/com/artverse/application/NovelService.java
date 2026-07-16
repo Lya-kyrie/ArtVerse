@@ -1,14 +1,20 @@
 package com.artverse.application;
 
-import com.artverse.agent.*;
+import com.artverse.agent.AgentMessage;
+import com.artverse.agent.AgentModelSpecFactory;
+import com.artverse.agent.AgentRunRequest;
+import com.artverse.agent.AgentTaskType;
+import com.artverse.agent.BusinessSkillSelection;
 import com.artverse.agent.gateway.AgentScopeHarnessAgentGateway;
 import com.artverse.common.BusinessException;
 import com.artverse.config.ArtVerseProperties;
-import com.artverse.domain.*;
+import com.artverse.domain.Chapter;
+import com.artverse.domain.ChatMessage;
+import com.artverse.domain.ContentSource;
 import com.artverse.persistence.ChapterRepository;
 import com.artverse.persistence.ChatMessageRepository;
 import com.artverse.persistence.MangaImageRepository;
-import org.springframework.beans.factory.annotation.Autowired;
+import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -18,93 +24,64 @@ import java.util.Map;
 import java.util.UUID;
 
 @Service
+@RequiredArgsConstructor
 public class NovelService {
 
     private final ChapterRepository chapterRepository;
     private final ChatMessageRepository chatMessageRepository;
+    @SuppressWarnings("unused")
     private final MangaImageRepository mangaImageRepository;
     private final AgentScopeHarnessAgentGateway harnessAgentGateway;
     private final AgentModelSpecFactory agentModelSpecFactory;
     private final ArtVerseProperties properties;
-    private final AgentOutboxService outboxService;
+    private final ArtVerseSkillRegistry skillRegistry;
 
-    @Autowired
-    public NovelService(ChapterRepository chapterRepository,
-                        ChatMessageRepository chatMessageRepository,
-                        MangaImageRepository mangaImageRepository,
-                        AgentScopeHarnessAgentGateway harnessAgentGateway,
-                        AgentModelSpecFactory agentModelSpecFactory,
-                        ArtVerseProperties properties,
-                        AgentOutboxService outboxService) {
-        this.chapterRepository = chapterRepository;
-        this.chatMessageRepository = chatMessageRepository;
-        this.mangaImageRepository = mangaImageRepository;
-        this.harnessAgentGateway = harnessAgentGateway;
-        this.agentModelSpecFactory = agentModelSpecFactory;
-        this.properties = properties;
-        this.outboxService = outboxService;
-    }
-
-    public NovelService(ChapterRepository chapterRepository,
-                        ChatMessageRepository chatMessageRepository,
-                        MangaImageRepository mangaImageRepository,
-                        AgentScopeHarnessAgentGateway harnessAgentGateway,
-                        AgentModelSpecFactory agentModelSpecFactory,
-                        ArtVerseProperties properties) {
-        this(chapterRepository, chatMessageRepository, mangaImageRepository,
-                harnessAgentGateway, agentModelSpecFactory, properties, null);
-    }
-
-    @Transactional
     public String generateNovel(Long chapterId) {
         return generateNovel(chapterId, null, null);
     }
 
-    @Transactional
     public String generateNovel(Long chapterId, Long userId, String llmApiKey) {
-        Chapter chapter = chapterRepository.findById(chapterId)
-                .orElseThrow(() -> new BusinessException(404, "Chapter not found"));
+        throw new BusinessException(410,
+                "Direct AI novel generation has been retired. Create a novel-content proposal instead.");
+    }
 
-        List<ChatMessage> messages = chatMessageRepository.findByChapterIdOrderByCreatedAtAsc(chapterId);
-        if (messages.isEmpty()) {
+    public GeneratedNovelSnapshot generateNovelSnapshot(Long userId, Long storyId, Long chapterId,
+                                                        String currentNovelContent, List<ChatMessage> messages,
+                                                        UserProviderConfig llmConfig) {
+        if (messages == null || messages.isEmpty()) {
             throw new BusinessException(400, "No chat messages to generate novel from");
         }
 
         List<AgentMessage> agentMessages = new ArrayList<>();
-        agentMessages.add(new AgentMessage("system", buildNovelSystemPrompt()));
+        agentMessages.add(new AgentMessage("system", buildNovelSystemPrompt(currentNovelContent)));
         for (ChatMessage m : messages) {
             agentMessages.add(new AgentMessage(m.getRole().name().toLowerCase(), m.getContent()));
         }
 
-        UUID requestId = UUID.randomUUID();
+        BusinessSkillSelection skillSelection = skillRegistry.selectionForNovelMode(
+                NovelBusinessSkillMode.CHAPTER_WRITING);
         AgentRunRequest request = new AgentRunRequest(
-                userId == null ? "default" : String.valueOf(userId),
-                chapter.getStory().getId(),
+                String.valueOf(userId),
+                storyId,
                 chapterId,
                 AgentTaskType.NOVEL,
                 agentMessages,
-                Map.of(),
-                agentModelSpecFactory.defaultLlm(llmApiKey),
-                llmApiKey,
-                requestId,
-                null
+                Map.of("prompt_version", NovelContentProposalService.PROMPT_VERSION),
+                agentModelSpecFactory.fromProviderConfig(llmConfig),
+                llmConfig.apiKey(),
+                UUID.randomUUID(),
+                null,
+                skillSelection
         );
 
-        String novelContent;
         try {
-            novelContent = harnessAgentGateway.generateText(request).block();
+            String content = harnessAgentGateway.generateText(request).block();
+            return new GeneratedNovelSnapshot(content, skillSelection);
+        } catch (BusinessException e) {
+            throw e;
         } catch (Exception e) {
-            throw new BusinessException(502, "AI 服务不可用: " + e.getMessage());
+            throw new BusinessException(502, "AI service is unavailable: " + e.getMessage());
         }
-        if (novelContent == null || novelContent.isBlank()) {
-            throw new BusinessException(502, "AI returned empty novel content");
-        }
-
-        chapter.setNovelContent(novelContent);
-        chapterRepository.save(chapter);
-        enqueueContentChanged(chapter, "GENERATED");
-
-        return novelContent;
     }
 
     @Transactional
@@ -113,53 +90,40 @@ public class NovelService {
             throw new BusinessException(400, "Content cannot be empty");
         }
         if (content.length() > properties.getImportConfig().getMaxNovelChars()) {
-            throw new BusinessException(400, "Content exceeds max length of " + properties.getImportConfig().getMaxNovelChars());
+            throw new BusinessException(400,
+                    "Content exceeds max length of " + properties.getImportConfig().getMaxNovelChars());
         }
 
         Chapter chapter = chapterRepository.findById(chapterId)
                 .orElseThrow(() -> new BusinessException(404, "Chapter not found"));
-
-        // Clear existing scenes
-        chapter.setScenesText(null);
-
-        // Delete existing chat messages to replace with imported content
-        chatMessageRepository.deleteByChapterId(chapterId);
-
-        // Save imported content as user message
-        ChatMessage userMsg = new ChatMessage();
-        userMsg.setChapter(chapter);
-        userMsg.setRole(MessageRole.USER);
-        userMsg.setContent(content);
-        chatMessageRepository.save(userMsg);
-
         chapter.setNovelContent(content);
         chapter.setContentSource(ContentSource.IMPORT);
-        Chapter saved = chapterRepository.save(chapter);
-        enqueueContentChanged(saved, "IMPORTED");
-        return saved;
+        return chapterRepository.save(chapter);
     }
 
-    private String buildNovelSystemPrompt() {
+    @Transactional(readOnly = true)
+    public List<ChatMessage> legacyMessages(Long chapterId) {
+        return chatMessageRepository.findByChapterIdOrderByCreatedAtAsc(chapterId);
+    }
+
+    private String buildNovelSystemPrompt(String currentNovelContent) {
+        String current = currentNovelContent == null || currentNovelContent.isBlank()
+                ? "(empty)"
+                : currentNovelContent.trim();
         return """
-                你是一位专业的中文网络小说作家。请根据用户的对话内容，整理成完整的章节小说正文。
+                You are a professional Chinese web-novel writer. Convert the current chapter text and the bounded story-chat conversation into one complete replacement snapshot of the chapter.
 
-                要求：
-                - 中文网络小说风格
-                - 目标 4000-6000 中文字，不低于 3500 字
-                - 包含 3-5 个完整场景
-                - 强化环境描写、对话、心理活动、微表情、肢体动作
-                - 直接输出正文，不输出解释或字数统计
-                """;
+                Current canonical chapter text:
+                %s
+
+                Requirements:
+                - Output the full replacement chapter, not a summary, explanation, continuation note, or chat reply.
+                - Preserve useful established facts from the current text and conversation.
+                - Use Chinese web-novel prose with concrete scene, dialogue, action, emotion, and pacing.
+                - Do not include metadata, word counts, markdown headings, or explanations.
+                """.formatted(current);
     }
 
-    private void enqueueContentChanged(Chapter chapter, String source) {
-        if (outboxService == null) return;
-        outboxService.enqueue("CHAPTER", String.valueOf(chapter.getId()),
-                "CHAPTER_CONTENT_CHANGED", Map.of(
-                        "user_id", chapter.getStory().getUser().getId(),
-                        "story_id", chapter.getStory().getId(),
-                        "chapter_id", chapter.getId(),
-                        "chapter_number", chapter.getChapterNumber(),
-                        "source", source));
+    public record GeneratedNovelSnapshot(String content, BusinessSkillSelection businessSkillSelection) {
     }
 }

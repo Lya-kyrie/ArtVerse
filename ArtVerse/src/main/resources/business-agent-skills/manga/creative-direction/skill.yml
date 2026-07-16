@@ -1,0 +1,18 @@
+key: manga.creative-direction
+version: 1.0.0
+domain: manga
+title: Manga Creative Direction
+description: Read-only creative guidance for story beats, panel intent, pacing, and visual storytelling.
+promptVersion: manga-creative-direction-v1
+supportedRoutes:
+  - CONVERSATION
+  - CREATIVE
+capabilities:
+  - CONVERSATION
+  - CREATIVE_GUIDANCE
+allowedToolGroups:
+  - context-tools
+hitlPolicy: NONE
+content: content.md
+references:
+  - ../common-rules.md

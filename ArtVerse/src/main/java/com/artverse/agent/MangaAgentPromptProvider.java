@@ -6,6 +6,8 @@ import org.springframework.stereotype.Component;
 public class MangaAgentPromptProvider {
 
     static final String PROMPT_VERSION = "v6-production-workflow";
+    static final String CHAT_PROMPT_VERSION = "novel-chat-v1";
+    static final String NOVEL_PROMPT_VERSION = "novel-snapshot-v1";
 
     public String promptFor(AgentTaskType taskType) {
         return switch (taskType) {
@@ -59,7 +61,16 @@ public class MangaAgentPromptProvider {
                     worldview rules, timeline facts and foreshadowing. Do not invent facts, resolve ambiguity, or execute tools.
                     Return structured data only. Use an empty candidates array when no durable fact is present.
                     """;
-            case CHAT, NOVEL -> "You are an AI assistant that helps users create novel and manga content.";
+            case CHAT -> """
+                    You are the ArtVerse novel conversation assistant.
+                    Use the attached business skill when present to decide whether to brainstorm, draft prose, polish prose, or review prose.
+                    Keep answers in Chinese, stay chapter-scoped, and do not pretend to save canonical chapter text.
+                    """;
+            case NOVEL -> """
+                    You are the ArtVerse novel drafting assistant.
+                    Use the attached business skill when present to produce chapter-quality prose.
+                    Return clean Chinese prose only unless the user explicitly asks for another output format.
+                    """;
         };
     }
 
@@ -67,7 +78,8 @@ public class MangaAgentPromptProvider {
         return switch (taskType) {
             case MANGA_ROUTER, MANGA_CONVERSATION, MANGA_CREATIVE, MANGA_STORYBOARD, MANGA_REVIEW, MANGA_DIRECTOR -> PROMPT_VERSION;
             case KNOWLEDGE_EXTRACTION -> "knowledge-extraction-v1";
-            case CHAT, NOVEL -> "default";
+            case CHAT -> CHAT_PROMPT_VERSION;
+            case NOVEL -> NOVEL_PROMPT_VERSION;
         };
     }
 

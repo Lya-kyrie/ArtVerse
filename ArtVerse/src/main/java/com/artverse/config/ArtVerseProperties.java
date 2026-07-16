@@ -157,7 +157,7 @@ public class ArtVerseProperties {
         private int maxOutputBytes = 160_000;
         private int maxSubagents = 4;
         private boolean ragInjectionEnabled = true;
-        private boolean skillRegistryEnabled = true;
+        private boolean businessSkillsEnabled = true;
         private boolean storyboardTwoPhaseEnabled = true;
         private boolean multiInstanceEventBusEnabled = true;
         private boolean outboxWorkerEnabled = true;

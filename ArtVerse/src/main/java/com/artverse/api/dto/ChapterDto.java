@@ -2,7 +2,9 @@ package com.artverse.api.dto;
 
 import com.artverse.domain.Chapter;
 import com.artverse.domain.ChatMessage;
+import com.artverse.domain.ContentSource;
 import com.artverse.domain.MangaImage;
+import com.artverse.domain.MessageRole;
 
 import java.time.OffsetDateTime;
 import java.util.List;
@@ -11,6 +13,7 @@ public record ChapterDto(
         Long id,
         Long storyId,
         Integer chapterNumber,
+        Long version,
         String novelContent,
         String contentSource,
         String scenesText,
@@ -29,6 +32,7 @@ public record ChapterDto(
                 c.getId(),
                 safeStoryId(c),
                 c.getChapterNumber(),
+                c.getVersion(),
                 c.getNovelContent(),
                 c.getContentSource() != null ? c.getContentSource().name().toLowerCase() : null,
                 c.getScenesText(),
@@ -52,10 +56,27 @@ public record ChapterDto(
 
     private static List<ChatMessageDto> safeMessages(Chapter c) {
         try {
-            return c.getMessages().stream().map(ChatMessageDto::from).toList();
+            List<ChatMessage> messages = c.getMessages();
+            return messages.stream()
+                    .filter(message -> !isLegacyImportedOriginalMirror(c, message))
+                    .map(ChatMessageDto::from)
+                    .toList();
         } catch (Exception e) {
             return List.of();
         }
+    }
+
+    private static boolean isLegacyImportedOriginalMirror(Chapter c, ChatMessage message) {
+        if (c.getContentSource() != ContentSource.IMPORT || message == null) {
+            return false;
+        }
+        return message.getRole() == MessageRole.USER
+                && normalizeText(message.getContent()).equals(normalizeText(c.getNovelContent()))
+                && !normalizeText(c.getNovelContent()).isBlank();
+    }
+
+    private static String normalizeText(String value) {
+        return value == null ? "" : value.trim();
     }
 
     private static List<MangaImageDto> safeImages(Chapter c) {
@@ -66,9 +87,10 @@ public record ChapterDto(
         }
     }
 
-    public record ChatMessageDto(Long id, String role, String content, OffsetDateTime createdAt) {
+    public record ChatMessageDto(Long id, String role, String content, String completionStatus, OffsetDateTime createdAt) {
         public static ChatMessageDto from(ChatMessage m) {
-            return new ChatMessageDto(m.getId(), m.getRole().name().toLowerCase(), m.getContent(), m.getCreatedAt());
+            String status = m.getCompletionStatus() == null ? "complete" : m.getCompletionStatus().name().toLowerCase();
+            return new ChatMessageDto(m.getId(), m.getRole().name().toLowerCase(), m.getContent(), status, m.getCreatedAt());
         }
     }
 

@@ -1,0 +1,15 @@
+key: novel.ideation
+version: 1.0.0
+domain: novel
+title: Novel Ideation
+description: Story ideation and planning support for beats, character choices, conflict, and chapter direction.
+promptVersion: novel-ideation-v1
+supportedRoutes:
+  - CHAT
+capabilities:
+  - IDEATION
+allowedToolGroups: []
+hitlPolicy: NONE
+content: content.md
+references:
+  - ../common-rules.md

@@ -116,7 +116,7 @@ artverse:
     max-output-bytes: 160000
     max-subagents: 4
     rag-injection-enabled: true
-    skill-registry-enabled: true
+    business-skills-enabled: true
     storyboard-two-phase-enabled: true
     multi-instance-event-bus-enabled: true
     outbox-worker-enabled: true

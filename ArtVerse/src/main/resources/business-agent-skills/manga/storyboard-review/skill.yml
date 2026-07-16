@@ -1,0 +1,17 @@
+key: manga.storyboard-review
+version: 1.0.0
+domain: manga
+title: Manga Storyboard Review
+description: Review guidance for storyboard quality, continuity, and readability without mutating chapter state.
+promptVersion: manga-storyboard-review-v1
+supportedRoutes:
+  - REVIEW
+capabilities:
+  - STORYBOARD_READ
+  - STORYBOARD_REVIEW
+allowedToolGroups:
+  - context-tools
+hitlPolicy: NONE
+content: content.md
+references:
+  - ../common-rules.md

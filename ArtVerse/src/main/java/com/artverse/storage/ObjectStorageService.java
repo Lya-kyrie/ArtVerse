@@ -18,4 +18,12 @@ public interface ObjectStorageService {
     Optional<URI> publicOrPresignedUrl(String bucket, String objectKey, Duration ttl);
 
     void deleteBestEffort(String bucket, String objectKey);
+
+    /**
+     * Retrieve object metadata without fetching the content.
+     * Default returns empty — storage backends that support this (e.g. MinIO) should override.
+     */
+    default Optional<StoredObject> stat(String bucket, String objectKey) {
+        return Optional.empty();
+    }
 }

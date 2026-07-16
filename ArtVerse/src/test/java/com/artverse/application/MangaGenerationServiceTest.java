@@ -104,8 +104,63 @@ class MangaGenerationServiceTest {
 
         assertThat(image2Client.awaitRequest()).isTrue();
         ImageGenerationRequest request = image2Client.request.get();
-        assertThat(request.model()).isEqualTo("gpt-image-2");
+        assertThat(request.model()).isEqualTo("test-model");
         assertThat(request.prompt()).contains("Rainy alley");
+    }
+
+    @Test
+    void fallsBackToDefaultModelWhenImageConfigModelIsBlank() throws Exception {
+        ArtVerseProperties properties = new ArtVerseProperties();
+        properties.getImage().setModel("gpt-image-2");
+        properties.getMinio().setBucket("artverse-test");
+        properties.getStorage().setRoot(Files.createTempDirectory("artverse-manga-test-").toString());
+
+        Story story = new Story();
+        story.setId(3L);
+        Chapter chapter = new Chapter();
+        chapter.setId(7L);
+        chapter.setStory(story);
+        chapter.setImageCount(1);
+        chapter.setColorMode(ColorMode.BW);
+        chapter.setNovelContent("The protagonist opens the door on a rainy night and sees city lights.");
+        chapter.setScenesText(STORYBOARD_SCENE);
+
+        ChapterRepository chapterRepository = mock(ChapterRepository.class);
+        MangaImageRepository mangaImageRepository = mock(MangaImageRepository.class);
+        CharacterProfileService characterProfileService = mock(CharacterProfileService.class);
+        StoryAssetGroupRepository storyAssetGroupRepository = mock(StoryAssetGroupRepository.class);
+        CapturingImage2Client image2Client = new CapturingImage2Client();
+
+        when(chapterRepository.findByIdForIdempotency(7L)).thenReturn(Optional.of(chapter));
+        when(mangaImageRepository.findByChapterIdAndImageNumber(7L, 1)).thenReturn(Optional.empty());
+        when(mangaImageRepository.save(any(MangaImage.class))).thenAnswer(invocation -> invocation.getArgument(0));
+        when(mangaImageRepository.saveAndFlush(any(MangaImage.class))).thenAnswer(invocation -> invocation.getArgument(0));
+        MangaImageStorageService imageStorageService = new MangaImageStorageService(
+                mangaImageRepository,
+                chapterRepository,
+                new CapturingObjectStorage(),
+                new MediaStorageService(properties),
+                properties
+        );
+
+        MangaGenerationService service = new MangaGenerationService(
+                chapterRepository,
+                image2Client,
+                imageStorageService,
+                directExecutor(),
+                characterProfileService,
+                storyAssetGroupRepository,
+                properties,
+                new ObjectMapper()
+        );
+
+        // ImageConfig with blank model — should fall back to properties default
+        UserProviderConfig blankModelConfig = new UserProviderConfig("image", "image2", "Image2", "image-key", "https://api.example.com/v1", "");
+        service.generateMangaStream(7L, blankModelConfig);
+
+        assertThat(image2Client.awaitRequest()).isTrue();
+        ImageGenerationRequest request = image2Client.request.get();
+        assertThat(request.model()).isEqualTo("gpt-image-2");
     }
 
     @Test

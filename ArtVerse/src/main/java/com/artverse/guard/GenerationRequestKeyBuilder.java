@@ -43,11 +43,14 @@ public class GenerationRequestKeyBuilder {
     }
 
     @Transactional(readOnly = true)
-    public Map<String, Object> imageRegeneration(Long userId, Long chapterId, int imageNumber, String prompt) {
+    public Map<String, Object> imageRegeneration(Long userId, Long chapterId, int imageNumber,
+                                                  String prompt, String model) {
         Chapter chapter = chapterForIdempotency(chapterId);
         Map<String, Object> canonical = chapterBase("regenerate-image", userId, chapter);
         canonical.put("imageNumber", imageNumber);
         canonical.put("prompt", canonicalizer.normalizeText(prompt));
+        canonical.put("model", model == null || model.isBlank()
+                ? properties.getImage().getModel() : model);
         return canonical;
     }
 

@@ -220,8 +220,45 @@ public class ApiKeyService {
                 saved.baseUrl(), blankToDefault(safeOverride.model(), saved.model()), saved.configId());
     }
 
-    public String requireActiveUserProviderKey(User user, String slot, String message) {
-        return requireActiveUserProviderConfig(user, slot, message).apiKey();
+    public UserProviderConfig requireProviderConfigForModel(User user, String slot, Long configId,
+                                                            String model, String message) {
+        String normalizedSlot = requireSupportedSlot(slot);
+        String selectedModel = safe(model);
+        if (selectedModel.isBlank()) {
+            return requireProviderConfig(user, normalizedSlot, message);
+        }
+
+        UserApiKey entity;
+        if (configId != null) {
+            entity = repository.findByIdAndUserId(configId, user.getId())
+                    .filter(item -> normalizedSlot.equals(item.getSlot()))
+                    .orElseThrow(() -> new BusinessException(404, "Provider configuration not found."));
+            if (!entity.isActive()) {
+                throw new BusinessException(409, "Provider configuration is disabled. Enable it in Settings before use.");
+            }
+            if (!hasConfiguredModel(entity.getModel(), selectedModel)) {
+                throw new BusinessException(400, "Selected image model is not available in this provider configuration.");
+            }
+        } else {
+            entity = repository.findByUserIdAndSlotOrderByCreatedAtAsc(user.getId(), normalizedSlot).stream()
+                    .filter(UserApiKey::isActive)
+                    .filter(item -> hasConfiguredModel(item.getModel(), selectedModel))
+                    .findFirst()
+                    .orElseThrow(() -> new BusinessException(400,
+                            "Selected image model is not available in your active image provider settings."));
+        }
+
+        UserProviderConfig config = toProviderConfig(entity, normalizedSlot);
+        if (config.apiKey().isBlank()) {
+            throw new BusinessException(400, message);
+        }
+        validateProviderUrl(config.baseUrl());
+        return new UserProviderConfig(
+                config.slot(), config.provider(), config.label(), config.apiKey(),
+                config.baseUrl(), selectedModel, config.configId());
+    }
+
+    public String requireActiveUserProviderKey(User user, String slot, String message) {        return requireActiveUserProviderConfig(user, slot, message).apiKey();
     }
 
     public String activeUserProviderKeyOrBlank(User user, String slot) {
@@ -537,6 +574,13 @@ public class ApiKeyService {
 
     private boolean supportsMultipleActiveProfiles(String slot) {
         return SLOT_LLM.equals(slot) || SLOT_IMAGE.equals(slot);
+    }
+
+    private boolean hasConfiguredModel(String models, String selectedModel) {
+        String normalized = safe(selectedModel);
+        return !normalized.isBlank() && safe(models).lines()
+                .map(String::trim)
+                .anyMatch(normalized::equals);
     }
 
     private String firstConfiguredModel(String models) {

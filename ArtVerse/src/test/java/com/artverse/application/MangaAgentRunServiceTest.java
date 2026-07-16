@@ -1,5 +1,6 @@
 package com.artverse.application;
 
+import com.artverse.agent.BusinessSkillSelection;
 import com.artverse.domain.Chapter;
 import com.artverse.domain.MangaAgentRun;
 import com.artverse.domain.MangaAgentRunEventRecord;
@@ -163,7 +164,7 @@ class MangaAgentRunServiceTest {
                 .thenReturn(Optional.of(step));
 
         service.recordStepSkillSelection(
-                1L, 7L, requestId, "plan-a:1", "manga.review", "1.0.0");
+                1L, 7L, requestId, "plan-a:1", selection("manga.review", "1.0.0"));
 
         assertThat(step.getSkillKey()).isEqualTo("manga.review");
         assertThat(step.getSkillVersion()).isEqualTo("1.0.0");
@@ -342,6 +343,28 @@ class MangaAgentRunServiceTest {
         run.setLastProgressAt(OffsetDateTime.now());
         run.setCurrentPhase("MODEL");
         return run;
+    }
+
+    private BusinessSkillSelection selection(String skillKey, String version) {
+        return new BusinessSkillSelection(List.of(new ArtVerseSkillRegistry.SkillManifest(
+                skillKey,
+                version,
+                "checksum",
+                "PUBLISHED",
+                "manga",
+                skillKey,
+                "description",
+                List.of(),
+                List.of(),
+                "content",
+                version,
+                List.of(),
+                Map.of(),
+                null,
+                "NONE",
+                false,
+                Map.of()
+        )));
     }
 
     private record Fixture(MangaAgentRunService service,

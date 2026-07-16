@@ -1,0 +1,21 @@
+key: manga.visual-prompting
+version: 1.0.0
+domain: manga
+title: Manga Visual Prompting
+description: Converts storyboard intent into clear visual prompting language for the existing manga image workflow.
+promptVersion: manga-visual-prompting-v1
+supportedRoutes:
+  - CREATIVE
+  - STORYBOARD
+capabilities:
+  - CREATIVE_GUIDANCE
+  - STORYBOARD_READ
+  - STORYBOARD_WRITE
+allowedToolGroups:
+  - context-tools
+  - storyboard-tools
+  - hitl-tools
+hitlPolicy: NONE
+content: content.md
+references:
+  - ../common-rules.md

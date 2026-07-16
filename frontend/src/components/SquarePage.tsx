@@ -23,6 +23,7 @@ import {
   type SquareStory,
   type SquareStoryDetail,
 } from '../api';
+import { useTheme } from '../hooks/useTheme';
 
 const PAGE_SIZE = 12;
 
@@ -741,6 +742,14 @@ function StatCard({ label, value }: { label: string; value: string }) {
   );
 }
 
+function parseParagraphs(content: string | null): string[] {
+  if (!content) return [];
+  return content
+    .split('\n')
+    .map((p) => p.trim())
+    .filter((p) => p.length > 0);
+}
+
 function Reader({
   detail,
   chapterId,
@@ -757,12 +766,13 @@ function Reader({
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [fontSize, setFontSize] = useState(savedState.fontSize ?? 18);
   const [lineHeight, setLineHeight] = useState(savedState.lineHeight ?? 1.8);
-  const [width, setWidth] = useState(savedState.width ?? 760);
+  const [width, setWidth] = useState(savedState.width ?? 800);
+  const { mode, toggleMode } = useTheme();
 
   useEffect(() => {
     setFontSize(savedState.fontSize ?? 18);
     setLineHeight(savedState.lineHeight ?? 1.8);
-    setWidth(savedState.width ?? 760);
+    setWidth(savedState.width ?? 800);
   }, [savedState.fontSize, savedState.lineHeight, savedState.width]);
 
   useEffect(() => {
@@ -812,6 +822,23 @@ function Reader({
     if (next) go({ kind: 'detail', format: detail.format, storyId: detail.id, chapterId: next.id });
   };
 
+  // Keyboard navigation
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement || e.target instanceof HTMLSelectElement) return;
+      if (e.key === 'ArrowLeft') {
+        e.preventDefault();
+        navigate(-1);
+      } else if (e.key === 'ArrowRight') {
+        e.preventDefault();
+        navigate(1);
+      }
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [index, detail.chapters]);
+
   const hasContent = detail.format === 'novel'
     ? Boolean(chapter.content?.trim())
     : chapter.images.length > 0;
@@ -819,46 +846,70 @@ function Reader({
   return (
     <div className="flex min-h-0 flex-1 flex-col bg-bg-base">
       <header className="border-b border-border bg-bg-surface/95 backdrop-blur">
-        <div className="mx-auto flex min-h-16 max-w-6xl items-center justify-between gap-3 px-3 sm:px-6">
-          <button className="flex min-h-11 items-center gap-1 text-sm text-text-secondary transition hover:text-text-primary" onClick={onBack}>
+        <div className="mx-auto flex min-h-14 max-w-5xl items-center justify-between gap-3 px-3 sm:px-6">
+          <button className="flex min-h-10 items-center gap-1 rounded-lg px-2 text-sm text-text-secondary transition hover:text-text-primary hover:bg-accent-soft" onClick={onBack}>
             <ChevronLeft size={18} />
-            详情
+            <span className="hidden sm:inline">详情</span>
           </button>
           <div className="min-w-0 text-center">
-            <div className="truncate text-sm font-medium text-text-primary">{detail.title}</div>
-            <div className="truncate text-xs text-text-muted">{chapterTitle(chapter)}</div>
+            <div className="truncate text-sm font-semibold text-text-primary">{chapterTitle(chapter)}</div>
+            <div className="truncate text-xs text-text-muted">{detail.title} · {chapterMetaLabel(chapter, detail.format)}</div>
           </div>
           <button
             aria-label="阅读设置"
-            className="flex h-11 w-11 items-center justify-center rounded-xl border border-border text-text-secondary transition hover:border-accent hover:text-accent"
+            className="flex h-10 w-10 items-center justify-center rounded-lg border border-border text-text-secondary transition hover:border-accent hover:text-accent"
             onClick={() => setSettingsOpen((value) => !value)}
           >
-            <Settings2 size={18} />
+            <Settings2 size={17} />
           </button>
         </div>
       </header>
 
       {settingsOpen && (
         <div className="border-b border-border bg-bg-surface">
-          <div className="mx-auto flex max-w-6xl flex-wrap gap-3 px-4 py-4 text-sm sm:px-6">
-            <label className="fanqie-setting-field">
-              <span>字号</span>
-              <select value={fontSize} onChange={(event) => setFontSize(Number(event.target.value))}>
-                {[16, 18, 20, 22].map((value) => <option key={value}>{value}</option>)}
-              </select>
-            </label>
+          <div className="mx-auto flex max-w-5xl flex-wrap items-center justify-center gap-4 px-4 py-3 text-sm sm:px-6">
+            <div className="flex items-center gap-2">
+              <span className="text-xs text-text-muted">字号</span>
+              <button
+                className="flex h-8 w-8 items-center justify-center rounded-md border border-border text-text-secondary transition hover:border-accent hover:text-accent disabled:opacity-30"
+                disabled={fontSize <= 14}
+                onClick={() => setFontSize((v) => v - 2)}
+                aria-label="缩小字号"
+              >
+                A<span className="text-[10px]">-</span>
+              </button>
+              <span className="min-w-[2.5ch] text-center text-sm font-medium tabular-nums">{fontSize}</span>
+              <button
+                className="flex h-8 w-8 items-center justify-center rounded-md border border-border text-text-secondary transition hover:border-accent hover:text-accent disabled:opacity-30"
+                disabled={fontSize >= 28}
+                onClick={() => setFontSize((v) => v + 2)}
+                aria-label="放大字号"
+              >
+                A<span className="text-[10px]">+</span>
+              </button>
+            </div>
             <label className="fanqie-setting-field">
               <span>行距</span>
               <select value={lineHeight} onChange={(event) => setLineHeight(Number(event.target.value))}>
-                {[1.6, 1.8, 2].map((value) => <option key={value}>{value}</option>)}
+                {[1.6, 1.8, 2.0, 2.2, 2.4].map((value) => <option key={value} value={value}>{value}</option>)}
               </select>
             </label>
             <label className="fanqie-setting-field">
               <span>宽度</span>
               <select value={width} onChange={(event) => setWidth(Number(event.target.value))}>
-                {[640, 760, 880].map((value) => <option key={value}>{value}</option>)}
+                {[680, 760, 840, 920].map((value) => <option key={value} value={value}>{value}px</option>)}
               </select>
             </label>
+            <button
+              className="fanqie-setting-field cursor-pointer hover:border-accent transition"
+              onClick={toggleMode}
+              aria-label="切换日间/夜间模式"
+            >
+              <span>主题</span>
+              <span className="text-text-primary text-xs">
+                {mode === 'light' ? '☀️ 日间' : '🌙 夜间'}
+              </span>
+            </button>
           </div>
         </div>
       )}
@@ -877,10 +928,12 @@ function Reader({
             detail.format === 'novel' ? (
               <div className="fanqie-reader-page mt-6">
                 <div
-                  className="fanqie-reader-copy whitespace-pre-wrap break-words text-text-primary"
+                  className="fanqie-reader-copy text-text-primary"
                   style={{ fontSize: `${fontSize}px`, lineHeight }}
                 >
-                  {chapter.content}
+                  {parseParagraphs(chapter.content).map((paragraph, i) => (
+                    <p key={i} className="reader-paragraph">{paragraph}</p>
+                  ))}
                 </div>
               </div>
             ) : (
@@ -913,9 +966,10 @@ function Reader({
               disabled={index === 0}
               className="fanqie-reader-nav disabled:opacity-40"
               onClick={() => navigate(-1)}
+              aria-label="上一章"
             >
               <ArrowLeft size={18} />
-              上一章
+              <span className="hidden sm:inline">上一章</span>
             </button>
 
             <label className="fanqie-reader-select">
@@ -940,11 +994,16 @@ function Reader({
               disabled={index >= detail.chapters.length - 1}
               className="fanqie-reader-nav disabled:opacity-40"
               onClick={() => navigate(1)}
+              aria-label="下一章"
             >
-              下一章
+              <span className="hidden sm:inline">下一章</span>
               <ArrowRight size={18} />
             </button>
           </nav>
+
+          <div className="mt-4 flex items-center justify-center gap-4 text-xs text-text-muted">
+            <span>💡 键盘左右键切换章节</span>
+          </div>
         </article>
       </main>
     </div>

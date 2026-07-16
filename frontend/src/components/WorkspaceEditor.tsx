@@ -66,13 +66,15 @@ export default function WorkspaceEditor({ storyId, onBack, onLoadError }: Props)
 
   const refreshCurrentChapter = async () => {
     if (!currentChapter) return;
-    setCurrentChapter(await getChapter(currentChapter.id));
+    const chapterId = currentChapter.id;
+    const chapter = await getChapter(chapterId);
+    setCurrentChapter((current) => current?.id === chapterId ? chapter : current);
   };
 
   const handleChapterRefresh = async (chapterId: number) => {
     try {
       const ch = await getChapter(chapterId);
-      setCurrentChapter(ch);
+      setCurrentChapter((current) => current?.id === chapterId ? ch : current);
       const chs = await listChapters(storyId);
       setChapters(chs);
     } catch {

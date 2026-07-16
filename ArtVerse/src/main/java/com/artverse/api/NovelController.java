@@ -1,10 +1,9 @@
 package com.artverse.api;
 
 import com.artverse.api.dto.ChapterDto;
-import com.artverse.application.ApiKeyService;
 import com.artverse.application.CurrentUserService;
 import com.artverse.application.NovelService;
-import com.artverse.domain.User;
+import com.artverse.common.BusinessException;
 import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.*;
 
@@ -16,17 +15,13 @@ import java.util.Map;
 public class NovelController {
 
     private final NovelService novelService;
+    @SuppressWarnings("unused")
     private final CurrentUserService currentUserService;
-    private final ApiKeyService apiKeyService;
 
     @PostMapping("/generate-novel")
     public Map<String, String> generateNovel(@PathVariable Long chapterId) {
-        User user = currentUserService.requireCurrentUser();
-        String llmApiKey = apiKeyService.requireActiveUserProviderKey(
-                user, ApiKeyService.SLOT_LLM,
-                "Please configure an LLM provider API key in Settings before generating a novel.");
-        String content = novelService.generateNovel(chapterId, user.getId(), llmApiKey);
-        return Map.of("novel_content", content);
+        throw new BusinessException(410,
+                "Direct AI novel generation has been retired. Create and commit a novel-content proposal instead.");
     }
 
     @PostMapping("/import-novel")

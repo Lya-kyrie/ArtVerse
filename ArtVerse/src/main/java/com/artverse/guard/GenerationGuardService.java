@@ -47,12 +47,13 @@ public class GenerationGuardService {
         );
     }
 
-    public Map<String, Object> executeImageRegeneration(Long userId, Long chapterId, int imageNumber, String prompt,
+    public Map<String, Object> executeImageRegeneration(Long userId, Long chapterId, int imageNumber,
+                                                        String prompt, String model,
                                                         Callable<Map<String, Object>> leader) {
         return idempotencyService.executeHttp(
                 "regenerate-image",
                 userKey(userId),
-                keyBuilder.imageRegeneration(userId, chapterId, imageNumber, prompt),
+                keyBuilder.imageRegeneration(userId, chapterId, imageNumber, prompt, model),
                 leader
         );
     }

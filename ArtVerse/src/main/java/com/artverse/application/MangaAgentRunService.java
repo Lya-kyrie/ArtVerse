@@ -1,6 +1,7 @@
 package com.artverse.application;
 
 import com.artverse.agent.AgentRunEvent;
+import com.artverse.agent.BusinessSkillSelection;
 import com.artverse.common.BusinessException;
 import com.artverse.domain.Chapter;
 import com.artverse.domain.MangaAgentConversation;
@@ -192,25 +193,30 @@ public class MangaAgentRunService {
 
     @Transactional
     public void recordSkillSelection(Long userId, Long chapterId, UUID requestId,
-                                     String skillKey, String skillVersion, String promptVersion) {
+                                     BusinessSkillSelection selection, String promptVersion) {
         runRepository.findByUserIdAndChapterIdAndRequestId(userId, chapterId, requestId)
                 .ifPresent(run -> {
                     Map<String, Object> versions = new LinkedHashMap<>(readMap(run.getSkillVersionsJson()));
-                    versions.put(skillKey, skillVersion);
+                    versions.putAll(selection.skillVersions());
                     run.setSkillVersionsJson(toJson(versions));
                     run.setPromptVersion(promptVersion);
                     runRepository.save(run);
-                    appendEvent(run, "skill_selected", Map.of(
-                            "skillKey", skillKey,
-                            "version", skillVersion,
-                            "promptVersion", promptVersion == null ? "" : promptVersion));
+                    if (!selection.isEmpty()) {
+                        appendEvent(run, "skill_selected", Map.of(
+                                "skillKeys", selection.skillKeys(),
+                                "versions", selection.skillVersions(),
+                                "primarySkillKey", selection.primarySkillKey() == null ? "" : selection.primarySkillKey(),
+                                "promptVersion", promptVersion == null ? "" : promptVersion));
+                    }
                 });
     }
 
     @Transactional
     public void recordStepSkillSelection(Long userId, Long chapterId, UUID requestId, String stepId,
-                                         String skillKey, String skillVersion) {
+                                         BusinessSkillSelection selection) {
         if (stepRepository == null || stepId == null || stepId.isBlank()) return;
+        var primarySkill = selection.primarySkill();
+        if (primarySkill == null) return;
         int separator = stepId.lastIndexOf(':');
         if (separator <= 0 || separator == stepId.length() - 1) return;
         int sequence;
@@ -224,8 +230,8 @@ public class MangaAgentRunService {
                 .flatMap(run -> stepRepository.findByRunIdAndPlanIdAndStepSequence(
                         run.getId(), planId, sequence))
                 .ifPresent(step -> {
-                    step.setSkillKey(skillKey);
-                    step.setSkillVersion(skillVersion);
+                    step.setSkillKey(primarySkill.skillKey());
+                    step.setSkillVersion(primarySkill.semanticVersion());
                     stepRepository.save(step);
                 });
     }

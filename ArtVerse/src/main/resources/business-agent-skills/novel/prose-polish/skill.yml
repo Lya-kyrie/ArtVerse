@@ -1,0 +1,15 @@
+key: novel.prose-polish
+version: 1.0.0
+domain: novel
+title: Novel Prose Polish
+description: Refines existing prose for clarity, rhythm, voice, and emotional delivery without changing canon by accident.
+promptVersion: novel-prose-polish-v1
+supportedRoutes:
+  - CHAT
+capabilities:
+  - PROSE_POLISH
+allowedToolGroups: []
+hitlPolicy: NONE
+content: content.md
+references:
+  - ../common-rules.md

@@ -1,0 +1,15 @@
+key: novel.review
+version: 1.0.0
+domain: novel
+title: Novel Review
+description: Reviews draft prose for structure, clarity, character logic, pacing, and continuity.
+promptVersion: novel-review-v1
+supportedRoutes:
+  - CHAT
+capabilities:
+  - REVIEW
+allowedToolGroups: []
+hitlPolicy: NONE
+content: content.md
+references:
+  - ../common-rules.md

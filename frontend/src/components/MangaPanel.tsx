@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ChevronUp, ChevronDown, Download, ImageIcon, Loader2, Sparkles, Pencil, RefreshCw, Check, X, Square, Users, ImagePlus, Trash2, Plus } from 'lucide-react';
 import {
   generateMangaStream,
@@ -6,6 +6,10 @@ import {
   getScenes,
   updateScenes,
   regenerateImage,
+  API_KEY_CHANGE_EVENT,
+  getPrimaryProviderModel,
+  getProviderModelSelections,
+  getProviderModelOptions,
   getChapterAssetGroup,
   setChapterAssetGroup,
   getColorMode,
@@ -27,6 +31,7 @@ import {
   type AssetGroup,
   type AssetGroupCharacter,
   type CharRefImage,
+  type ProviderModelOption,
   listCharRefImages,
   updateCharacterProfile,
   addCharRefImage,
@@ -177,6 +182,8 @@ export default function MangaPanel({ chapter, onChapterRefresh }: Props) {
   const [showMangaStyleMenu, setShowMangaStyleMenu] = useState(false);
   const mangaStyleMenuRef = useRef<HTMLDivElement>(null);
   const [imageCount, setImageCountState] = useState(DEFAULT_IMAGE_COUNT);
+  const [selectedImageModel, setSelectedImageModel] = useState(() => getPrimaryProviderModel('image'));
+  const [imageModelOptions, setImageModelOptions] = useState<ProviderModelOption[]>(() => getProviderModelSelections('image'));
   const [showColorMenu, setShowColorMenu] = useState(false);
   const colorMenuRef = useRef<HTMLDivElement>(null);
   const lightboxRef = useRef<HTMLDivElement>(null);
@@ -187,6 +194,25 @@ export default function MangaPanel({ chapter, onChapterRefresh }: Props) {
   // Subscribe to module-level generation store so we re-render when any chapter's gen state changes
   const [, setStoreTick] = useState(0);
   useEffect(() => genStore.subscribe(() => setStoreTick((t) => t + 1)), []);
+
+  useEffect(() => {
+    const syncImageModels = () => {
+      const options = getProviderModelSelections('image');
+      const values = getProviderModelOptions('image');
+      setImageModelOptions(options);
+      setSelectedImageModel((previous) => previous && values.includes(previous) ? previous : getPrimaryProviderModel('image'));
+    };
+    syncImageModels();
+    window.addEventListener(API_KEY_CHANGE_EVENT, syncImageModels);
+    return () => window.removeEventListener(API_KEY_CHANGE_EVENT, syncImageModels);
+  }, []);
+
+  const selectedModelLabel = useMemo(() => {
+    if (!selectedImageModel) return '';
+    const opt = imageModelOptions.find(o => o.value === selectedImageModel);
+    return opt ? `${opt.providerLabel} · ${opt.model}` : selectedImageModel;
+  }, [imageModelOptions, selectedImageModel]);
+
   const liveGen = chapter ? genStore.get(chapter.id) : undefined;
   const isLiveGenerating = !!(liveGen && liveGen.active);
 
@@ -541,7 +567,7 @@ export default function MangaPanel({ chapter, onChapterRefresh }: Props) {
     try {
       // Save scenes first
       await updateScenes(chapter.id, scenes);
-      const result = await regenerateImage(chapter.id, imageNumber, prompt);
+      const result = await regenerateImage(chapter.id, imageNumber, prompt, selectedImageModel);
       // Update in images list
       const newItem: ImageItem = {
         image_number: result.image_number,
@@ -673,7 +699,7 @@ export default function MangaPanel({ chapter, onChapterRefresh }: Props) {
           setPhase('editing-scenes');
           break;
       }
-    });
+    }, selectedImageModel);
     mangaAbortRef.current.set(targetId, controller);
   };
 
@@ -751,220 +777,251 @@ export default function MangaPanel({ chapter, onChapterRefresh }: Props) {
 
   return (
     <div className="flex flex-col h-full bg-bg-base">
-      {/* Header */}
-      <div className="px-3 md:px-4 py-2.5 border-b border-border flex items-center justify-between gap-2 flex-wrap">
-        <h2 className="text-sm font-semibold text-text-secondary tracking-wide shrink-0 hidden md:block">
-          第 {chapter?.chapter_number ?? '–'} 话 · 漫画
-        </h2>
-        <div className="flex items-center gap-1.5 md:gap-2 flex-wrap justify-end">
-          {chapter && assetGroupLoadState === 'loading' && (
-            <button
-              disabled
-              className="flex h-8 min-w-28 items-center justify-center gap-1.5 rounded-md border border-border bg-bg-surface px-2 text-xs font-medium text-text-muted opacity-70"
-            >
-              <Loader2 size={13} className="animate-spin" />
-              加载设定组
-            </button>
-          )}
-          {chapter && assetGroupLoadState === 'ready' && assetGroups.length > 0 && (
-            <select
-              value={selectedAssetGroupId ?? ''}
-              onChange={(e) => handleSelectAssetGroup(e.target.value)}
-              disabled={!chapter || generating || assetGroupSaving}
-              className="max-w-[160px] px-2 py-1.5 text-xs font-medium rounded-md bg-bg-surface text-text-secondary border border-border outline-none focus:border-accent transition-colors disabled:opacity-50"
-              title="选择本话继承的全局角色卡和垫图组"
-            >
-              <option value="">选择设定组</option>
-              {assetGroups.map((group) => (
-                <option key={group.id ?? 'default'} value={group.id ?? ''}>
-                  {group.is_default ? '默认组' : group.name}
-                </option>
-              ))}
-            </select>
-          )}
-          {chapter && assetGroupLoadState === 'ready' && assetGroups.length === 0 && (
-            <button
-              onClick={() => setShowAssetGroupManager(true)}
-              disabled={generating}
-              className="flex h-8 items-center gap-1.5 rounded-md border border-border bg-bg-surface px-2.5 text-xs font-medium text-text-secondary transition-colors hover:border-accent hover:text-accent disabled:opacity-40"
-            >
-              <Plus size={13} />
-              新建设定组
-            </button>
-          )}
-          {chapter && assetGroupLoadState === 'error' && (
-            <button
-              disabled
-              className="flex h-8 items-center rounded-md border border-border bg-bg-surface px-2.5 text-xs font-medium text-text-muted opacity-70"
-            >
-              设定组不可用
-            </button>
-          )}
-          {/* Image count selector */}
-          {!generating && (phase === 'idle' || phase === 'editing-scenes') && (
-            <select
-              value={imageCount}
-              onChange={async (e) => {
-                const count = Number(e.target.value);
-                const previous = imageCount;
-                setImageCountState(count);
-                if (chapter) {
-                  try {
-                    await setImageCount(chapter.id, count);
-                  } catch (err: any) {
-                    setImageCountState(previous);
-                    setErrorMsg(`保存生成张数失败: ${err.message}`);
-                  }
-                }
-              }}
-              disabled={!canChangeImageCount}
-              className="px-2 py-1.5 text-xs font-medium rounded-md bg-bg-surface text-text-secondary border border-border outline-none focus:border-accent transition-colors disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
-              title={canChangeImageCount ? '生成张数' : '已有图片时不能修改生成张数'}
-            >
-              {ALLOWED_IMAGE_COUNTS.map((n) => (
-                <option key={n} value={n}>{n}张</option>
-              ))}
-            </select>
-          )}
-          {hasImages && (
-            <button
-              onClick={() => {
-                displayImages.forEach((img) => {
-                  const a = document.createElement('a');
-                  a.href = mangaImageUrl(img.image_path);
-                  a.download = `panel_${img.image_number.toString().padStart(2, '0')}.png`;
-                  a.click();
-                });
-              }}
-              className="flex items-center gap-1 px-3 py-1.5 text-xs font-medium rounded-md
-                         bg-bg-surface hover:bg-border text-text-secondary transition-colors"
-            >
-              <Download size={13} />
-              下载
-            </button>
-          )}
-          {!generating && storyboardLoadState === 'loading' && (
-            <button
-              disabled
-              className="flex h-8 min-w-28 items-center justify-center gap-1.5 rounded-md bg-accent px-3 text-xs font-medium text-white opacity-40"
-            >
-              <Loader2 size={13} className="animate-spin" />
-              读取分镜
-            </button>
-          )}
-          {!generating && storyboardLoadState === 'error' && (
-            <button
-              disabled
-              className="flex h-8 items-center rounded-md bg-accent px-3 text-xs font-medium text-white opacity-40"
-            >
-              分镜状态不可用
-            </button>
-          )}
-          {!generating && storyboardLoadState === 'ready' && (phase === 'idle' || phase === 'editing-scenes') && (
-            <button
-              onClick={handleGenerateScenes}
-              disabled={!hasSourceContent}
-              className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-md
-                         bg-accent hover:bg-accent-hover text-white disabled:opacity-40
-                         disabled:cursor-not-allowed transition-colors"
-            >
-              {scenes.length > 0 ? <RefreshCw size={13} /> : <Sparkles size={13} />}
-              {scenes.length > 0 ? 'AI 重写分镜' : '分镜生成'}
-            </button>
-          )}
-          {!generating && phase === 'editing-scenes' && scenes.length > 0 && (
-            <>
-              {/* Manga style selector */}
-              <div className="relative" ref={mangaStyleMenuRef}>
-                <button
-                  onClick={() => setShowMangaStyleMenu((v) => !v)}
-                  className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-md bg-bg-surface hover:bg-border text-text-secondary transition-colors"
-                  title="漫画风格"
-                >
-                  {MANGA_STYLE_LABELS[mangaStyle]}
-                  <ChevronDown size={11} className={`transition-transform ${showMangaStyleMenu ? 'rotate-180' : ''}`} />
-                </button>
-                {showMangaStyleMenu && (
-                  <div className="absolute right-0 top-full mt-1 w-40 rounded-lg border border-border bg-bg-raised shadow-dropdown z-50 overflow-hidden">
-                    {(Object.keys(MANGA_STYLE_LABELS) as MangaStyle[]).map((style) => (
-                      <button
-                        key={style}
-                        onClick={async () => {
-                          setShowMangaStyleMenu(false);
-                          if (!chapter || style === mangaStyle) return;
-                          setMangaStyleState(style);
-                          try {
-                            await setMangaStyle(chapter.story_id, style);
-                          } catch (err: any) {
-                            setErrorMsg(`保存漫画风格失败: ${err.message}`);
-                            setMangaStyleState(mangaStyle);
-                          }
-                        }}
-                        className={`w-full flex items-center gap-2 px-3 py-2 text-xs transition-colors hover:bg-bg-surface
-                          ${style === mangaStyle ? 'text-accent-secondary font-semibold' : 'text-text-secondary'}`}
-                      >
-                        {MANGA_STYLE_LABELS[style]}
-                        {style === mangaStyle && <Check size={12} className="ml-auto text-accent-secondary" />}
-                      </button>
-                    ))}
-                  </div>
-                )}
-              </div>
-              {/* Color mode selector */}
-              <div className="relative" ref={colorMenuRef}>
-                <button
-                  onClick={() => setShowColorMenu((v) => !v)}
-                  className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-md bg-bg-surface hover:bg-border text-text-secondary transition-colors"
-                  title="色彩模式"
-                >
-                  {COLOR_MODE_LABELS[colorMode]}
-                  <ChevronDown size={11} className={`transition-transform ${showColorMenu ? 'rotate-180' : ''}`} />
-                </button>
-                {showColorMenu && (
-                  <div className="absolute right-0 top-full mt-1 w-36 rounded-lg border border-border bg-bg-raised shadow-dropdown z-50 overflow-hidden">
-                    {(Object.keys(COLOR_MODE_LABELS) as ColorMode[]).map((mode) => (
-                      <button
-                        key={mode}
-                        onClick={() => handleSelectColorMode(mode)}
-                        className={`w-full flex items-center gap-2 px-3 py-2 text-xs transition-colors hover:bg-bg-surface
-                          ${mode === colorMode ? 'text-accent-secondary font-semibold' : 'text-text-secondary'}`}
-                      >
-                        {COLOR_MODE_LABELS[mode]}
-                        {mode === colorMode && <Check size={12} className="ml-auto text-accent-secondary" />}
-                      </button>
-                    ))}
-                  </div>
-                )}
-              </div>
-              {/* Generate button */}
+      {/* Header — two-row toolbar */}
+      <div className="border-b border-border">
+        {/* Row 1: Prep — context, asset group, image count, storyboard */}
+        <div className="px-3 md:px-4 py-2 flex items-center gap-2 bg-bg-surface/40">
+          <h2 className="text-sm font-semibold text-text-secondary tracking-wide shrink-0 hidden md:block">
+            第 {chapter?.chapter_number ?? '–'} 话 · 漫画
+          </h2>
+          <div className="flex items-center gap-1.5 md:gap-2 ml-auto flex-1 justify-end min-w-0">
+            {chapter && assetGroupLoadState === 'loading' && (
               <button
-                onClick={handleGenerateImages}
-                className="flex items-center gap-1.5 px-4 py-1.5 text-xs font-medium rounded-md
-                           bg-accent-secondary hover:bg-accent-secondary/80 text-white transition-colors"
+                disabled
+                className="flex h-8 min-w-28 items-center justify-center gap-1.5 rounded-md border border-border bg-bg-surface px-2 text-xs font-medium text-text-muted opacity-70"
               >
-                <Sparkles size={13} />
-                {existingImages.length > 0 ? '重新生成漫画' : '生成漫画'}
-              </button>
-            </>
-          )}
-          {phase === 'generating-scenes' && (
-            <div className="flex items-center gap-2">
-              <span className="flex items-center gap-1.5 text-xs text-text-secondary">
                 <Loader2 size={13} className="animate-spin" />
-                AI 生成分镜中…
-              </span>
-              <button
-                onClick={handleAbortScenes}
-                className="flex items-center gap-1 px-2.5 py-1.5 text-xs font-medium rounded-md
-                           bg-accent-muted/30 hover:bg-accent-muted/50 text-accent border border-accent/20 transition-colors"
-                title="停止生成分镜"
-              >
-                <Square size={11} />
-                停止
+                加载设定组
               </button>
-            </div>
-          )}
+            )}
+            {chapter && assetGroupLoadState === 'ready' && assetGroups.length > 0 && (
+              <select
+                value={selectedAssetGroupId ?? ''}
+                onChange={(e) => handleSelectAssetGroup(e.target.value)}
+                disabled={!chapter || generating || assetGroupSaving}
+                className="max-w-[160px] px-2 py-1.5 text-xs font-medium rounded-md bg-bg-surface text-text-secondary border border-border outline-none focus:border-accent transition-colors disabled:opacity-50"
+                title="选择本话继承的全局角色卡和垫图组"
+              >
+                <option value="">选择设定组</option>
+                {assetGroups.map((group) => (
+                  <option key={group.id ?? 'default'} value={group.id ?? ''}>
+                    {group.is_default ? '默认组' : group.name}
+                  </option>
+                ))}
+              </select>
+            )}
+            {chapter && assetGroupLoadState === 'ready' && assetGroups.length === 0 && (
+              <button
+                onClick={() => setShowAssetGroupManager(true)}
+                disabled={generating}
+                className="flex h-8 items-center gap-1.5 rounded-md border border-border bg-bg-surface px-2.5 text-xs font-medium text-text-secondary transition-colors hover:border-accent hover:text-accent disabled:opacity-40"
+              >
+                <Plus size={13} />
+                新建设定组
+              </button>
+            )}
+            {chapter && assetGroupLoadState === 'error' && (
+              <button
+                disabled
+                className="flex h-8 items-center rounded-md border border-border bg-bg-surface px-2.5 text-xs font-medium text-text-muted opacity-70"
+              >
+                设定组不可用
+              </button>
+            )}
+            {/* Image count selector */}
+            {!generating && (phase === 'idle' || phase === 'editing-scenes') && (
+              <select
+                value={imageCount}
+                onChange={async (e) => {
+                  const count = Number(e.target.value);
+                  const previous = imageCount;
+                  setImageCountState(count);
+                  if (chapter) {
+                    try {
+                      await setImageCount(chapter.id, count);
+                    } catch (err: any) {
+                      setImageCountState(previous);
+                      setErrorMsg(`保存生成张数失败: ${err.message}`);
+                    }
+                  }
+                }}
+                disabled={!canChangeImageCount}
+                className="px-2 py-1.5 text-xs font-medium rounded-md bg-bg-surface text-text-secondary border border-border outline-none focus:border-accent transition-colors disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
+                title={canChangeImageCount ? '生成张数' : '已有图片时不能修改生成张数'}
+              >
+                {ALLOWED_IMAGE_COUNTS.map((n) => (
+                  <option key={n} value={n}>{n}张</option>
+                ))}
+              </select>
+            )}
+            {hasImages && (
+              <button
+                onClick={() => {
+                  displayImages.forEach((img) => {
+                    const a = document.createElement('a');
+                    a.href = mangaImageUrl(img.image_path);
+                    a.download = `panel_${img.image_number.toString().padStart(2, '0')}.png`;
+                    a.click();
+                  });
+                }}
+                className="flex items-center gap-1 px-3 py-1.5 text-xs font-medium rounded-md
+                           bg-bg-surface hover:bg-border text-text-secondary transition-colors"
+              >
+                <Download size={13} />
+                下载
+              </button>
+            )}
+            {!generating && storyboardLoadState === 'loading' && (
+              <button
+                disabled
+                className="flex h-8 min-w-28 items-center justify-center gap-1.5 rounded-md bg-accent px-3 text-xs font-medium text-white opacity-40"
+              >
+                <Loader2 size={13} className="animate-spin" />
+                读取分镜
+              </button>
+            )}
+            {!generating && storyboardLoadState === 'error' && (
+              <button
+                disabled
+                className="flex h-8 items-center rounded-md bg-accent px-3 text-xs font-medium text-white opacity-40"
+              >
+                分镜状态不可用
+              </button>
+            )}
+            {!generating && storyboardLoadState === 'ready' && (phase === 'idle' || phase === 'editing-scenes') && (
+              <button
+                onClick={handleGenerateScenes}
+                disabled={!hasSourceContent}
+                className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-md
+                           bg-accent hover:bg-accent-hover text-white disabled:opacity-40
+                           disabled:cursor-not-allowed transition-colors"
+              >
+                {scenes.length > 0 ? <RefreshCw size={13} /> : <Sparkles size={13} />}
+                {scenes.length > 0 ? 'AI 重写分镜' : '分镜生成'}
+              </button>
+            )}
+            {phase === 'generating-scenes' && (
+              <div className="flex items-center gap-2">
+                <span className="flex items-center gap-1.5 text-xs text-text-secondary">
+                  <Loader2 size={13} className="animate-spin" />
+                  AI 生成分镜中…
+                </span>
+                <button
+                  onClick={handleAbortScenes}
+                  className="flex items-center gap-1 px-2.5 py-1.5 text-xs font-medium rounded-md
+                             bg-accent-muted/30 hover:bg-accent-muted/50 text-accent border border-accent/20 transition-colors"
+                  title="停止生成分镜"
+                >
+                  <Square size={11} />
+                  停止
+                </button>
+              </div>
+            )}
+          </div>
         </div>
+
+        {/* Row 2: Style & Generate — creative controls & primary action */}
+        {!generating && (phase === 'editing-scenes' || (phase === 'idle' && displayImages.length > 0)) && (
+          <div className="px-3 md:px-4 py-2 flex items-center gap-2 border-t border-border/40 bg-bg-surface/20">
+            <div className="flex items-center gap-1.5 md:gap-2 flex-1 min-w-0">
+              {/* Image model selector */}
+              <select
+                value={selectedImageModel}
+                onChange={(e) => setSelectedImageModel(e.target.value)}
+                disabled={imageModelOptions.length === 0}
+                className="max-w-[200px] px-2 py-1.5 text-xs font-medium rounded-md bg-bg-surface text-text-secondary border border-border outline-none focus:border-accent transition-colors disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
+                title={imageModelOptions.length === 0 ? '请先在 API 设置中配置图像模型' : '选择本次漫画生成使用的图像模型'}
+              >
+                {imageModelOptions.length === 0 ? (
+                  <option value="">未配置图像模型</option>
+                ) : imageModelOptions.map((option) => (
+                  <option key={option.value} value={option.value}>
+                    {option.providerLabel} · {option.model}
+                  </option>
+                ))}
+              </select>
+              {phase === 'editing-scenes' && scenes.length > 0 && (
+                <>
+                  {/* Manga style selector */}
+                  <div className="relative" ref={mangaStyleMenuRef}>
+                    <button
+                      onClick={() => setShowMangaStyleMenu((v) => !v)}
+                      className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-md bg-bg-surface hover:bg-border text-text-secondary transition-colors"
+                      title="漫画风格"
+                    >
+                      {MANGA_STYLE_LABELS[mangaStyle]}
+                      <ChevronDown size={11} className={`transition-transform ${showMangaStyleMenu ? 'rotate-180' : ''}`} />
+                    </button>
+                    {showMangaStyleMenu && (
+                      <div className="absolute right-0 top-full mt-1 w-40 rounded-lg border border-border bg-bg-raised shadow-dropdown z-50 overflow-hidden">
+                        {(Object.keys(MANGA_STYLE_LABELS) as MangaStyle[]).map((style) => (
+                          <button
+                            key={style}
+                            onClick={async () => {
+                              setShowMangaStyleMenu(false);
+                              if (!chapter || style === mangaStyle) return;
+                              setMangaStyleState(style);
+                              try {
+                                await setMangaStyle(chapter.story_id, style);
+                              } catch (err: any) {
+                                setErrorMsg(`保存漫画风格失败: ${err.message}`);
+                                setMangaStyleState(mangaStyle);
+                              }
+                            }}
+                            className={`w-full flex items-center gap-2 px-3 py-2 text-xs transition-colors hover:bg-bg-surface
+                              ${style === mangaStyle ? 'text-accent-secondary font-semibold' : 'text-text-secondary'}`}
+                          >
+                            {MANGA_STYLE_LABELS[style]}
+                            {style === mangaStyle && <Check size={12} className="ml-auto text-accent-secondary" />}
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                  {/* Color mode selector */}
+                  <div className="relative" ref={colorMenuRef}>
+                    <button
+                      onClick={() => setShowColorMenu((v) => !v)}
+                      className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-md bg-bg-surface hover:bg-border text-text-secondary transition-colors"
+                      title="色彩模式"
+                    >
+                      {COLOR_MODE_LABELS[colorMode]}
+                      <ChevronDown size={11} className={`transition-transform ${showColorMenu ? 'rotate-180' : ''}`} />
+                    </button>
+                    {showColorMenu && (
+                      <div className="absolute right-0 top-full mt-1 w-36 rounded-lg border border-border bg-bg-raised shadow-dropdown z-50 overflow-hidden">
+                        {(Object.keys(COLOR_MODE_LABELS) as ColorMode[]).map((mode) => (
+                          <button
+                            key={mode}
+                            onClick={() => handleSelectColorMode(mode)}
+                            className={`w-full flex items-center gap-2 px-3 py-2 text-xs transition-colors hover:bg-bg-surface
+                              ${mode === colorMode ? 'text-accent-secondary font-semibold' : 'text-text-secondary'}`}
+                          >
+                            {COLOR_MODE_LABELS[mode]}
+                            {mode === colorMode && <Check size={12} className="ml-auto text-accent-secondary" />}
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                </>
+              )}
+            </div>
+            {phase === 'editing-scenes' && scenes.length > 0 && (
+              <div className="flex items-center gap-2 shrink-0">
+                {/* Generate button */}
+                <button
+                  onClick={handleGenerateImages}
+                  className="flex items-center gap-1.5 px-4 py-1.5 text-xs font-semibold rounded-md
+                             bg-accent-secondary hover:bg-accent-secondary/80 text-white transition-colors shadow-sm"
+                >
+                  <Sparkles size={13} />
+                  {existingImages.length > 0 ? '重新生成漫画' : '生成漫画'}
+                </button>
+              </div>
+            )}
+          </div>
+        )}
       </div>
 
       {/* Progress bar — segmented: N+1 dots with N segments for N images */}
@@ -973,6 +1030,15 @@ export default function MangaPanel({ chapter, onChapterRefresh }: Props) {
           <div className="flex items-center justify-between text-xs mb-3 gap-3">
             <div className="flex items-center gap-2 min-w-0">
               <span className="text-text-secondary font-medium truncate">{liveStatusMsg}</span>
+              {selectedImageModel && selectedModelLabel && (
+                <span
+                  className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-accent-secondary/10 border border-accent-secondary/30 text-accent-secondary text-[10px] font-medium whitespace-nowrap"
+                  title={`当前图像模型: ${selectedModelLabel}`}
+                >
+                  <Sparkles size={10} />
+                  {selectedModelLabel}
+                </span>
+              )}
               {isStalled && (
                 <span
                   className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-accent-secondary/10 border border-accent-secondary/30 text-accent-secondary text-[10px] font-medium whitespace-nowrap"

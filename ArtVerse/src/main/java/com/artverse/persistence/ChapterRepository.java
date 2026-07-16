@@ -1,7 +1,9 @@
 package com.artverse.persistence;
 
 import com.artverse.domain.Chapter;
+import jakarta.persistence.LockModeType;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
@@ -33,6 +35,10 @@ public interface ChapterRepository extends JpaRepository<Chapter, Long> {
 
     @Query("SELECT DISTINCT c FROM Chapter c JOIN FETCH c.story s LEFT JOIN FETCH s.user LEFT JOIN FETCH c.assetGroup LEFT JOIN FETCH c.messages WHERE c.id = :id AND s.user.id = :userId")
     Optional<Chapter> findByIdForIdempotencyAndUserId(@Param("id") Long id, @Param("userId") Long userId);
+
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("SELECT c FROM Chapter c JOIN FETCH c.story s JOIN FETCH s.user WHERE c.id = :id AND s.user.id = :userId")
+    Optional<Chapter> findByIdAndUserIdForUpdate(@Param("id") Long id, @Param("userId") Long userId);
 
     @Query("SELECT DISTINCT c FROM Chapter c LEFT JOIN FETCH c.images LEFT JOIN FETCH c.messages WHERE c.story.id = :storyId ORDER BY c.chapterNumber ASC")
     List<Chapter> findByStoryIdWithDetails(@Param("storyId") Long storyId);

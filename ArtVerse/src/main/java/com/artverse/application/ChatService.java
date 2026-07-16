@@ -1,9 +1,19 @@
 package com.artverse.application;
 
-import com.artverse.agent.*;
+import com.artverse.agent.AgentMessage;
+import com.artverse.agent.AgentModelSpecFactory;
+import com.artverse.agent.AgentRunRequest;
+import com.artverse.agent.AgentTaskType;
+import com.artverse.agent.BusinessSkillSelection;
 import com.artverse.agent.gateway.AgentScopeHarnessAgentGateway;
 import com.artverse.common.BusinessException;
-import com.artverse.domain.*;
+import com.artverse.domain.AiConversationType;
+import com.artverse.domain.Chapter;
+import com.artverse.domain.ChatMessage;
+import com.artverse.domain.ChatMessageCompletionStatus;
+import com.artverse.domain.MangaAgentConversation;
+import com.artverse.domain.MessageRole;
+import com.artverse.domain.User;
 import com.artverse.persistence.ChapterRepository;
 import com.artverse.persistence.ChatMessageRepository;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -32,6 +42,8 @@ public class ChatService {
     private final ObjectMapper objectMapper;
     private final KnowledgeService knowledgeService;
     private final AiConversationService aiConversationService;
+    private final ArtVerseSkillRegistry skillRegistry;
+    private final NovelBusinessSkillRouter novelBusinessSkillRouter;
 
     @Transactional
     public void saveUserMessage(Long chapterId, String content, User user) {
@@ -43,12 +55,13 @@ public class ChatService {
         msg.setConversation(conversation);
         msg.setRole(MessageRole.USER);
         msg.setContent(content);
+        msg.setCompletionStatus(ChatMessageCompletionStatus.COMPLETE);
         chatMessageRepository.save(msg);
         aiConversationService.autoTitle(conversation, content);
         aiConversationService.touch(conversation);
 
-        chapter.setContentSource(ContentSource.CHAT);
-        chapterRepository.save(chapter);
+        // Conversation is independent from the canonical chapter text. Do not
+        // overwrite legacy provenance or make future source editing impossible.
     }
 
     @Transactional
@@ -77,11 +90,14 @@ public class ChatService {
         knowledgeService.recallForGeneration(chapter.getStory().getId(), userId, chapter.getChapterNumber(), recallQuery, chapterId)
                 .ifPresent(preview -> contextMessages.add(new AgentMessage("system", preview.context())));
 
-        SseEmitter emitter = new SseEmitter(0L); // no timeout
+        SseEmitter emitter = new SseEmitter(0L);
         StringBuilder accumulated = new StringBuilder();
 
         UUID requestId = UUID.randomUUID();
         UUID conversationId = conversationIdForChapter(chapterId);
+        String latestUserMessage = latestUserMessage(contextMessages);
+        BusinessSkillSelection skillSelection = skillRegistry.selectionForNovelMode(
+                novelBusinessSkillRouter.classify(latestUserMessage).mode());
         AgentRunRequest request = new AgentRunRequest(
                 String.valueOf(userId),
                 chapter.getStory().getId(),
@@ -92,7 +108,8 @@ public class ChatService {
                 agentModelSpecFactory.fromProviderConfig(llmConfig),
                 llmConfig.apiKey(),
                 requestId,
-                conversationId
+                conversationId,
+                skillSelection
         );
 
         Disposable subscription = harnessAgentGateway.streamChat(request)
@@ -109,7 +126,6 @@ public class ChatService {
                         },
                         error -> {
                             try {
-                                // Delete user message on error
                                 deleteLastUserMessage(chapterId);
                                 String detail = error.getMessage() != null ? error.getMessage() : "Unknown error";
                                 emitter.send(SseEmitter.event()
@@ -122,19 +138,23 @@ public class ChatService {
                         },
                         () -> {
                             try {
-                                // Save assistant message
                                 String content = accumulated.toString();
                                 ChatMessage assistantMsg = new ChatMessage();
                                 assistantMsg.setChapter(chapter);
                                 assistantMsg.setConversation(conversation);
                                 assistantMsg.setRole(MessageRole.ASSISTANT);
                                 assistantMsg.setContent(content);
-                                chatMessageRepository.save(assistantMsg);
+                                assistantMsg.setCompletionStatus(ChatMessageCompletionStatus.COMPLETE);
+                                assistantMsg.setSkillVersionsJson(writeSkillVersions(skillSelection));
+                                assistantMsg = chatMessageRepository.save(assistantMsg);
                                 aiConversationService.touch(conversation);
 
                                 emitter.send(SseEmitter.event()
                                         .name("done")
-                                        .data(objectMapper.writeValueAsString(Map.of("content", content, "conversation", conversationSummary(conversation)))));
+                                        .data(objectMapper.writeValueAsString(Map.of(
+                                                "content", content,
+                                                "message", messageSummary(assistantMsg),
+                                                "conversation", conversationSummary(conversation)))));
                                 emitter.complete();
                             } catch (Exception e) {
                                 log.warn("Failed to send done SSE: {}", e.getMessage());
@@ -160,7 +180,9 @@ public class ChatService {
                     assistantMsg.setChapter(chapter);
                     assistantMsg.setConversation(conversation);
                     assistantMsg.setRole(MessageRole.ASSISTANT);
-                    assistantMsg.setContent(content + "\n\n[已中止]");
+                    assistantMsg.setContent(content + "\n\n[宸蹭腑姝");
+                    assistantMsg.setCompletionStatus(ChatMessageCompletionStatus.PARTIAL);
+                    assistantMsg.setSkillVersionsJson(writeSkillVersions(skillSelection));
                     chatMessageRepository.save(assistantMsg);
                 } catch (Exception e) {
                     log.warn("Failed to save partial message on timeout: {}", e.getMessage());
@@ -179,7 +201,9 @@ public class ChatService {
                     assistantMsg.setChapter(chapter);
                     assistantMsg.setConversation(conversation);
                     assistantMsg.setRole(MessageRole.ASSISTANT);
-                    assistantMsg.setContent(content + "\n\n[已中止]");
+                    assistantMsg.setContent(content + "\n\n[宸蹭腑姝");
+                    assistantMsg.setCompletionStatus(ChatMessageCompletionStatus.PARTIAL);
+                    assistantMsg.setSkillVersionsJson(writeSkillVersions(skillSelection));
                     chatMessageRepository.save(assistantMsg);
                 } catch (Exception ex) {
                     log.warn("Failed to save partial message on error: {}", ex.getMessage());
@@ -191,8 +215,22 @@ public class ChatService {
     }
 
     private Map<String, Object> conversationSummary(MangaAgentConversation conversation) {
-        return Map.of("conversationId", conversation.getConversationUuid().toString(), "title", conversation.getTitle(),
-                "titleSource", conversation.getTitleSource().name(), "titleState", conversation.getTitleState().name());
+        return Map.of(
+                "conversationId", conversation.getConversationUuid().toString(),
+                "title", conversation.getTitle(),
+                "titleSource", conversation.getTitleSource().name(),
+                "titleState", conversation.getTitleState().name()
+        );
+    }
+
+    private Map<String, Object> messageSummary(ChatMessage message) {
+        return Map.of(
+                "id", message.getId(),
+                "role", message.getRole().name().toLowerCase(),
+                "content", message.getContent(),
+                "completion_status", message.getCompletionStatus().name().toLowerCase(),
+                "created_at", message.getCreatedAt().toString()
+        );
     }
 
     @Transactional(readOnly = true)
@@ -205,8 +243,16 @@ public class ChatService {
 
         List<AgentMessage> contextMessages = new ArrayList<>();
         for (Chapter ch : chapters) {
+            if (ch.getNovelContent() != null && !ch.getNovelContent().isBlank()) {
+                contextMessages.add(new AgentMessage("system", "Canonical novel text for chapter "
+                        + ch.getChapterNumber() + ":\n" + ch.getNovelContent()));
+            }
             List<ChatMessage> msgs = chatMessageRepository.findByChapterIdOrderByCreatedAtAsc(ch.getId());
             for (ChatMessage m : msgs) {
+                if (m.getConversation() != null
+                        && m.getConversation().getConversationType() != AiConversationType.STORY_CHAT) {
+                    continue;
+                }
                 contextMessages.add(new AgentMessage(m.getRole().name().toLowerCase(), m.getContent()));
             }
         }
@@ -214,12 +260,27 @@ public class ChatService {
         return new StreamContext(chapter, contextMessages);
     }
 
-    private record StreamContext(Chapter chapter, List<AgentMessage> contextMessages) {}
+    private String latestUserMessage(List<AgentMessage> messages) {
+        for (int index = messages.size() - 1; index >= 0; index--) {
+            AgentMessage message = messages.get(index);
+            if ("user".equalsIgnoreCase(message.role())) {
+                return message.content();
+            }
+        }
+        return "";
+    }
 
-    /**
-     * Derive a stable conversation UUID from the chapter ID so the same chapter
-     * always uses the same AgentScope session.
-     */
+    private String writeSkillVersions(BusinessSkillSelection selection) {
+        try {
+            return objectMapper.writeValueAsString(selection.skillVersions());
+        } catch (Exception error) {
+            throw new IllegalStateException("Failed to serialize chat skill versions", error);
+        }
+    }
+
+    private record StreamContext(Chapter chapter, List<AgentMessage> contextMessages) {
+    }
+
     private static UUID conversationIdForChapter(Long chapterId) {
         return new UUID(chapterId, chapterId);
     }

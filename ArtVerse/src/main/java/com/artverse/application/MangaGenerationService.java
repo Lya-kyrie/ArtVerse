@@ -219,9 +219,10 @@ public class MangaGenerationService {
     }
 
     GeneratedImage generateImageForJob(List<Path> imageRequestRefs, UserProviderConfig imageConfig, String prompt, String colorMode) {
+        String effectiveModel = !imageConfig.model().isBlank() ? imageConfig.model() : properties.getImage().getModel();
         ImageGenerationRequest request = new ImageGenerationRequest(
                 prompt,
-                properties.getImage().getModel(),
+                effectiveModel,
                 properties.getImage().getSize(),
                 imageRequestRefs,
                 colorMode

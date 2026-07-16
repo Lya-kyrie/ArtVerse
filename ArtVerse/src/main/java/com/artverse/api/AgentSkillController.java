@@ -33,10 +33,7 @@ public class AgentSkillController {
     public ArtVerseSkillRegistry.UserSkillView setEnabled(
             @PathVariable String skillKey,
             @RequestBody Map<String, Object> body) {
-        Object value = body.get("enabled");
-        if (!(value instanceof Boolean enabled)) {
-            throw new BusinessException(400, "enabled must be a boolean");
-        }
-        return skillRegistry.setEnabled(currentUserService.requireCurrentUser().getId(), skillKey, enabled);
+        currentUserService.requireCurrentUser();
+        throw new BusinessException(400, "Business agent skills are platform-managed and cannot be toggled");
     }
 }

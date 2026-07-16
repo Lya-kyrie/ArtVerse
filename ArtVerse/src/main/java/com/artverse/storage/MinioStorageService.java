@@ -137,4 +137,20 @@ public class MinioStorageService implements ObjectStorageService {
             log.warn("Failed to delete MinIO object {}/{}: {}", bucket, objectKey, e.getMessage());
         }
     }
+
+    @Override
+    public Optional<StoredObject> stat(String bucket, String objectKey) {
+        try {
+            StatObjectResponse stat = minioClient.statObject(
+                    StatObjectArgs.builder()
+                            .bucket(bucket)
+                            .object(objectKey)
+                            .build()
+            );
+            return Optional.of(new StoredObject(bucket, objectKey, stat.contentType(), stat.size()));
+        } catch (Exception e) {
+            log.debug("Failed to stat MinIO object {}/{}: {}", bucket, objectKey, e.getMessage());
+            return Optional.empty();
+        }
+    }
 }

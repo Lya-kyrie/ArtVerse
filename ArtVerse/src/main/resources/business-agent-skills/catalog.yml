@@ -1,0 +1,10 @@
+catalogVersion: 1
+skills:
+  - directory: manga/creative-direction
+  - directory: manga/visual-prompting
+  - directory: manga/storyboard-design
+  - directory: manga/storyboard-review
+  - directory: novel/ideation
+  - directory: novel/chapter-writing
+  - directory: novel/prose-polish
+  - directory: novel/review

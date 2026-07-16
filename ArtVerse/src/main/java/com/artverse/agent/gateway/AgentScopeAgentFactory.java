@@ -6,6 +6,7 @@ import com.artverse.agent.AgentRunRequest;
 import com.artverse.agent.AgentTaskType;
 import com.artverse.agent.AgentWorkspaceService;
 import com.artverse.agent.ArtVerseSkillRepository;
+import com.artverse.agent.BusinessSkillSelection;
 import com.artverse.agent.MangaAgentPromptProvider;
 import com.artverse.agent.PostgresAgentWorkspaceStore;
 import com.artverse.application.ArtVerseSkillRegistry;
@@ -65,24 +66,20 @@ public class AgentScopeAgentFactory {
     public HarnessAgent getOrCreate(AgentRunRequest request) {
         Path requestWorkspace = agentWorkspaceService.workspaceFor(request);
         AgentModelSpec fallbackSpec = defaultModelSpec(request.llmApiKey());
-        ArtVerseSkillRegistry.SkillManifest skill = properties.getAgent().isSkillRegistryEnabled()
-                ? skillRegistry.requireEnabled(Long.valueOf(request.userId()), request.taskType())
-                : null;
-        if (skill != null && request.requestId() != null && request.chapterId() != null) {
+        BusinessSkillSelection selection = skillRegistry.resolveSelection(request);
+        String promptVersion = promptProvider.promptVersionFor(request.taskType());
+        if (request.requestId() != null && request.chapterId() != null) {
             runService.recordSkillSelection(Long.valueOf(request.userId()), request.chapterId(), request.requestId(),
-                    skill.skillKey(), skill.semanticVersion(), skill.promptVersion());
+                    selection, promptVersion);
             runService.recordStepSkillSelection(Long.valueOf(request.userId()), request.chapterId(),
-                    request.requestId(), String.valueOf(request.variables().getOrDefault("step_id", "")),
-                    skill.skillKey(), skill.semanticVersion());
+                    request.requestId(), String.valueOf(request.variables().getOrDefault("step_id", "")), selection);
         }
-        String agentKey = buildAgentCacheKey(request, fallbackSpec, requestWorkspace,
-                promptProvider.promptVersionFor(request.taskType()),
-                skill == null ? "none" : skill.skillKey() + "@" + skill.semanticVersion());
-        return agents.get(agentKey, key -> buildAgent(request, requestWorkspace, fallbackSpec, skill));
+        String agentKey = buildAgentCacheKey(request, fallbackSpec, requestWorkspace, promptVersion, selection.cacheKey());
+        return agents.get(agentKey, key -> buildAgent(request, requestWorkspace, fallbackSpec, selection));
     }
 
     private HarnessAgent buildAgent(AgentRunRequest request, Path requestWorkspace, AgentModelSpec fallbackSpec,
-                                    ArtVerseSkillRegistry.SkillManifest skill) {
+                                    BusinessSkillSelection selection) {
         AgentModelSpec modelSpec = request.modelSpec() != null
                 ? request.modelSpec()
                 : fallbackSpec;
@@ -104,11 +101,11 @@ public class AgentScopeAgentFactory {
                 .middleware(systemPromptMiddleware)
                 .disableShellTool()
                 .disableFilesystemTools();
-        if (skill != null) {
+        if (!selection.isEmpty()) {
             builder.skillRepository(skillRepository)
                     .disableDynamicSkills()
                     .disableDefaultWorkspaceSkills()
-                    .enableSkills(skill.skillKey());
+                    .enableSkills(selection.skillKeys().toArray(String[]::new));
         }
         if (request.taskType().subagentDeclarations().size() > properties.getAgent().getMaxSubagents()) {
             throw new IllegalStateException("Task declares more subagents than the configured hard limit");
